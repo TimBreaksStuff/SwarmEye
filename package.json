@@ -1,0 +1,60 @@
+{
+  "name": "swarmeye",
+  "productName": "SwarmEye",
+  "version": "1.0.1",
+  "description": "Parallel Claude Code session cockpit",
+  "main": "main/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "setup:stt": "bash scripts/setup-stt.sh",
+    "setup:stt:win": "wsl.exe -e bash scripts/setup-stt.sh",
+    "publish:github": "bash scripts/publish-github.sh",
+    "publish:github:win": "wsl.exe -e bash scripts/publish-github.sh"
+  },
+  "build": {
+    "appId": "dev.swarmeye.app",
+    "productName": "SwarmEye",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main/**",
+      "renderer/**",
+      "preload.js",
+      "scripts/**"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**",
+      "scripts/**"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ]
+    },
+    "mac": {
+      "target": [
+        "zip"
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "SwarmEye uses the microphone to convert your speech to text for dictating into an agent's terminal or a new task."
+      }
+    }
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.16.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^5.5.0",
+    "node-pty": "1.1.0"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  }
+}
