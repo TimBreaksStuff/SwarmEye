@@ -7,14 +7,17 @@
 # history instead of replacing it.
 set -euo pipefail
 
-GITHUB_URL="https://github.com/TimBreaksStuff/SwarmEye.git"
+# Push over SSH (works headless, no token); the README tells cloners to use
+# HTTPS instead, since anonymous/public clones don't need an SSH key set up.
+GITHUB_PUSH_URL="git@github.com:TimBreaksStuff/SwarmEye.git"
+GITHUB_CLONE_URL="https://github.com/TimBreaksStuff/SwarmEye.git"
 ROOT="$(git rev-parse --show-toplevel)"
 MIRROR="$ROOT/.github-mirror"
 
 cd "$ROOT"
 
 if [ ! -d "$MIRROR/.git" ]; then
-  git clone "$GITHUB_URL" "$MIRROR"
+  git clone "$GITHUB_PUSH_URL" "$MIRROR"
 fi
 
 ALLOW=(
@@ -45,7 +48,7 @@ done
 
 # The mirror is what the public clones — its README should point at GitHub,
 # not the private Gitea remote.
-sed -i.bak "s#https://gitea.homelabproxy.duckdns.org/root/SwarmEye.git#$GITHUB_URL#g" "$MIRROR/README.md"
+sed -i.bak "s#https://gitea.homelabproxy.duckdns.org/root/SwarmEye.git#$GITHUB_CLONE_URL#g" "$MIRROR/README.md"
 rm -f "$MIRROR/README.md.bak"
 
 cd "$MIRROR"
