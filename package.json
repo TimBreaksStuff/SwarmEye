@@ -1,7 +1,7 @@
 {
   "name": "swarmeye",
   "productName": "SwarmEye",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Parallel Claude Code session cockpit",
   "main": "main/main.js",
   "private": true,
