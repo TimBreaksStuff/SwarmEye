@@ -19,36 +19,74 @@ class GridController {
     this.pendingLayout = null; // saved layout to restore on next relayout
     this.autoOrganize = true; // off: column count is fixed at manualCols, not resquared every relayout
     this.manualCols = 1;
+    this.rowCounts = []; // manual mode only: explicit panes-per-row, so a row that isn't full
+    // (e.g. a lone trailing pane) stays put instead of being silently re-packed on the next insert
   }
 
   setAutoOrganize(auto) {
     if (auto === this.autoOrganize) return;
     this.autoOrganize = auto;
-    if (!auto) this.manualCols = this.shape.cols || 1; // carry over the current layout instead of collapsing it
+    if (!auto) {
+      this.manualCols = this.shape.cols || 1; // carry over the current layout instead of collapsing it
+      this.rowCounts = this.denseRowCounts(this.panes.length, this.manualCols); // matches the auto layout we just left
+    }
     this.shape = { cols: 0, rows: 0 }; // force relayout to recompute tracks
     this.relayout();
+  }
+
+  // rows of `cols` panes each, last one holding the remainder — the packing
+  // auto mode always uses, and manual mode's starting point / self-heal fallback
+  denseRowCounts(n, cols) {
+    const counts = [];
+    for (let i = 0; i < n; i += cols) counts.push(Math.min(cols, n - i));
+    return counts;
+  }
+
+  // manual mode only: re-derive rowCounts if something (a plain add(), a
+  // workspace switch) moved panes without updating it
+  syncRowCounts() {
+    if (this.rowCounts.reduce((a, b) => a + b, 0) !== this.panes.length) {
+      this.rowCounts = this.denseRowCounts(this.panes.length, Math.max(1, this.manualCols));
+    }
   }
 
   // index positions the new pane in row-major order (e.g. right after another
   // pane, or a row below it); omitted/out-of-range means "append at the end"
   add(pane, index) {
-    this.setMaximized(null); // a new agent must always become visible
+    // pane count must change before setMaximized(null)'s relayout() runs, or
+    // that relayout sees a stale count and "self-heals" rowCounts right back
+    // out from under an insertSplit that already set them correctly
     if (index == null || index < 0 || index >= this.panes.length) this.panes.push(pane);
     else this.panes.splice(index, 0, pane);
+    this.setMaximized(null); // a new agent must always become visible
     this.container.appendChild(pane.el);
     this.wireDrag(pane);
     this.relayout();
   }
 
   // places a new pane relative to refPane — 'right' extends its row (growing
-  // manualCols when organizing manually), 'down' lands a row below it. Auto
-  // mode still resquares every relayout, so direction there only nudges order.
+  // manualCols when organizing manually), 'down' lands a genuinely new row
+  // right after refPane's row (rowCounts remembers that boundary even when
+  // refPane's own row isn't full). Auto mode still resquares every relayout,
+  // so direction there only nudges order.
   insertSplit(pane, refPane, direction) {
     const i = this.panes.indexOf(refPane);
+    if (i === -1) { this.add(pane); return; }
+    if (this.autoOrganize) {
+      this.add(pane, direction === 'down' ? i + this.shape.cols : i + 1);
+      return;
+    }
+    this.syncRowCounts();
+    let row = 0, start = 0;
+    while (start + this.rowCounts[row] <= i) { start += this.rowCounts[row]; row++; }
     let index;
-    if (i !== -1) {
-      if (!this.autoOrganize && direction === 'right') this.manualCols += 1;
-      index = direction === 'down' ? i + this.shape.cols : i + 1;
+    if (direction === 'right') {
+      this.rowCounts[row] += 1;
+      this.manualCols = Math.max(this.manualCols, this.rowCounts[row]);
+      index = i + 1;
+    } else {
+      index = start + this.rowCounts[row]; // first slot of a brand-new row after refPane's row
+      this.rowCounts.splice(row + 1, 0, 1);
     }
     this.add(pane, index);
   }
@@ -88,11 +126,23 @@ class GridController {
       this.container.appendChild(p.el);
       this.wireDrag(p);
     }
+    // a different pane set invalidates any remembered row boundaries
+    if (!this.autoOrganize) this.rowCounts = this.denseRowCounts(this.panes.length, Math.max(1, this.manualCols));
     this.shape = { cols: 0, rows: 0 }; // force fresh track sizes
     this.relayout();
   }
 
   remove(pane) {
+    if (!this.autoOrganize) {
+      this.syncRowCounts();
+      const i = this.panes.indexOf(pane);
+      if (i !== -1) {
+        let row = 0, start = 0;
+        while (start + this.rowCounts[row] <= i) { start += this.rowCounts[row]; row++; }
+        this.rowCounts[row] -= 1;
+        if (this.rowCounts[row] === 0) this.rowCounts.splice(row, 1);
+      }
+    }
     this.panes = this.panes.filter((p) => p !== pane);
     if (this.maximized === pane) this.setMaximized(null);
     try { pane.dispose(); } catch { pane.el.remove(); }
@@ -151,7 +201,9 @@ class GridController {
     }
 
     const cols = this.autoOrganize ? Math.max(1, Math.ceil(Math.sqrt(n))) : Math.max(1, this.manualCols);
-    const shape = { cols, rows: Math.max(1, Math.ceil(n / cols)) };
+    if (!this.autoOrganize) this.syncRowCounts();
+    const rows = this.autoOrganize ? Math.max(1, Math.ceil(n / cols)) : this.rowCounts.length;
+    const shape = { cols, rows };
     if (shape.cols !== this.shape.cols || shape.rows !== this.shape.rows) {
       const saved = this.pendingLayout;
       if (saved && saved.cols === shape.cols && saved.rows === shape.rows
@@ -169,15 +221,32 @@ class GridController {
 
     // place panes row-major; tracks are [pane, gutter, pane, ...] so cell
     // (r, c) lives at grid line r*2+1 / c*2+1
-    this.panes.forEach((pane, i) => {
-      const r = Math.floor(i / shape.cols);
-      const c = i % shape.cols;
-      const isLast = i === n - 1;
-      pane.el.style.gridRow = `${r * 2 + 1} / ${r * 2 + 2}`;
-      pane.el.style.gridColumn = isLast
-        ? `${c * 2 + 1} / -1` // last pane stretches over any empty trailing cells
-        : `${c * 2 + 1} / ${c * 2 + 2}`;
-    });
+    if (this.autoOrganize) {
+      this.panes.forEach((pane, i) => {
+        const r = Math.floor(i / shape.cols);
+        const c = i % shape.cols;
+        const isLast = i === n - 1;
+        pane.el.style.gridRow = `${r * 2 + 1} / ${r * 2 + 2}`;
+        pane.el.style.gridColumn = isLast
+          ? `${c * 2 + 1} / -1` // last pane stretches over any empty trailing cells
+          : `${c * 2 + 1} / ${c * 2 + 2}`;
+      });
+    } else {
+      // manual mode: rowCounts is the source of truth for row boundaries, so a
+      // row a user placed a single pane in (via ↓) stays its own row instead
+      // of being folded back into a "wherever it fits" dense pack
+      let i = 0;
+      this.rowCounts.forEach((count, r) => {
+        for (let c = 0; c < count; c++, i++) {
+          const pane = this.panes[i];
+          const isLastInRow = c === count - 1;
+          pane.el.style.gridRow = `${r * 2 + 1} / ${r * 2 + 2}`;
+          pane.el.style.gridColumn = isLastInRow
+            ? `${c * 2 + 1} / -1` // last pane in the row stretches over any empty trailing cells
+            : `${c * 2 + 1} / ${c * 2 + 2}`;
+        }
+      });
+    }
 
     for (let c = 0; c < shape.cols - 1; c++) this.makeGutter('col', c);
     for (let r = 0; r < shape.rows - 1; r++) this.makeGutter('row', r);
