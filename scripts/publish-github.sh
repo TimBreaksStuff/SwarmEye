@@ -51,6 +51,17 @@ done
 sed -i.bak "s#https://gitea.homelabproxy.duckdns.org/root/SwarmEye.git#$GITHUB_CLONE_URL#g" "$MIRROR/README.md"
 rm -f "$MIRROR/README.md.bak"
 
+# The public changelog only ever shows the 1.0.0 first-release entry —
+# later versions track internal-only churn (this script, private tooling)
+# that isn't meant for the public mirror. 1.0.0 is always the last (oldest)
+# section in the source file, so slicing from its heading to EOF keeps this
+# correct automatically as new versions get added above it.
+{
+  sed -n '1,3p' "$ROOT/CHANGELOG.md"
+  echo
+  awk '/^## 1\.0\.0 /{f=1} f' "$ROOT/CHANGELOG.md"
+} > "$MIRROR/CHANGELOG.md"
+
 cd "$MIRROR"
 git add -A
 if git diff --cached --quiet; then

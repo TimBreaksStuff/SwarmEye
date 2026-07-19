@@ -2,10 +2,6 @@
 
 All notable changes to SwarmEye are documented here.
 
-## 1.0.1 — 2026-07-19
-
-Added `npm run publish:github` (`scripts/publish-github.sh`, `:win` variant for Windows) to push a curated public mirror of this repo to GitHub — only the files needed to install and run the app, plus `README.md`, `CHANGELOG.md` and the docs/screenshot. Internal-only files (`CLAUDE.md`, `TODO.md`) stay on the private Gitea remote and never reach GitHub. The mirror is a persistent clone kept at `.github-mirror/` (gitignored), so re-running it adds a real commit to GitHub's own history rather than overwriting it each time.
-
 ## 1.0.0 — 2026-07-19
 
 First release.
