@@ -20,6 +20,15 @@ if [ ! -d "$MIRROR/.git" ]; then
   git clone "$GITHUB_PUSH_URL" "$MIRROR"
 fi
 
+# The mirror's working tree is fully regenerated below, so there's never
+# local work to lose here — always resync to origin/main first. Skipping
+# this is what let a stale local clone (another machine/session had already
+# pushed) commit on top of the wrong parent: the push then got rejected, and
+# recovering meant hand-rewriting the mirror's history to get rid of the
+# resulting "Sync from Gitea @ <hash>" commits.
+git -C "$MIRROR" fetch origin
+git -C "$MIRROR" reset --hard origin/main
+
 ALLOW=(
   package.json
   package-lock.json
