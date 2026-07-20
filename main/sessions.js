@@ -1,7 +1,25 @@
-const pty = require('node-pty');
-const os = require('os');
+const path = require('path');
 const fs = require('fs');
 const { IS_WIN, exec, toShellPath } = require('./platform');
+
+/* macOS: node-pty's darwin prebuild execs a separate `spawn-helper` binary
+ * to set up the pty before exec'ing the real command. Some zip
+ * extract/re-package paths (cloud sync, MDM/AV pipelines) drop the
+ * executable bit off nested binaries, which turns every session launch into
+ * an opaque "posix_spawnp failed" with no indication why. Re-assert it
+ * before node-pty is even required, so a fresh install self-heals instead
+ * of needing a manual chmod. */
+if (!IS_WIN) {
+  try {
+    const root = path.dirname(require.resolve('node-pty/package.json'));
+    const helper = path.join(root, 'prebuilds', `darwin-${process.arch}`, 'spawn-helper');
+    if (fs.existsSync(helper)) fs.chmodSync(helper, 0o755);
+  } catch {
+    // best-effort — a failure here just leaves node-pty's own error to surface
+  }
+}
+const pty = require('node-pty');
+const os = require('os');
 const config = require('./config');
 const { pickName } = require('./names');
 

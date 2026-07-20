@@ -234,7 +234,7 @@ Workspaces, sessions, tasks, skills and every option live in a single `config.js
 
 **Agents die when I quit.** tmux isn't installed where agents run — inside WSL on Windows, on the Mac otherwise. SwarmEye warns before quitting when this is the case.
 
-**`posix_spawnp failed` on macOS.** `node-pty`'s bundled `spawn-helper` lost its executable bit:
+**`posix_spawnp failed` on macOS.** SwarmEye re-asserts the executable bit on `node-pty`'s bundled `spawn-helper` at startup, so this self-heals on relaunch. If it persists, fix it by hand:
 ```
 chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper
 ```

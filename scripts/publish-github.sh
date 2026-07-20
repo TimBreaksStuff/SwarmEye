@@ -68,5 +68,5 @@ if git diff --cached --quiet; then
   echo "publish-github: nothing changed"
   exit 0
 fi
-git commit -m "Mirror sync commits now use the source repo's real commit message"
+git commit -m "$(git -C "$ROOT" log -1 --pretty=%B)"
 git push origin HEAD:main
