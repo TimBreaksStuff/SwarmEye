@@ -66,9 +66,13 @@ async function readCredentials() {
   return oauth;
 }
 
+// the usage API reports utilization on a 0-100 scale (confirmed against the
+// parallel `limits[].percent` field, which always matches it exactly) — no
+// fraction case exists, so treating values <=1 as a 0-1 fraction misreads a
+// genuine ~1% (e.g. right after a weekly reset) as 100%
 function pct(utilization) {
   if (typeof utilization !== 'number') return null;
-  return utilization <= 1 ? Math.round(utilization * 100) : Math.round(utilization);
+  return Math.round(utilization);
 }
 
 function window(w) {

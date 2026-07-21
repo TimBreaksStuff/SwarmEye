@@ -92,6 +92,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0a0b0d',
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     autoHideMenuBar: true, // Windows only; macOS has no in-window menu bar
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
@@ -451,6 +452,11 @@ function registerIpc() {
     return { ok: true };
   });
 
+  ipcMain.handle('session:set-last-command', (e, { id, cmd }) => {
+    ptys.setLastCommand(id, cmd);
+    return { ok: true };
+  });
+
   // re-open the attach client for a detached-but-alive tmux session
   ipcMain.handle('session:reattach', async (e, { id, cols, rows }) => {
     await ptysReady;
@@ -502,6 +508,11 @@ function registerIpc() {
   });
 
   ipcMain.handle('usage:refresh', () => usage.refreshNow());
+
+  ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('update:check', () => updates.check());
+  ipcMain.handle('update:download', () => updates.download());
+  ipcMain.handle('update:install', () => updates.install());
 
   ipcMain.handle('skills:list', () => skills.list());
   ipcMain.handle('skills:install', async (e, repoUrl) => {
@@ -610,6 +621,9 @@ app.whenReady().then(() => {
     current: app.getVersion(),
     debugLog,
     onAvailable: (info) => sendToWin('update:available', info),
+    onProgress: (percent) => sendToWin('update:progress', { percent }),
+    onReady: () => sendToWin('update:ready'),
+    onError: (error) => sendToWin('update:error', { error }),
   });
   updates.start();
 

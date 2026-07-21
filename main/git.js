@@ -39,7 +39,7 @@ function wsPrelude(ws) {
 }
 
 /* Every branch a checkout could reach: local heads plus remote branches.
- * A quiet fetch first so branches created on GitHub/Gitea since the last
+ * A quiet fetch first so branches created on the remote since the last
  * fetch appear; fetch failure (offline, no remote) just means the list may
  * be stale. strip=3 turns refs/remotes/origin/feature/x into feature/x. */
 async function listBranches(ws) {

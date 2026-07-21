@@ -78,6 +78,7 @@ function syncChromeNow() {
     onRename: renameWorkspace,
   });
   Topbar.renderArchive(state.archived, archiveHandlers);
+  Topbar.renderSwarmMap([...state.panes.values()], maxAgents, notifHandlers.onOpen);
   Topbar.updateSessionCount(grid.panes.length, liveAgentCount(), maxAgents, byStatus);
   emptyState.style.display = grid.panes.length ? 'none' : '';
   reattachAllBtn.hidden = ![...state.panes.values()].some((p) => p.detached);
@@ -211,7 +212,10 @@ function cycleAgent(dir) {
  *                      since Cmd+Tab is the macOS app switcher
  * MOD+'+' / '-' / 0    font size of the focused pane (bigger/smaller/reset)
  * MOD+N                new agent
+ * MOD+X                close focused agent (again within 5s: confirm kill)
  * MOD+T                task board, new-task form (dashboard)
+ * MOD+R                dictate — mic in the focused pane, or the task-board
+ *                      form's mic if the board is open
  * MOD+Shift+1..9,0     focus visible pane N (again: toggle maximize)
  * MOD+Shift+M          maximize/restore focused pane
  * MOD+Shift+F          search in focused pane
@@ -237,7 +241,9 @@ function isShortcut(e) {
   if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') return true;
   if (e.key === '0' && !e.shiftKey) return true;
   if (e.code === 'KeyN' && !e.shiftKey) return true;
+  if (e.code === 'KeyX' && !e.shiftKey) return true;
   if (e.code === 'KeyT' && !e.shiftKey) return true;
+  if (e.code === 'KeyR' && !e.shiftKey) return true;
   if (!e.shiftKey) return false;
   return e.code === 'KeyM' || e.code === 'KeyF' || e.code === 'KeyG' || e.code === 'KeyB' || /^Digit\d$/.test(e.code);
 }
@@ -258,7 +264,13 @@ function handleShortcut(e) {
   if (e.key === '0' && !e.shiftKey) { if (focused) focused.setFontSize(Pane.DEFAULT_FONT_SIZE); return true; }
 
   if (e.code === 'KeyN' && !e.shiftKey) { addAgent(); return true; }
+  if (e.code === 'KeyX' && !e.shiftKey) { if (focused) focused.requestClose(); return true; }
   if (e.code === 'KeyT' && !e.shiftKey) { toggleBoard(true); return true; }
+  if (e.code === 'KeyR' && !e.shiftKey) {
+    if (!boardEl.hidden && Board.isFormOpen()) Board.toggleDictation();
+    else if (focused) focused.toggleDictation();
+    return true;
+  }
   if (e.code === 'KeyM' && focused) { grid.toggleMax(focused); return true; }
   if (e.code === 'KeyF' && focused) { focused.toggleSearch(); return true; }
   if (e.code === 'KeyG') { toggleGlobalSearch(gsearchEl.hidden); return true; }
@@ -390,6 +402,16 @@ const notifHandlers = {
       await selectWorkspace(pane.session.workspaceId);
     }
     pane.focus();
+  },
+  onApprove(paneId, always) {
+    const pane = state.panes.get(paneId);
+    if (!pane) { toast('this agent is gone'); return; }
+    if (!pane.respondToPrompt('yes', always)) toast("couldn't read the prompt — open the pane");
+  },
+  onDeny(paneId) {
+    const pane = state.panes.get(paneId);
+    if (!pane) { toast('this agent is gone'); return; }
+    if (!pane.respondToPrompt('no', false)) toast("couldn't read the prompt — open the pane");
   },
 };
 document.getElementById('notif-panel-close').addEventListener('click', () => { notifPanelEl.hidden = true; });
@@ -580,7 +602,7 @@ skipPermissionsToggle.addEventListener('change', () => {
   window.swarm.setSkipPermissions(skipPermissionsToggle.checked);
 });
 
-/* "Show initial command in pane header" — off by default; persisted locally
+/* "Show last command in pane header" — off by default; persisted locally
  * and pushed to every already-open pane so it reads as a single live setting */
 const showInitialCmdToggle = document.getElementById('show-initial-cmd-toggle');
 function applyShowInitialCommand(on) {
@@ -604,6 +626,19 @@ function applyAutoOrganize(on) {
 }
 autoOrganizeToggle.addEventListener('change', () => applyAutoOrganize(autoOrganizeToggle.checked));
 applyAutoOrganize(localStorage.getItem('swarmeye.autoOrganize') !== '0');
+
+/* "Space between agent panes" — on by default (12px gap + draggable divider,
+ * plus the grid's own edge padding); off collapses panes flush together with
+ * no gap and lets the grid fill the window edge-to-edge too */
+const agentPaddingToggle = document.getElementById('agent-padding-toggle');
+function applyAgentPadding(on) {
+  agentPaddingToggle.checked = on;
+  localStorage.setItem('swarmeye.agentPadding', on ? '1' : '0');
+  grid.setGutter(on ? 12 : 0);
+  gridWrapEl.classList.toggle('no-pane-gap', !on);
+}
+agentPaddingToggle.addEventListener('change', () => applyAgentPadding(agentPaddingToggle.checked));
+applyAgentPadding(localStorage.getItem('swarmeye.agentPadding') !== '0');
 
 /* colour theme — swatches in the ⌨ popover; persisted locally */
 const themeDots = document.querySelectorAll('#theme-opts .theme-dot');
@@ -759,6 +794,7 @@ document.getElementById('options-reset-btn').addEventListener('click', async () 
   window.swarm.setSkipPermissions(false);
   applyShowInitialCommand(false);
   applyAutoOrganize(true);
+  applyAgentPadding(true);
   for (const { key } of DEFAULT_PICKERS) applyDefault[key]('default');
   applyDefaultFocus(false);
   applyTheme('dark');
@@ -1166,7 +1202,17 @@ const paneHandlers = {
     window.swarm.renameSession(pane.session.id, name);
     syncChrome();
   },
+  setLastCommand(pane, cmd) {
+    window.swarm.setLastCommand(pane.session.id, cmd);
+  },
   onFocus(pane) {
+    // also un-focus the previous holder here: panes in non-selected workspaces
+    // are detached from the DOM, so pane.js's querySelectorAll('.pane.focused')
+    // sweeps can't reach them — a stale .focused left there makes the
+    // "user is watching this pane" checks swallow that pane's notifications
+    if (state.lastFocused && state.lastFocused !== pane) {
+      state.lastFocused.el.classList.remove('focused');
+    }
     state.lastFocused = pane;
   },
   onShortcut: isShortcut,
@@ -1178,7 +1224,7 @@ const paneHandlers = {
       // fired on every Stop hook, watched or not — task completion must not
       // ride on the attention path, which flagAttention suppresses while the
       // user is looking at the pane (and skips when attention is already set)
-      const watching = pane.el.classList.contains('focused') && document.hasFocus();
+      const watching = pane.el.isConnected && pane.el.classList.contains('focused') && document.hasFocus();
       if (!watching) {
         window.swarm.notify(pane.session.agentName + ' needs attention', pane.session.workspaceName);
         pushNotif(pane, 'done', 'finished its turn');
@@ -1424,14 +1470,63 @@ reattachAllBtn.addEventListener('click', async () => {
   syncChrome();
 });
 
-/* ---- update pill ---- */
+/* ---- update: topbar pill + Options row ----
+ * The pill is just an at-a-glance indicator; clicking it opens the same
+ * Options row the update actually happens in, rather than a browser tab. */
+const updatePillEl = document.getElementById('update-pill');
+const updateStatusEl = document.getElementById('update-status');
+const updateActionBtn = document.getElementById('update-action-btn');
+let pendingUpdate = null; // { version, releaseUrl }
 
-window.swarm.onUpdateAvailable(({ version, url }) => {
-  const pill = document.getElementById('update-pill');
-  pill.textContent = `v${version} available`;
-  pill.dataset.tip = 'A newer SwarmEye is on Gitea — click to open';
-  pill.hidden = false;
-  pill.onclick = () => window.swarm.openExternal(url);
+window.swarm.getAppVersion().then((version) => {
+  if (!pendingUpdate) updateStatusEl.textContent = `v${version} — up to date`;
+});
+
+updateActionBtn.addEventListener('click', () => {
+  if (updateActionBtn.dataset.action === 'install') {
+    updateActionBtn.disabled = true;
+    window.swarm.installUpdate();
+    return;
+  }
+  updateActionBtn.disabled = true;
+  updateStatusEl.textContent = `v${pendingUpdate.version} — downloading…`;
+  window.swarm.downloadUpdate();
+});
+
+window.swarm.onUpdateAvailable(({ version, releaseUrl }) => {
+  pendingUpdate = { version, releaseUrl };
+  updateStatusEl.textContent = `v${version} available`;
+  updateActionBtn.textContent = 'Download';
+  updateActionBtn.dataset.action = 'download';
+  updateActionBtn.disabled = false;
+  updateActionBtn.hidden = false;
+
+  updatePillEl.textContent = `v${version} available`;
+  updatePillEl.dataset.tip = 'A newer SwarmEye is ready — click to update';
+  updatePillEl.hidden = false;
+  updatePillEl.onclick = () => kbdHelpBtn.click();
+});
+
+window.swarm.onUpdateProgress(({ percent }) => {
+  if (!pendingUpdate) return;
+  updateStatusEl.textContent = `v${pendingUpdate.version} — downloading… ${percent}%`;
+});
+
+window.swarm.onUpdateReady(() => {
+  if (!pendingUpdate) return;
+  updateStatusEl.textContent = `v${pendingUpdate.version} ready to install`;
+  updateActionBtn.textContent = 'Restart & Update';
+  updateActionBtn.dataset.action = 'install';
+  updateActionBtn.disabled = false;
+});
+
+window.swarm.onUpdateError(({ error }) => {
+  toast('update failed: ' + error);
+  if (!pendingUpdate) return;
+  updateStatusEl.textContent = `v${pendingUpdate.version} available`;
+  updateActionBtn.textContent = 'Download';
+  updateActionBtn.dataset.action = 'download';
+  updateActionBtn.disabled = false;
 });
 
 /* ---- global search across all agents ---- */

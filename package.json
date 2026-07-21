@@ -1,7 +1,7 @@
 {
   "name": "swarmeye",
   "productName": "SwarmEye",
-  "version": "1.0.4",
+  "version": "1.7.4",
   "description": "Parallel Claude Code session cockpit",
   "main": "main/main.js",
   "private": true,
@@ -12,11 +12,14 @@
     "setup:stt": "bash scripts/setup-stt.sh",
     "setup:stt:win": "wsl.exe -e bash scripts/setup-stt.sh",
     "publish:github": "bash scripts/publish-github.sh",
-    "publish:github:win": "wsl.exe -e bash scripts/publish-github.sh"
+    "publish:github:win": "wsl.exe -e bash scripts/publish-github.sh",
+    "publish:release": "bash scripts/publish-release.sh",
+    "publish:release:win": "wsl.exe -e bash scripts/publish-release.sh"
   },
   "build": {
     "appId": "dev.swarmeye.app",
     "productName": "SwarmEye",
+    "icon": "build/icon.png",
     "npmRebuild": false,
     "directories": {
       "output": "dist"
@@ -34,12 +37,14 @@
     "win": {
       "target": [
         "portable"
-      ]
+      ],
+      "artifactName": "SwarmEye-portable.exe"
     },
     "mac": {
       "target": [
         "zip"
       ],
+      "artifactName": "SwarmEye-mac.zip",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "SwarmEye uses the microphone to convert your speech to text for dictating into an agent's terminal or a new task."
       }

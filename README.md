@@ -20,6 +20,9 @@ No accounts, no backend, no telemetry. SwarmEye rides entirely on your existing 
 - **Skills** — install Claude Code skills from GitHub, and see the ones your agents wrote themselves.
 - **Sessions survive restarts** — agents live in a dedicated tmux server, so quitting only detaches them.
 - **Usage widget** — the real 5-hour and weekly limits from Claude's own OAuth usage API.
+- **Swarm map** — a compact status grid in the left rail, above Archived: one slot per agent showing busy, needs attention, idle, or free at a glance across every workspace.
+- **Quick permission responses** — approve or deny an agent's numbered permission prompt straight from its pane header or the notification bell, without switching workspaces or opening the pane.
+- **In-app updates** — the app checks GitHub Releases for new versions and offers a one-click download-and-restart update from `⚙` Options.
 
 ---
 
@@ -128,11 +131,18 @@ Both routes run the same script, both are safe to re-run, and both install into 
 ## Building a release
 
 ```
-npm run dist       # Windows → dist/SwarmEye <version>.exe (single portable executable)
-npm run dist:mac   # macOS   → dist/SwarmEye-<version>-*.zip
+npm run dist       # Windows → dist/SwarmEye-portable.exe (single portable executable)
+npm run dist:mac   # macOS   → dist/SwarmEye-mac.zip
 ```
 
-Build each on its own platform.
+Build each on its own platform. To make the build available to the in-app updater, publish it as a GitHub release afterwards:
+
+```
+npm run publish:release       # macOS / WSL shell
+npm run publish:release:win   # Windows, runs the same script inside WSL
+```
+
+Running apps check that release feed every few hours and offer a one-click download-and-restart update from `⚙` Options → **SwarmEye version**.
 
 ---
 
@@ -143,7 +153,7 @@ npm run publish:github       # macOS / WSL shell
 npm run publish:github:win   # Windows, runs the same script inside WSL
 ```
 
-Pushes a curated copy of this repo — everything needed to install and run SwarmEye, plus this README, the changelog and the docs/screenshot — to the public GitHub mirror. Internal-only files stay on the private Gitea remote.
+Pushes a curated copy of this repo — everything needed to install and run SwarmEye, plus this README, the changelog and the docs/screenshot — to the public GitHub mirror. Internal-only files and dev tooling stay in the private source repository.
 
 ---
 

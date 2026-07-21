@@ -312,13 +312,14 @@ const Board = (() => {
   // kept recording invisibly after submit/cancel/board-close, and the next
   // recognition result resurrected the previous task's text in the cleared box
   let stopDictation = () => {};
+  let toggleDictation = () => {};
   if (!window.Speech || !window.Speech.supported) {
     micBtn.style.display = 'none';
   } else {
     let dictating = false;
     let micBase = '';
     stopDictation = () => { if (dictating) window.Speech.stop(); };
-    micBtn.addEventListener('click', () => {
+    toggleDictation = () => {
       if (dictating) { window.Speech.stop(); return; }
       micBase = textEl.value;
       if (micBase && !/\s$/.test(micBase)) micBase += ' ';
@@ -342,7 +343,8 @@ const Board = (() => {
           else if (err === 'not-installed') toast('dictation engine not installed — install it in ⌨ Options');
         },
       });
-    });
+    };
+    micBtn.addEventListener('click', toggleDictation);
   }
   modeRadios.forEach((r) => r.addEventListener('change', updateAutoHint));
   newBtn.addEventListener('click', () => showForm(formEl.hidden));
@@ -947,7 +949,12 @@ const Board = (() => {
     Object.assign(defaults, patch);
   }
 
-  return { render, renderArchive, toggleArchive, setDefaults, showForm, closeSessionView, stopDictation: () => stopDictation() };
+  return {
+    render, renderArchive, toggleArchive, setDefaults, showForm, closeSessionView,
+    stopDictation: () => stopDictation(),
+    toggleDictation: () => toggleDictation(),
+    isFormOpen: () => !formEl.hidden,
+  };
 })();
 
 window.Board = Board;

@@ -453,7 +453,7 @@ const DEFAULT_FONT_SIZE = 13;
 // across restarts so reopened agent panes come back at the same text size
 let activeFontSize = Number(localStorage.getItem('swarmeye.paneFontSize')) || DEFAULT_FONT_SIZE;
 
-// "Show initial command in pane header" option in ⌨ Options — off by default;
+// "Show last command in pane header" option in ⌨ Options — off by default;
 // app.js owns persistence, this just gates whether syncInitialCommandHeader
 // reveals the row it fills in on every pane
 let showInitialCommand = false;
@@ -482,7 +482,6 @@ const MODE_MARKERS = [
   ['plan', /plan mode on/i],
   ['acceptEdits', /accept edits on/i],
 ];
-
 /* Claude models selectable for a task — sent as a `/model <value>` command
  * once the agent starts, same mechanism a user typing it themselves uses. */
 const MODELS = [
@@ -545,9 +544,9 @@ function prettyModelName(id) {
 
 class Pane {
   /**
-   * @param {object} session {id, num, agentName, workspaceName, cwd, persistent}
+   * @param {object} session {id, num, agentName, workspaceName, cwd, persistent, lastCommand}
    * @param {object} handlers {onClose, onMaximize, onResize, onRename,
-   *                           onRestart, onFocus, onStatusChange, onShortcut, onSplit}
+   *                           onRestart, onFocus, onStatusChange, onShortcut, onSplit, setLastCommand}
    * @param {object} [opts] {managed} — managed is true when a board task
    *                         started this agent; false for a manually-added one
    */
@@ -563,6 +562,7 @@ class Pane {
     this.trustDialogHandled = false; // one-shot: auto-accept the folder-trust dialog at most once per session
     this.bypassDialogHandled = false; // one-shot: auto-accept the bypass-permissions warning at most once per session
     this.hookAlive = false; // true once Claude Code hook events flow — they replace the output-timing heuristics
+    this.awaitingPrompt = false; // true while a live numbered permission prompt is up (Notification hook, cleared on the next turn) — gates the ✓/✕ quick-respond buttons
     this.lastInputAt = 0; // last keystroke/mouse report — its echo must not read as agent activity
     this.idleTimer = null;
     this.closeArmTimer = null;
@@ -631,6 +631,27 @@ class Pane {
       this.busyEl.appendChild(bar);
     }
 
+    // quick-respond to a live numbered permission prompt (Notification hook
+    // event) without opening the pane — reuses the same menu-line parsing as
+    // the clickable option links below (MENU_OPTION_RE)
+    this.btnApprove = document.createElement('button');
+    this.btnApprove.className = 'pane-btn approve';
+    this.btnApprove.dataset.tip = 'Approve (shift-click: always allow)';
+    this.btnApprove.textContent = '✓';
+    this.btnApprove.style.display = 'none';
+    this.btnApprove.addEventListener('click', (e) => {
+      if (!this.respondToPrompt('yes', e.shiftKey)) toast("couldn't read the prompt — open the pane");
+    });
+
+    this.btnDeny = document.createElement('button');
+    this.btnDeny.className = 'pane-btn deny';
+    this.btnDeny.dataset.tip = 'Deny';
+    this.btnDeny.textContent = '✕';
+    this.btnDeny.style.display = 'none';
+    this.btnDeny.addEventListener('click', () => {
+      if (!this.respondToPrompt('no', false)) toast("couldn't read the prompt — open the pane");
+    });
+
     this.badge = document.createElement('span');
     this.badge.className = 'pane-badge';
     this.badge.style.display = 'none';
@@ -656,15 +677,16 @@ class Pane {
 
     const btnMic = document.createElement('button');
     btnMic.className = 'pane-btn mic';
-    btnMic.dataset.tip = 'Dictate (click to start/stop)';
+    btnMic.dataset.tip = 'Dictate (click to start/stop, Ctrl+R)';
     btnMic.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>';
     if (!window.Speech || !window.Speech.supported) {
       btnMic.style.display = 'none';
+      this.toggleDictation = () => {};
     } else {
       let dictating = false;
       // closing the pane mid-dictation must release the mic (see dispose)
       this.stopDictation = () => { if (dictating) window.Speech.stop(); };
-      btnMic.addEventListener('click', () => {
+      const toggleMic = () => {
         if (dictating) { window.Speech.stop(); return; }
         dictating = true;
         btnMic.classList.add('listening');
@@ -679,7 +701,9 @@ class Pane {
             else if (err === 'not-installed') toast('dictation engine not installed — install it in ⌨ Options');
           },
         });
-      });
+      };
+      btnMic.addEventListener('click', toggleMic);
+      this.toggleDictation = toggleMic;
     }
 
     const btnFontDown = document.createElement('button');
@@ -727,7 +751,7 @@ class Pane {
     });
 
     header.append(
-      this.dot, this.taskEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.modeSel, this.badge,
+      this.dot, this.taskEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.badge,
       this.btnRestart, btnExport, btnSearch, btnMic, btnFontDown, btnFontUp, btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
 
@@ -749,10 +773,10 @@ class Pane {
     sClose.dataset.tip = 'Close search (Esc)';
     this.searchEl.append(this.searchInput, sPrev, sNext, sClose);
 
-    // second header row, under the main one — the initial command a
-    // task-started agent was given, or (for a manually-added one) the first
-    // line the user types and submits; hidden unless both the option is on
-    // and there is a command to show
+    // second header row, under the main one — the most recent command
+    // entered in this pane (the task prompt it was launched with, until the
+    // user types a new line, which then takes over); hidden unless both the
+    // option is on and there is a command to show
     this.subheaderEl = document.createElement('div');
     this.subheaderEl.className = 'pane-subheader';
     this.subheaderEl.style.display = 'none';
@@ -762,9 +786,11 @@ class Pane {
     this.subheaderTextEl.className = 'pane-subheader-text';
     this.subheaderEl.append(subheaderBar, this.subheaderTextEl);
     this.initialCommandText = '';
-    this.typedInitialCommand = null;
+    // survives a reattach after the app was closed and reopened — tmux keeps
+    // the agent alive but remembers nothing of what was typed into it, so the
+    // subheader would otherwise go blank on every restart
+    this.typedInitialCommand = session.lastCommand || null;
     this.typedLineBuffer = '';
-    this.typedCaptureDone = false;
 
     this.termEl = document.createElement('div');
     this.termEl.className = 'pane-term';
@@ -916,8 +942,10 @@ class Pane {
 
   flagAttention() {
     if (this.exited) return;
-    // no attention for output the user is already looking at
-    if (this.el.classList.contains('focused') && document.hasFocus()) return;
+    // no attention for output the user is already looking at — which requires
+    // the pane to actually be on screen (isConnected), not focused-but-hidden
+    // in a non-selected workspace
+    if (this.el.isConnected && this.el.classList.contains('focused') && document.hasFocus()) return;
     const was = this.attention;
     this.attention = true;
     this.syncStatus();
@@ -962,6 +990,48 @@ class Pane {
     this.statusEl.style.display = text ? '' : 'none';
   }
 
+  syncPromptButtons() {
+    const show = this.awaitingPrompt && !this.exited;
+    this.btnApprove.style.display = show ? '' : 'none';
+    this.btnDeny.style.display = show ? '' : 'none';
+  }
+
+  /* Quick-respond to a live numbered permission prompt from the pane header
+   * or the notification bell, without opening the pane. Reuses the same
+   * menu-line shape the clickable option links already parse
+   * (MENU_OPTION_RE): scan the tail of the buffer for "N. <text>" lines and
+   * send just the matching option's digit — no Enter, same as those links.
+   *
+   * kind: 'yes' picks the first option whose text starts with "yes";
+   * 'no' the first starting with "no". always=true (shift-click ✓) prefers
+   * a "yes" option that also mentions "don't ask"/"always" (Claude's
+   * remember-this-choice variant) over a plain one, falling back to plain
+   * yes if no such option exists. No matching option = nothing sent; caller
+   * shows a toast instead of guessing. */
+  respondToPrompt(kind, always) {
+    if (this.exited) return false;
+    const lines = this.tailLines(30);
+    const options = [];
+    for (const line of lines) {
+      const m = MENU_OPTION_RE.exec(line);
+      if (m) options.push({ digit: m[2], text: line.slice(m[1].length).trim() });
+    }
+    const wantAlways = kind === 'yes' && always;
+    let pick = null;
+    for (const o of options) {
+      if (!new RegExp('^' + kind, 'i').test(o.text)) continue;
+      const mentionsAlways = /don'?t ask|always/i.test(o.text);
+      if (wantAlways ? mentionsAlways : !mentionsAlways) { pick = o; break; }
+      if (!pick) pick = o; // fallback candidate of the right yes/no family
+    }
+    if (!pick) return false;
+    this.awaitingPrompt = false;
+    this.syncPromptButtons();
+    this.clearAttention();
+    window.swarm.writeSession(this.session.id, pick.digit);
+    return true;
+  }
+
   applyHookEvent({ event, tool, message, model }) {
     if (this.exited) return;
     const wasWorking = this.working;
@@ -983,17 +1053,21 @@ class Pane {
     if ((event === 'SessionStart' || event === 'ModelUpdate') && model) this.setModel(prettyModelName(model));
     if (event === 'UserPromptSubmit') {
       this.working = true;
+      this.awaitingPrompt = false;
       this.setStatusText('');
     } else if (event === 'PreToolUse') {
       this.working = true;
+      this.awaitingPrompt = false;
       this.setStatusText(tool === 'Bash' ? 'vibing...' : (tool || ''));
     } else if (event === 'Notification') {
       // claude is blocked on the user (permission prompt / waiting for input)
       this.working = false;
+      this.awaitingPrompt = true;
       this.setStatusText(message || 'waiting for you');
       this.flagAttention();
     } else if (event === 'Stop') {
       this.working = false;
+      this.awaitingPrompt = false;
       this.setStatusText('done');
       this.flagAttention();
       // completion must reach app.js even when flagAttention suppresses its
@@ -1001,6 +1075,7 @@ class Pane {
       // board task's completion handling hangs off this dedicated status
       this.handlers.onStatusChange(this, 'done');
     }
+    this.syncPromptButtons();
     this.syncStatus();
     if (wasWorking !== this.working) {
       this.handlers.onStatusChange(this, this.working ? 'working' : 'idle');
@@ -1234,16 +1309,15 @@ class Pane {
     return /\bfocus\b/i.test(lines[lines.length - 1] || '');
   }
 
-  /* ---- initial-command header row ----
-   * A task-started pane already has its prompt tracked in app.js (same
-   * source as the tooltip above, getPaneInitialPrompt) — that always wins.
-   * A manually-added pane has no such record, so its "initial command" is
-   * reconstructed from the user's own first keystrokes instead: best-effort,
-   * since raw terminal input includes backspaces, arrow keys and pastes, but
-   * good enough for the common case of typing (or pasting) one message and
-   * hitting Enter. */
+  /* ---- last-command header row ----
+   * Shows the most recently submitted command in this pane's terminal,
+   * reconstructed from the user's own keystrokes: best-effort, since raw
+   * terminal input includes backspaces, arrow keys and pastes, but good
+   * enough for the common case of typing (or pasting) a message and hitting
+   * Enter. A task-started pane starts out showing its launch prompt (from
+   * app.js's getPaneInitialPrompt) until the user types a new line, which
+   * then takes over — see syncInitialCommandHeader. */
   captureInitialCommand(data) {
-    if (this.typedCaptureDone) return;
     // a full bracketed-paste chunk: unwrap it and treat embedded newlines as
     // literal content, not as Enter submitting the line
     const pasteMatch = /^\x1b\[200~([\s\S]*)\x1b\[201~$/.exec(data);
@@ -1257,9 +1331,9 @@ class Pane {
         const line = this.typedLineBuffer.trim();
         this.typedLineBuffer = '';
         if (!line) continue; // blank Enter (e.g. dismissing a splash screen) — keep waiting
-        this.typedCaptureDone = true;
         this.typedInitialCommand = line;
         this.syncInitialCommandHeader();
+        this.handlers.setLastCommand(this, line);
         return;
       }
       if (ch === '\x7f' || ch === '\b') { this.typedLineBuffer = this.typedLineBuffer.slice(0, -1); continue; }
@@ -1269,12 +1343,13 @@ class Pane {
   }
 
   /* Called explicitly by app.js whenever a task's prompt text becomes known
-   * (task start) or the option is toggled — no point polling for a value
-   * that only changes at those two moments; captureInitialCommand above
-   * calls it directly the moment the user's own first line is captured. */
+   * (task start) or the option is toggled, and by captureInitialCommand
+   * above every time the user submits a new line. Once the user has typed
+   * anything, that takes precedence over the task's original launch prompt
+   * — the header tracks the latest command, not just the first one. */
   syncInitialCommandHeader() {
     const prompt = this.handlers.getPaneInitialPrompt && this.handlers.getPaneInitialPrompt(this.session.id);
-    this.initialCommandText = prompt || this.typedInitialCommand || '';
+    this.initialCommandText = this.typedInitialCommand || prompt || '';
     // the title/dot hover shows a task's prompt (not a manually typed first
     // line) — same data-tip system as every other hint in the app, so
     // tooltip.js owns the delay, placement and dismissal
@@ -1417,6 +1492,8 @@ class Pane {
     this.exitCode = exitCode;
     this.attention = false;
     this.working = false;
+    this.awaitingPrompt = false;
+    this.syncPromptButtons();
     if (this.stopDictation) this.stopDictation(); // agent gone — mic must not stay hot
     clearTimeout(this.idleTimer);
     clearTimeout(this.modeTimer);
@@ -1508,7 +1585,7 @@ Pane.setDefaultFontSize = (px) => {
   return size;
 };
 
-/* app.js's Options-panel "Show initial command in pane header" checkbox owns
+/* app.js's Options-panel "Show last command in pane header" checkbox owns
  * persistence; this just flips the flag every pane's syncInitialCommandHeader
  * reads — the caller is responsible for re-syncing already-open panes */
 Pane.setShowInitialCommand = (on) => { showInitialCommand = !!on; };

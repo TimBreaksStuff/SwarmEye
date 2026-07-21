@@ -302,6 +302,17 @@ class PtyManager {
     if (meta) this._saveMeta({ ...meta, agentName });
   }
 
+  /* Persists the pane subheader's "last command" text so a restart (session
+   * reattached from tmux, everything else in memory lost) can still show it —
+   * see Pane.captureInitialCommand / syncInitialCommandHeader. */
+  setLastCommand(id, cmd) {
+    const s = this.sessions.get(id);
+    if (s) s.session.lastCommand = cmd;
+    const cfg = config.load();
+    const meta = (cfg.sessions || {})[id];
+    if (meta) this._saveMeta({ ...meta, lastCommand: cmd });
+  }
+
   write(id, data) {
     const s = this.sessions.get(id);
     if (s) s.proc.write(data);

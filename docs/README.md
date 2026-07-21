@@ -28,7 +28,7 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
 
 ### Workspaces and the icon rail
 
-A vertical rail runs down the left side: the usage widget at the top, then each workspace as a tile, a dashed `+` tile that opens a folder picker, the `Task Board` and `Skills` tiles, and — pinned to the bottom — the `🗃` archive and `⚙` Options tiles.
+A vertical rail runs down the left side: the usage widget at the top, then each workspace as a tile, a dashed `+` tile that opens a folder picker, and the `Task Board` tile — pinned to the bottom are the swarm map status grid, the `🗃` archive, `Skills`, and `⚙` Options tiles.
 
 The selected tile decides which folder new agents start in. A tile whose agents need attention turns amber with a pulsing dot, and a corner badge shows its agent count. Hover a tile for a flyout with the full name and path — double-click the name there to rename, or hit `✕` to archive it (running agents are killed after a confirm click). The `🗃` archive restores or permanently forgets archived workspaces; the folder on disk is never touched. Drag tiles to reorder them.
 
@@ -43,9 +43,9 @@ Each pane header carries:
 - **Status dot + live state** — see below.
 - **Mode dropdown** — `manual` (Claude asks before edits), `accept edits`, `plan`, `auto` (bypass permissions). Claude has no set-mode command for a running session, so SwarmEye reads the mode from Claude's own footer and taps `Shift+Tab` through the cycle until yours is active; it stays in sync if you switch modes by hand. `auto` requires the Options toggle below.
 - **Model chip** — which model the agent is actually replying with (`Sonnet 5`, `Opus 4.8`, …), read from the session transcript after each turn. A `/model` switch you run yourself shows up instantly.
-- **Git chip** — the folder's branch (`⎇ main`), amber with a dot when there are uncommitted changes. Refreshed every 15s. Click it to open a branch list (local + remote, fetched fresh from GitHub/Gitea) and check out another branch, or pick `+ new branch…` to create one off the current HEAD; checkout errors (e.g. uncommitted changes in the way) show as a toast.
+- **Git chip** — the folder's branch (`⎇ main`), amber with a dot when there are uncommitted changes. Refreshed every 15s. Click it to open a branch list (local + remote, fetched fresh from the workspace's git remote) and check out another branch, or pick `+ new branch…` to create one off the current HEAD; checkout errors (e.g. uncommitted changes in the way) show as a toast.
 - **Buttons** — `↻` restart · `⤓` export transcript · `⌕` in-pane search · mic (dictation) · `−`/`+` text size · `⛶` maximize · `→`/`↓` place a new agent beside/below (only with auto-organize off) · `✕` close (click twice while running).
-
+- **Quick-respond** — while a pane is waiting on a numbered permission prompt (Claude's `1. Yes` / `2. No` style), it grows `✓` approve and `✕` deny buttons right next to the status text — no need to click into the terminal. Shift-click `✓` prefers a "don't ask again" / "always allow" option over a plain yes, if the prompt offers one. The same two buttons show up on `waiting` entries in the notification bell and its docked panel. If the buffer isn't actually showing a numbered prompt, nothing is sent — a toast says so instead of guessing.
 **The grid** auto-arranges (1 → 2×1 → 2×2 → 3×2 → 3×3 → 4×3) and refits terminals on resize. Turn **Auto-organize agent windows** off in Options to place agents yourself instead: each pane grows `→` and `↓` buttons that open the new agent beside or below it, and the column count stays where you put it. Panes are translucent glass; the focused pane wears a glowing accent border. Drag the gaps between panes to resize rows and columns, and drag a pane by its header onto another to swap them — your arrangement is remembered per workspace while the app runs. Terminals render on the GPU (WebGL, DOM fallback) and URLs in output are clickable.
 
 **Drag & drop** any file onto a terminal to paste its path — converted to WSL form on Windows (`C:\Users\me\shot.png` → `/mnt/c/Users/me/shot.png`) so Claude can read it. Multiple files paste space-separated; paths with spaces are quoted.
@@ -85,6 +85,10 @@ Near the top of the icon rail — two mini bars when Collapsed, two radial gauge
 Polls every 90 seconds and backs off exponentially if rate-limited — the endpoint is touchy. Click to refresh manually; repeated clicks within 3 seconds replay the last reading rather than hammering it. The last successful reading survives restarts and shows as `remembered from before restart` until the first live fetch lands.
 
 Credentials are read read-only — the macOS Keychain (falling back to `~/.claude/.credentials.json`), or from inside WSL on Windows. Nothing is stored or sent anywhere except `api.anthropic.com`.
+
+### Swarm map
+
+Pinned above the `🗃` archive tile, one slot per agent-capacity slot across every workspace: lime = working, pulsing amber = needs attention, gray = idle, dark = free. Collapsed shows a compact 2-column grid of dots; Expanded adds the "Swarm" title and a "`N` live · `M` free" footer. An exited agent frees its slot immediately, same as the session counter in the top bar; if the agent cap is lowered below the number of live agents, every agent still gets a slot rather than being hidden.
 
 ---
 
@@ -204,7 +208,9 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 | `Tab` | Next agent in this workspace |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous workspace |
 | `Ctrl+N` | New agent |
+| `Ctrl+X` | Close focused agent (again within 5s: confirm kill) |
 | `Ctrl+T` | Task board, new-task form |
+| `Ctrl+R` | Dictate — mic in the focused pane, or the task-board form's mic if the board is open |
 | `Ctrl+Shift+1…9`, `0` | Focus visible pane N (again: maximize) |
 | `Ctrl+Shift+M` | Maximize / restore focused pane |
 | `Ctrl+Shift+F` | Search in focused pane |

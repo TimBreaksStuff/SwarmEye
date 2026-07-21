@@ -11,7 +11,13 @@
 </head>
 <body>
   <header id="topbar">
-    <div id="logo"><span class="dot"></span>SWARMEYE</div>
+    <div id="logo">
+      <svg class="logo-icon" viewBox="0 0 160 160" aria-hidden="true">
+        <polygon points="80,2 152,42 152,118 80,158 8,118 8,42" fill="none" stroke="var(--amber)" stroke-width="5"></polygon>
+        <path d="M26 80 L50 80 L59 52 L71 108 L82 58 L93 100 L102 68 L111 80 L134 80" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+      <span class="logo-word">SWARM<span class="logo-eye">EYE</span></span>
+    </div>
     <div class="spacer"></div>
     <span id="health-banner" hidden>⚠ WSL unreachable</span>
     <button id="reattach-all" hidden data-tip="Reconnect all detached agents">⟳ reattach all</button>
@@ -68,6 +74,12 @@
 
       <div class="leftbar-spacer"></div>
 
+      <div id="swarm-map" aria-label="Swarm overview — agent status">
+        <div class="swarm-map-title">Swarm</div>
+        <div class="swarm-map-grid" id="swarm-map-grid"></div>
+        <div class="swarm-map-footer" id="swarm-map-footer"></div>
+      </div>
+
       <button id="archive-btn" class="rail-tile" aria-label="Archived workspaces — restore or delete" style="display:none">
         <span class="rail-tile-glyph">🗃</span><span class="rail-tile-name">Archived</span>
       </button>
@@ -110,7 +122,7 @@
               <select id="board-form-ws"></select>
               <select id="board-form-category" data-tip="Category"></select>
               <button id="board-form-category-manage" type="button" data-tip="Manage categories for this workspace">⚙</button>
-              <button id="board-form-mic" type="button" data-tip="Dictate task description">
+              <button id="board-form-mic" type="button" data-tip="Dictate task description (Ctrl+R)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
               </button>
             </div>
@@ -273,6 +285,12 @@
       <div class="kbd-title">Options</div>
       <button id="options-reset-btn" data-tip="Restore every option below to its default value">↺ Reset</button>
     </div>
+    <div class="kbd-row kbd-opt"><span>SwarmEye version</span>
+      <span class="opt-ctl">
+        <span id="update-status" class="stt-status"></span>
+        <button id="update-action-btn" hidden></button>
+      </span>
+    </div>
     <div class="kbd-row kbd-opt"><span>Small left menu</span>
       <span class="opt-ctl">
         <input type="checkbox" id="leftbar-small-toggle" data-tip="Collapses the left menu to icons only, hover to preview the expanded view (workspace names and usage gauges).">
@@ -318,14 +336,19 @@
         <input type="checkbox" id="skip-permissions-toggle" data-tip="Launches new and restarted agents with --allow-dangerously-skip-permissions so claude's Shift+Tab mode cycle includes auto mode without activating it. Existing running agents need a restart to pick this up.">
       </span>
     </div>
-    <div class="kbd-row kbd-opt"><span>Show initial command in pane header</span>
+    <div class="kbd-row kbd-opt"><span>Show last command in pane header</span>
       <span class="opt-ctl">
-        <input type="checkbox" id="show-initial-cmd-toggle" data-tip="Shows a second header row under every pane's title with the initial command it was given — a task's prompt, or the first line typed and submitted into a manually-added agent.">
+        <input type="checkbox" id="show-initial-cmd-toggle" data-tip="Shows a second header row under every pane's title with the most recently submitted command — a task's launch prompt until you type a new line, which then takes over.">
       </span>
     </div>
     <div class="kbd-row kbd-opt"><span>Auto-organize agent windows</span>
       <span class="opt-ctl">
         <input type="checkbox" id="auto-organize-toggle" data-tip="On: new agents are laid out automatically. Off: place agents yourself with each pane's → and ↓ buttons.">
+      </span>
+    </div>
+    <div class="kbd-row kbd-opt"><span>Space between agent panes</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="agent-padding-toggle" data-tip="On: panes have a small gap and draggable divider between them, with room around the edges. Off: panes sit flush against each other and the window edges with no gap.">
       </span>
     </div>
     <div class="kbd-row kbd-opt"><span>Default agent permissions</span>
@@ -400,7 +423,9 @@
     <div class="kbd-row"><span>Next agent in workspace</span><kbd>Tab</kbd></div>
     <div class="kbd-row"><span>Next / previous workspace</span><kbd data-keep-ctrl>Ctrl+Tab · Ctrl+Shift+Tab</kbd></div>
     <div class="kbd-row"><span>New agent</span><kbd>Ctrl+N</kbd></div>
+    <div class="kbd-row"><span>Close focused agent (again: confirm kill)</span><kbd>Ctrl+X</kbd></div>
     <div class="kbd-row"><span>New task (dashboard)</span><kbd>Ctrl+T</kbd></div>
+    <div class="kbd-row"><span>Dictate (pane or task-board mic)</span><kbd>Ctrl+R</kbd></div>
     <div class="kbd-row"><span>Focus pane N (again: maximize)</span><kbd>Ctrl+Shift+1…9, 0</kbd></div>
     <div class="kbd-row"><span>Maximize / restore pane</span><kbd>Ctrl+Shift+M</kbd></div>
     <div class="kbd-row"><span>Search in pane</span><kbd>Ctrl+Shift+F</kbd></div>

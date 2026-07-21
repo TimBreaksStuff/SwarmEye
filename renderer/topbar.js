@@ -195,6 +195,32 @@ const Topbar = (() => {
     return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
+  // approve/deny buttons for a 'wait'-kind row — same quick-respond action as
+  // the pane header's ✓/✕, so a permission prompt can be cleared straight
+  // from the bell without switching workspace or opening the pane
+  function notifRespondButtons(n, handlers) {
+    const wrap = document.createElement('span');
+    wrap.className = 'notif-respond';
+    const approve = document.createElement('button');
+    approve.className = 'pane-btn approve';
+    approve.dataset.tip = 'Approve (shift-click: always allow)';
+    approve.textContent = '✓';
+    approve.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handlers.onApprove(n.paneId, e.shiftKey);
+    });
+    const deny = document.createElement('button');
+    deny.className = 'pane-btn deny';
+    deny.dataset.tip = 'Deny';
+    deny.textContent = '✕';
+    deny.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handlers.onDeny(n.paneId);
+    });
+    wrap.append(approve, deny);
+    return wrap;
+  }
+
   function renderNotifications(notifs, unread, handlers) {
     notifBtn.classList.toggle('unread', unread > 0); // amber bell = something new
     notifBadge.hidden = unread === 0;
@@ -273,6 +299,7 @@ const Topbar = (() => {
       time.textContent = fmtClock(n.time);
 
       row.append(dot, body, time);
+      if (n.kind === 'wait') row.append(notifRespondButtons(n, handlers));
       notifPop.appendChild(row);
     }
   }
@@ -356,6 +383,7 @@ const Topbar = (() => {
       body.appendChild(time);
 
       row.append(dot, body);
+      if (n.kind === 'wait') row.append(notifRespondButtons(n, handlers));
       notifPanelList.appendChild(row);
     }
   }
@@ -422,6 +450,40 @@ const Topbar = (() => {
       row.append(info, restore, del);
       archivePop.appendChild(row);
     }
+  }
+
+  /* swarm map: one slot per agent-capacity slot, across all workspaces —
+   * lime = working, amber pulsing = needs attention, gray = idle, dark = free.
+   * Exited panes free their slot (mirrors liveAgentCount() in app.js), and if
+   * live agents ever exceed maxAgents (cap lowered mid-session) every agent
+   * still gets a slot rather than being silently hidden. */
+  const swarmMapGrid = document.getElementById('swarm-map-grid');
+  const swarmMapFooter = document.getElementById('swarm-map-footer');
+
+  function renderSwarmMap(panes, totalSlots, onOpen) {
+    const live = panes.filter((p) => !p.exited);
+    const liveCount = live.filter((p) => p.status === 'working' || p.status === 'attention').length;
+    const waitingCount = live.filter((p) => p.status === 'idle').length;
+    const freeCount = Math.max(totalSlots - live.length, 0);
+    const slotCount = Math.max(totalSlots, live.length);
+
+    swarmMapGrid.innerHTML = '';
+    for (let i = 0; i < slotCount; i++) {
+      const pane = live[i];
+      const cls = !pane ? ''
+        : pane.status === 'working' ? 'busy'
+        : pane.status === 'attention' ? 'attn'
+        : 'idle';
+      const slot = document.createElement('span');
+      slot.className = 'swarm-map-slot' + (cls ? ' ' + cls : '');
+      if (pane) slot.addEventListener('dblclick', () => onOpen(pane.session.id));
+      swarmMapGrid.appendChild(slot);
+    }
+
+    const footerText = waitingCount
+      ? `${liveCount} live · ${waitingCount} waiting · ${freeCount} free`
+      : `${liveCount} live · ${freeCount} free`;
+    swarmMapFooter.textContent = footerText;
   }
 
   function updateSessionCount(visible, total, max, byStatus) {
@@ -508,7 +570,7 @@ const Topbar = (() => {
   // keep "resets in" countdowns fresh between polls
   setInterval(() => renderUsage(null), 30000);
 
-  return { renderWorkspaces, renderArchive, renderNotifications, renderNotifPanel, updateSessionCount, renderUsage };
+  return { renderWorkspaces, renderArchive, renderNotifications, renderNotifPanel, updateSessionCount, renderUsage, renderSwarmMap };
 })();
 
 window.Topbar = Topbar;

@@ -2,7 +2,6 @@
  * drag-to-swap panes (grab a pane header), per-workspace layout memory,
  * and per-pane maximize. Exposes window.GridController. */
 
-const GUTTER = '24px'; // visual gap between glass panes; the whole track doubles as the resize handle
 const MIN_FR = 0.15;
 
 class GridController {
@@ -21,6 +20,14 @@ class GridController {
     this.manualCols = 1;
     this.rowCounts = []; // manual mode only: explicit panes-per-row, so a row that isn't full
     // (e.g. a lone trailing pane) stays put instead of being silently re-packed on the next insert
+    this.gutter = 12; // px gap between panes; the whole track doubles as the resize handle
+  }
+
+  // 0 collapses panes flush together (still resizable via the zero-width track)
+  setGutter(px) {
+    if (px === this.gutter) return;
+    this.gutter = px;
+    if (this.panes.length) this.applyTemplate();
   }
 
   setAutoOrganize(auto) {
@@ -187,8 +194,9 @@ class GridController {
   }
 
   applyTemplate() {
-    this.container.style.gridTemplateColumns = this.colFr.map((f) => f + 'fr').join(` ${GUTTER} `);
-    this.container.style.gridTemplateRows = this.rowFr.map((f) => f + 'fr').join(` ${GUTTER} `);
+    const gutter = `${this.gutter}px`;
+    this.container.style.gridTemplateColumns = this.colFr.map((f) => f + 'fr').join(` ${gutter} `);
+    this.container.style.gridTemplateRows = this.rowFr.map((f) => f + 'fr').join(` ${gutter} `);
   }
 
   relayout() {
