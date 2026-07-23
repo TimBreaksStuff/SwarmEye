@@ -29,19 +29,7 @@ const Skills = (() => {
    * render() so the click is a single class flip, not a rebuild */
   const collapsedRepos = new Set();
 
-  /* same click-twice-to-confirm pattern as the task board's delete buttons —
-   * one arming timer shared across every remove button on this screen */
-  let armed = { key: null, until: 0 };
-  function armOrFire(btn, key, fire) {
-    if (armed.key === key && Date.now() < armed.until) {
-      armed = { key: null, until: 0 };
-      fire();
-      return;
-    }
-    armed = { key, until: Date.now() + 3000 };
-    btn.classList.add('armed');
-    setTimeout(() => btn.classList.remove('armed'), 3000);
-  }
+  const { armOrFire } = Confirm; // click-twice-to-confirm remove buttons
 
   function makeRow(skill) {
     const row = document.createElement('div');

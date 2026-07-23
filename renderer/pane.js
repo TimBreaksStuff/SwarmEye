@@ -1,6 +1,30 @@
 /* Pane: one terminal card (DOM + xterm + addons). Exposes window.Pane. */
 
-/* terminal palettes matching the app themes in tokens.css */
+/* terminal palettes matching the app themes in tokens.css.
+ *
+ * The five SwarmEye-native dark themes (dark/orange/crimson/ocean/mono) are
+ * one house ANSI ramp re-tinted: each spreads ANSI_RAMP and then overrides
+ * only the hues that carry its identity — ocean pulls blue/cyan toward its
+ * accent, crimson does the same for magenta, and so on. Every field below a
+ * `...ANSI_RAMP` is therefore a deliberate difference from the house ramp,
+ * not an incidental copy. The ported third-party themes (tokyonight, nord,
+ * gruvbox, …) and the light ones each ship a complete ramp of their own and
+ * stay spelled out in full. */
+const ANSI_RAMP = {
+  red: '#ff5a5a',
+  green: '#a3e635',
+  yellow: '#f5b544',
+  blue: '#58a6ff',
+  magenta: '#a78bfa',
+  cyan: '#6cd9d0',
+  brightRed: '#ff7a7a',
+  brightGreen: '#d6ff4b',
+  brightYellow: '#ffd27d',
+  brightBlue: '#83bcff',
+  brightMagenta: '#c4b0ff',
+  brightCyan: '#93ece4',
+};
+
 const XTERM_THEMES = {
   dark: {
     background: '#0c0e11',
@@ -9,21 +33,10 @@ const XTERM_THEMES = {
     cursorAccent: '#0a0b0d',
     selectionBackground: 'rgba(214, 255, 75, 0.25)',
     black: '#0a0b0d',
-    red: '#ff5a5a',
-    green: '#a3e635',
-    yellow: '#f5b544',
-    blue: '#58a6ff',
-    magenta: '#a78bfa',
-    cyan: '#6cd9d0',
     white: '#e8eaed',
     brightBlack: '#5b616b',
-    brightRed: '#ff7a7a',
-    brightGreen: '#d6ff4b',
-    brightYellow: '#ffd27d',
-    brightBlue: '#83bcff',
-    brightMagenta: '#c4b0ff',
-    brightCyan: '#93ece4',
     brightWhite: '#ffffff',
+    ...ANSI_RAMP,
   },
   light: {
     background: '#ffffff',
@@ -55,21 +68,13 @@ const XTERM_THEMES = {
     cursorAccent: '#0d0b08',
     selectionBackground: 'rgba(255, 157, 46, 0.25)',
     black: '#0d0b08',
-    red: '#ff5a5a',
-    green: '#a3e635',
-    yellow: '#ffb04d',
-    blue: '#58a6ff',
-    magenta: '#a78bfa',
-    cyan: '#6cd9d0',
     white: '#ede9e3',
     brightBlack: '#6a6157',
-    brightRed: '#ff7a7a',
+    brightWhite: '#ffffff',
+    ...ANSI_RAMP,
+    yellow: '#ffb04d',
     brightGreen: '#c8f55e',
     brightYellow: '#ffc879',
-    brightBlue: '#83bcff',
-    brightMagenta: '#c4b0ff',
-    brightCyan: '#93ece4',
-    brightWhite: '#ffffff',
   },
   neo: {
     background: '#0a0814',
@@ -124,21 +129,12 @@ const XTERM_THEMES = {
     cursorAccent: '#0f0708',
     selectionBackground: 'rgba(255, 59, 92, 0.25)',
     black: '#0f0708',
-    red: '#ff5a5a',
-    green: '#a3e635',
-    yellow: '#f5b544',
-    blue: '#58a6ff',
-    magenta: '#ff6b8a',
-    cyan: '#6cd9d0',
     white: '#f2e6e7',
     brightBlack: '#785a5c',
-    brightRed: '#ff7a7a',
-    brightGreen: '#d6ff4b',
-    brightYellow: '#ffd27d',
-    brightBlue: '#83bcff',
-    brightMagenta: '#ff8fa3',
-    brightCyan: '#93ece4',
     brightWhite: '#ffffff',
+    ...ANSI_RAMP,
+    magenta: '#ff6b8a',
+    brightMagenta: '#ff8fa3',
   },
   ocean: {
     background: '#070b10',
@@ -147,21 +143,14 @@ const XTERM_THEMES = {
     cursorAccent: '#06090d',
     selectionBackground: 'rgba(34, 195, 238, 0.25)',
     black: '#06090d',
-    red: '#ff5a5a',
-    green: '#a3e635',
-    yellow: '#f5b544',
-    blue: '#38bdf8',
-    magenta: '#a78bfa',
-    cyan: '#22c3ee',
     white: '#e3edf2',
     brightBlack: '#566d78',
-    brightRed: '#ff7a7a',
-    brightGreen: '#d6ff4b',
-    brightYellow: '#ffd27d',
-    brightBlue: '#7dd3fc',
-    brightMagenta: '#c4b0ff',
-    brightCyan: '#4fd4f5',
     brightWhite: '#ffffff',
+    ...ANSI_RAMP,
+    blue: '#38bdf8',
+    cyan: '#22c3ee',
+    brightBlue: '#7dd3fc',
+    brightCyan: '#4fd4f5',
   },
   mono: {
     background: '#0b0b0b',
@@ -170,21 +159,11 @@ const XTERM_THEMES = {
     cursorAccent: '#0a0a0a',
     selectionBackground: 'rgba(255, 255, 255, 0.2)',
     black: '#0a0a0a',
-    red: '#ff5a5a',
-    green: '#a3e635',
-    yellow: '#f5b544',
-    blue: '#58a6ff',
-    magenta: '#a78bfa',
-    cyan: '#6cd9d0',
     white: '#eaeaea',
     brightBlack: '#656565',
-    brightRed: '#ff7a7a',
-    brightGreen: '#c8f55e',
-    brightYellow: '#ffd27d',
-    brightBlue: '#83bcff',
-    brightMagenta: '#c4b0ff',
-    brightCyan: '#93ece4',
     brightWhite: '#ffffff',
+    ...ANSI_RAMP,
+    brightGreen: '#c8f55e',
   },
   sepia: {
     background: '#fbf6ea',
@@ -199,7 +178,7 @@ const XTERM_THEMES = {
     blue: '#2f5f8f',
     magenta: '#6f4a8c',
     cyan: '#3d8a86',
-    white: '#e8dcc4',
+    white: '#2b2015',
     brightBlack: '#7d6c50',
     brightRed: '#c34d40',
     brightGreen: '#7a9c3f',
@@ -207,31 +186,11 @@ const XTERM_THEMES = {
     brightBlue: '#4d7dad',
     brightMagenta: '#8d68aa',
     brightCyan: '#57a8a3',
-    brightWhite: '#fbf6ea',
+    brightWhite: '#1a1208',
   },
-  system: {
-    background: '#0c0e11',
-    foreground: '#e8eaed',
-    cursor: '#d6ff4b',
-    cursorAccent: '#0a0b0d',
-    selectionBackground: 'rgba(214, 255, 75, 0.25)',
-    black: '#0a0b0d',
-    red: '#ff5a5a',
-    green: '#a3e635',
-    yellow: '#f5b544',
-    blue: '#58a6ff',
-    magenta: '#a78bfa',
-    cyan: '#6cd9d0',
-    white: '#e8eaed',
-    brightBlack: '#5b616b',
-    brightRed: '#ff7a7a',
-    brightGreen: '#d6ff4b',
-    brightYellow: '#ffd27d',
-    brightBlue: '#83bcff',
-    brightMagenta: '#c4b0ff',
-    brightCyan: '#93ece4',
-    brightWhite: '#ffffff',
-  },
+  // 'system' deliberately has no entry: its palette was a byte-for-byte copy
+  // of dark, and setXtermTheme's `XTERM_THEMES[name] || XTERM_THEMES.dark`
+  // fallback already resolves it to exactly that.
   tokyonight: {
     background: '#13141c',
     foreground: '#c0caf5',
@@ -482,6 +441,22 @@ const MODE_MARKERS = [
   ['plan', /plan mode on/i],
   ['acceptEdits', /accept edits on/i],
 ];
+
+/* Dialogs that stall a session waiting for a human even with auto mode on, as
+ * [one-shot pane flag, buffer marker] — see Pane.autoAcceptDialogs.
+ *
+ * trust: the first-run "Do you trust the files in this folder?" boundary,
+ *   which --dangerously-skip-permissions does NOT suppress; claude
+ *   pre-highlights "1. Yes, proceed".
+ * bypass: the machine-local, one-time-ever "WARNING: Claude Code running in
+ *   Bypass Permissions mode" notice, shown the first time a user ever enters
+ *   bypass mode on this machine and remembered afterwards; "Yes, I accept" is
+ *   pre-highlighted. Without this, opting into auto mode stalls the agent on
+ *   exactly the human approval the user asked to skip. */
+const AUTO_ACCEPT_DIALOGS = [
+  ['trustDialogHandled', /do you trust the files in this folder/i],
+  ['bypassDialogHandled', /running in Bypass Permissions mode/i],
+];
 /* Claude models selectable for a task — sent as a `/model <value>` command
  * once the agent starts, same mechanism a user typing it themselves uses. */
 const MODELS = [
@@ -612,6 +587,15 @@ class Pane {
     }
     this.modeSel.addEventListener('keydown', (e) => e.stopPropagation());
     this.modeSel.addEventListener('change', () => this.setMode(this.modeSel.value));
+
+    // pi panes: a static agent chip in the model slot (no hook events ever
+    // fill it) and no mode selector — Shift+Tab mode cycling is Claude-only
+    if (session.kind === 'pi') {
+      this.llmEl.textContent = 'pi';
+      this.llmEl.style.display = '';
+      this.llmEl.dataset.tip = 'Pi coding agent';
+      this.modeSel.style.display = 'none';
+    }
     this.modeBusy = false;
     this.modeTimer = null;
 
@@ -679,32 +663,12 @@ class Pane {
     btnMic.className = 'pane-btn mic';
     btnMic.dataset.tip = 'Dictate (click to start/stop, Ctrl+R)';
     btnMic.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>';
-    if (!window.Speech || !window.Speech.supported) {
-      btnMic.style.display = 'none';
-      this.toggleDictation = () => {};
-    } else {
-      let dictating = false;
-      // closing the pane mid-dictation must release the mic (see dispose)
-      this.stopDictation = () => { if (dictating) window.Speech.stop(); };
-      const toggleMic = () => {
-        if (dictating) { window.Speech.stop(); return; }
-        dictating = true;
-        btnMic.classList.add('listening');
-        window.Speech.start({
-          interim: false,
-          onResult: (text) => { if (text) this.term.paste(text + ' '); },
-          onEnd: () => { dictating = false; btnMic.classList.remove('listening'); },
-          onError: (err) => {
-            dictating = false;
-            btnMic.classList.remove('listening');
-            if (err === 'not-allowed' || err === 'service-not-allowed') toast('microphone permission denied');
-            else if (err === 'not-installed') toast('dictation engine not installed — install it in ⌨ Options');
-          },
-        });
-      };
-      btnMic.addEventListener('click', toggleMic);
-      this.toggleDictation = toggleMic;
-    }
+    // closing the pane mid-dictation must release the mic (see dispose)
+    const mic = window.Speech.wire(btnMic, {
+      onResult: (text) => { if (text) this.term.paste(text + ' '); },
+    });
+    this.toggleDictation = mic.toggle;
+    this.stopDictation = mic.stop;
 
     const btnFontDown = document.createElement('button');
     btnFontDown.className = 'pane-btn font-down';
@@ -810,6 +774,14 @@ class Pane {
       // start of a long session before it ever gets captured
       scrollback: 20000,
       allowProposedApi: true,
+      // native OSC 8 hyperlinks (pi re-opens a full link span on every row a
+      // long URL wraps across, e.g. its login link) — without this, xterm's
+      // built-in fallback is a confirm() dialog plus window.open, which does
+      // nothing useful in Electron. WebLinksAddon below covers plain-text
+      // URLs; this covers OSC 8 ones the same way.
+      linkHandler: {
+        activate: (_event, uri) => window.swarm.openExternal(uri),
+      },
     });
     this.fit = new FitAddon.FitAddon();
     this.term.loadAddon(this.fit);
@@ -836,6 +808,18 @@ class Pane {
       },
     });
 
+    // pi's TUI switches on terminal mouse reporting (DECSET 1000/1002/1006…),
+    // which would make xterm hand every click to the app — breaking text
+    // selection, copy, and both link providers above. No pane has a consumer
+    // for raw mouse (same reasoning as `mouse off` in the tmux conf: wheel
+    // scrolling and clicks are all handled client-side), so swallow the
+    // requests and keep the mouse local.
+    const MOUSE_DECSET = new Set([9, 1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016]);
+    for (const final of ['h', 'l']) {
+      this.term.parser.registerCsiHandler({ prefix: '?', final }, (params) =>
+        params.every((p) => MOUSE_DECSET.has(p)));
+    }
+
     this.term.open(this.termEl);
 
     // GPU renderer; falls back to the DOM renderer on failure/context loss
@@ -857,7 +841,20 @@ class Pane {
 
     // shortcuts are executed by the document-level handler; returning false
     // here just keeps xterm from also acting on the keystroke
-    this.term.attachCustomKeyEventHandler((e) => !handlers.onShortcut(e));
+    this.term.attachCustomKeyEventHandler((e) => {
+      // Ctrl+C with an active selection copies it (Windows Terminal
+      // convention) instead of interrupting the agent — xterm itself has no
+      // copy path for Ctrl+C: it would send ^C to the pty and clear the
+      // selection, making copying from a pane impossible. Interrupt still
+      // works with nothing selected (or after a click to deselect).
+      if (e.type === 'keydown' && e.code === 'KeyC' && e.ctrlKey
+          && !e.shiftKey && !e.altKey && !e.metaKey && this.term.hasSelection()) {
+        window.swarm.copyText(this.term.getSelection());
+        this.term.clearSelection();
+        return false;
+      }
+      return !handlers.onShortcut(e);
+    });
 
     this.term.onData((data) => {
       if (this.exited) return;
@@ -1117,35 +1114,19 @@ class Pane {
     }
   }
 
-  /* First-run "Do you trust the files in this folder?" dialog is a separate
-   * trust boundary that --dangerously-skip-permissions does NOT suppress, so
-   * with auto mode on it still stalls the session waiting for a human. Claude
-   * pre-highlights "1. Yes, proceed", so accepting it is just pressing Enter —
-   * same mechanism tryInjectPrompt (app.js) uses to submit the initial task. */
-  async checkAutoTrust(lines = this.tailLines(30)) {
-    return this._autoAccept(lines, /do you trust the files in this folder/i, 'trustDialogHandled');
-  }
-
-  /* Both dialogs pre-highlight the accepting option, so accepting is just
-   * pressing Enter — the same mechanism tryInjectPrompt (app.js) uses to
-   * submit an initial task. Each fires at most once per pane. */
-  async _autoAccept(lines, re, flag) {
-    if (this.exited || this[flag]) return;
-    if (!re.test(lines.join('\n'))) return;
-    this[flag] = true;
-    const cfg = await window.swarm.getConfig();
-    if (cfg.skipPermissions) window.swarm.writeSession(this.session.id, '\r');
-  }
-
-  /* Machine-local, one-time-ever "WARNING: Claude Code running in Bypass
-   * Permissions mode" dialog (separate from the per-folder trust dialog
-   * above) — claude shows this the first time a user ever enters bypass
-   * mode on this machine, and remembers acceptance after that. Auto-accept
-   * it ("Yes, I accept" is pre-highlighted, so Enter submits) the same way
-   * checkAutoTrust does, so opting into auto mode never stalls an agent
-   * waiting on a human the user explicitly asked to skip. */
-  async checkBypassWarning(lines = this.tailLines(30)) {
-    return this._autoAccept(lines, /running in Bypass Permissions mode/i, 'bypassDialogHandled');
+  /* Accept the blocking dialogs auto mode can't get past on its own (see
+   * AUTO_ACCEPT_DIALOGS): each pre-highlights its accepting option, so
+   * accepting is just pressing Enter — the same mechanism tryInjectPrompt
+   * (app.js) uses to submit an initial task. Each fires at most once per
+   * pane, and only when the user actually opted into auto mode. */
+  async autoAcceptDialogs(lines = this.tailLines(30)) {
+    const text = lines.join('\n');
+    for (const [flag, re] of AUTO_ACCEPT_DIALOGS) {
+      if (this.exited || this[flag] || !re.test(text)) continue;
+      this[flag] = true;
+      const cfg = await window.swarm.getConfig();
+      if (cfg.skipPermissions) window.swarm.writeSession(this.session.id, '\r');
+    }
   }
 
   /* ---- git context chip ---- */
@@ -1479,8 +1460,7 @@ class Pane {
       const lines = this.tailLines(30);
       this.syncMode(lines);
       this.syncModelFromBuffer(lines);
-      this.checkAutoTrust(lines);
-      this.checkBypassWarning(lines);
+      this.autoAcceptDialogs(lines);
     }, 500);
   }
 

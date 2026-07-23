@@ -25,8 +25,8 @@ contextBridge.exposeInMainWorld('swarm', {
   purgeAllTasks: () => ipcRenderer.invoke('task:purge-all'),
 
   listSessions: () => ipcRenderer.invoke('session:list'),
-  createSession: (workspaceId, cols, rows, model) =>
-    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model }),
+  createSession: (workspaceId, cols, rows, model, kind) =>
+    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, kind }),
   restartSession: (payload) => ipcRenderer.invoke('session:restart', payload),
   reattachSession: (id, cols, rows) => ipcRenderer.invoke('session:reattach', { id, cols, rows }),
   renameSession: (id, name) => ipcRenderer.invoke('session:rename', { id, name }),
@@ -42,6 +42,9 @@ contextBridge.exposeInMainWorld('swarm', {
   pathForFile: (file) => webUtils.getPathForFile(file),
 
   refreshUsage: () => ipcRenderer.invoke('usage:refresh'),
+
+  piStatus: () => ipcRenderer.invoke('pi:status'),
+  ensurePi: () => ipcRenderer.invoke('pi:ensure'),
 
   listBranches: (workspaceId) => ipcRenderer.invoke('git:branches', workspaceId),
   checkoutBranch: (workspaceId, branch, create) => ipcRenderer.invoke('git:checkout', { workspaceId, branch, create }),

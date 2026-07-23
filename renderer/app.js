@@ -602,6 +602,53 @@ skipPermissionsToggle.addEventListener('change', () => {
   window.swarm.setSkipPermissions(skipPermissionsToggle.checked);
 });
 
+/* "Enable Pi coding agent" — off by default; on, the + Coding Agent button
+ * offers a Claude/Pi picker instead of always spawning claude. Enabling also
+ * installs (or updates to) the latest Pi release from GitHub via main/pi.js,
+ * so picking Pi never lands in an instant command-not-found exit; a failed
+ * install flips the toggle back off. */
+const enablePiToggle = document.getElementById('enable-pi-toggle');
+const piStatusEl = document.getElementById('pi-status');
+function applyEnablePi(on) {
+  enablePiToggle.checked = on;
+  localStorage.setItem('swarmeye.enablePi', on ? '1' : '');
+  if (!on) piStatusEl.textContent = '';
+  document.getElementById('add-agent').dataset.tip = on
+    ? 'Start a Claude or Pi session in the selected workspace'
+    : 'Start a Claude session in the selected workspace';
+}
+async function installPi() {
+  piStatusEl.textContent = 'installing latest…';
+  enablePiToggle.disabled = true;
+  const res = await window.swarm.ensurePi();
+  enablePiToggle.disabled = false;
+  if (!res.ok) {
+    applyEnablePi(false);
+    piStatusEl.textContent = 'install failed';
+    toast('could not install Pi: ' + res.error);
+    return;
+  }
+  piStatusEl.textContent = 'ready' + (res.version ? ' · ' + res.version : '');
+  const where = window.swarm.isMac ? '' : ' into WSL';
+  toast(res.external
+    ? 'using your own Pi install' + (res.version ? ' (' + res.version + ')' : '')
+    : 'Pi ' + (res.updated ? 'updated' : 'installed') + where
+      + (res.version ? ' — ' + res.version : '') + ' · + Coding Agent now offers Claude or Pi');
+}
+enablePiToggle.addEventListener('change', () => {
+  applyEnablePi(enablePiToggle.checked);
+  if (enablePiToggle.checked) installPi();
+});
+applyEnablePi(!!localStorage.getItem('swarmeye.enablePi'));
+// enabled in an earlier run: make sure pi is still there (a reset WSL distro
+// or deleted ~/.swarmeye would otherwise bring the instant-exit back)
+if (enablePiToggle.checked) {
+  window.swarm.piStatus().then((s) => {
+    if (s.installed) piStatusEl.textContent = 'ready' + (s.version ? ' · ' + s.version : '');
+    else installPi();
+  });
+}
+
 /* "Show last command in pane header" — off by default; persisted locally
  * and pushed to every already-open pane so it reads as a single live setting */
 const showInitialCmdToggle = document.getElementById('show-initial-cmd-toggle');
@@ -792,6 +839,7 @@ document.getElementById('options-reset-btn').addEventListener('click', async () 
   await applyAutoUsageLimit(85);
   skipPermissionsToggle.checked = false;
   window.swarm.setSkipPermissions(false);
+  applyEnablePi(false);
   applyShowInitialCommand(false);
   applyAutoOrganize(true);
   applyAgentPadding(true);
@@ -911,7 +959,11 @@ async function runScheduler() {
           }
           continue;
         }
-        if (Date.now() < task.targetResetsAt) continue;
+        // targetResetsAt is normally epoch ms, but tasks created before the
+        // resets_at normalization fix may have an ISO string persisted —
+        // route through Date() so a stale string doesn't silently compare
+        // as NaN (always false) and skip the wait entirely
+        if (Date.now() < new Date(task.targetResetsAt).getTime()) continue;
       }
       await startTask(task); // sequential: liveAgentCount() must be current for the next check
     }
@@ -1217,7 +1269,8 @@ const paneHandlers = {
   },
   onShortcut: isShortcut,
   onSplit(pane, direction) {
-    addAgent({ refPane: pane, direction });
+    // splitting a pi pane spawns another pi agent next to it
+    addAgent({ refPane: pane, direction, kind: pane.session.kind });
   },
   onStatusChange(pane, status) {
     if (status === 'done') {
@@ -1226,7 +1279,7 @@ const paneHandlers = {
       // user is looking at the pane (and skips when attention is already set)
       const watching = pane.el.isConnected && pane.el.classList.contains('focused') && document.hasFocus();
       if (!watching) {
-        window.swarm.notify(pane.session.agentName + ' needs attention', pane.session.workspaceName);
+        window.swarm.notify(); // flashes the taskbar/dock; the bell below carries the detail
         pushNotif(pane, 'done', 'finished its turn');
         Sounds.play(notifSound);
       }
@@ -1242,7 +1295,7 @@ const paneHandlers = {
         if (task.closeOnComplete !== false) paneHandlers.onClose(pane);
       }
     } else if (status === 'attention') {
-      window.swarm.notify(pane.session.agentName + ' needs attention', pane.session.workspaceName);
+      window.swarm.notify(); // flashes the taskbar/dock; the bell below carries the detail
       // the pane's status text says why (hook-driven): 'done' = turn finished
       // (already handled by the dedicated 'done' status above — a later bell
       // must not repeat it), anything else = blocked on the user; empty =
@@ -1278,6 +1331,7 @@ const paneHandlers = {
       cols: pane.term.cols,
       rows: pane.term.rows,
       resume,
+      kind: s.kind,
     });
     if (!res.ok) {
       toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not restart: ' + res.reason);
@@ -1335,7 +1389,7 @@ function mountPane(session, { managed = false, refPane, direction } = {}) {
 
 // refPane/direction (from a pane's → / ↓ button) position the new agent
 // relative to an existing one — see GridController.insertSplit.
-async function addAgent({ refPane, direction } = {}) {
+async function addAgent({ refPane, direction, kind } = {}) {
   if (!state.selectedWorkspaceId) {
     toast('add and select a workspace first');
     return;
@@ -1344,19 +1398,24 @@ async function addAgent({ refPane, direction } = {}) {
     toast(`limit of ${maxAgents} sessions reached`);
     return;
   }
+  const pi = kind === 'pi';
   // same Options default the Task Board pre-fills, applied as a --model launch
   // flag so it can't bleed into Claude's own saved default (see startTask)
   const defaultModel = localStorage.getItem('swarmeye.defaultModel');
-  const modelArg = defaultModel && defaultModel !== 'default' ? defaultModel : undefined;
-  const res = await window.swarm.createSession(state.selectedWorkspaceId, 100, 30, modelArg);
+  const modelArg = !pi && defaultModel && defaultModel !== 'default' ? defaultModel : undefined;
+  const res = await window.swarm.createSession(state.selectedWorkspaceId, 100, 30, modelArg, pi ? 'pi' : undefined);
   if (!res.ok) {
     toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not start session: ' + res.reason);
     return;
   }
   toggleBoard(false);
   mountPane(res.session, { refPane, direction }).focus();
-  setTimeout(() => tryInjectSkills(res.session.id), TASK_INJECT_FALLBACK_MS);
-  setTimeout(() => tryApplyDefaultMode(res.session.id), TASK_INJECT_FALLBACK_MS);
+  // skills and the default permission mode are typed Claude commands — never
+  // inject them into a pi pane
+  if (!pi) {
+    setTimeout(() => tryInjectSkills(res.session.id), TASK_INJECT_FALLBACK_MS);
+    setTimeout(() => tryApplyDefaultMode(res.session.id), TASK_INJECT_FALLBACK_MS);
+  }
 }
 
 window.swarm.onSessionData(({ id, data }) => {
@@ -1629,7 +1688,42 @@ gsearchBtnEl.addEventListener('click', (e) => {
 });
 
 document.getElementById('add-workspace').addEventListener('click', addWorkspace);
-document.getElementById('add-agent').addEventListener('click', addAgent);
+/* + Coding Agent spawns claude directly — unless Pi is enabled in ⌨ Options,
+ * then a small popover under the button picks which agent the new pane runs.
+ * (Ctrl/Cmd+N always spawns Claude; a pane's → / ↓ splits inherit its kind.) */
+const addAgentBtn = document.getElementById('add-agent');
+let agentKindMenuEl = null;
+function closeAgentKindMenu() {
+  if (!agentKindMenuEl) return;
+  agentKindMenuEl.remove();
+  agentKindMenuEl = null;
+  document.removeEventListener('mousedown', onAgentKindDismiss, true);
+}
+function onAgentKindDismiss(e) {
+  if (!agentKindMenuEl.contains(e.target) && e.target !== addAgentBtn) closeAgentKindMenu();
+}
+addAgentBtn.addEventListener('click', () => {
+  if (!localStorage.getItem('swarmeye.enablePi')) { addAgent(); return; }
+  if (agentKindMenuEl) { closeAgentKindMenu(); return; }
+  const menu = document.createElement('div');
+  menu.className = 'branch-menu';
+  for (const [kind, label] of [[undefined, 'Claude'], ['pi', 'Pi']]) {
+    const row = document.createElement('button');
+    row.className = 'branch-item';
+    row.textContent = label;
+    row.addEventListener('click', () => {
+      closeAgentKindMenu();
+      addAgent({ kind });
+    });
+    menu.appendChild(row);
+  }
+  const r = addAgentBtn.getBoundingClientRect();
+  menu.style.left = `${Math.round(r.left)}px`;
+  menu.style.top = `${Math.round(r.bottom + 6)}px`;
+  document.body.appendChild(menu);
+  agentKindMenuEl = menu;
+  document.addEventListener('mousedown', onAgentKindDismiss, true);
+});
 // the number and the gauges are two elements showing one thing — clicking
 // either refreshes it
 async function refreshUsageNow() {

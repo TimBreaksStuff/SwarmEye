@@ -75,9 +75,20 @@ function pct(utilization) {
   return Math.round(utilization);
 }
 
+// the API reports resets_at as an ISO-8601 string; normalize to epoch ms
+// here so every downstream comparison (the "next session" scheduler gate,
+// task creation's Number.isFinite check) can compare it against Date.now()
+// directly instead of re-parsing a string that a bare `<` would silently
+// treat as NaN (always false, so a task would never wait for the reset)
+function resetsAtMs(v) {
+  if (v == null) return null;
+  const ms = new Date(v).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
 function window(w) {
   if (!w) return null;
-  return { usedPct: pct(w.utilization), resetsAt: w.resets_at || null };
+  return { usedPct: pct(w.utilization), resetsAt: resetsAtMs(w.resets_at) };
 }
 
 class UsageMonitor {

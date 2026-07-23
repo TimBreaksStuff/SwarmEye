@@ -20,23 +20,32 @@ const SHELL = process.env.SHELL || '/bin/zsh';
 
 /* argv that runs `cmd` in a POSIX shell. Windows goes through WSL's bash;
  * macOS uses a login shell so the user's PATH (homebrew, nvm, pyenv) is the
- * same one their terminal has — agents are launched the same way. */
-function shellArgv(cmd) {
+ * same one their terminal has — agents are launched the same way.
+ *
+ * `login` only means anything on Windows, where the plain shell is non-login
+ * (so ~/.local/bin isn't on its PATH); the macOS branch is a login shell
+ * either way. */
+function shellArgv(cmd, { login = false } = {}) {
   return IS_WIN
-    ? ['wsl.exe', ['-e', 'bash', '-c', cmd]]
+    ? ['wsl.exe', ['-e', 'bash', login ? '-lc' : '-c', cmd]]
     : [SHELL, ['-lc', cmd]];
 }
 
 /* Run a shell command, resolve its stdout, resolve null on any failure.
  * Never rejects — every caller treats "couldn't tell" the same as "no". */
-function exec(cmd, timeout = 20000) {
-  const [file, args] = shellArgv(cmd);
+function exec(cmd, timeout = 20000, opts) {
+  const [file, args] = shellArgv(cmd, opts);
   return new Promise((resolve) => {
     execFile(file, args, { timeout }, (err, stdout) => {
       resolve(err ? null : String(stdout));
     });
   });
 }
+
+/* exec(), but in a *login* shell — the same PATH agents are spawned with
+ * (sessions.js launches them via `bash -lc` / `$SHELL -lc`). Use this for
+ * anything that must agree with what a spawned agent can or cannot run. */
+const execLogin = (cmd, timeout = 20000) => exec(cmd, timeout, { login: true });
 
 /* Spawn a shell command as a long-lived process (dictation, setup script) —
  * exec() buffers, this streams. */
@@ -131,10 +140,10 @@ module.exports = {
   IS_WIN,
   SHELL,
   exec,
+  execLogin,
   spawnShell,
   spawnScript,
   shQuote,
   toShellPath,
-  shellArgv,
   installUpdate,
 };

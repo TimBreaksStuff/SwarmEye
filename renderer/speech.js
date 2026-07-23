@@ -109,6 +109,45 @@ const Speech = (() => {
     return session;
   }
 
-  return { supported, start, stop };
+  /* Wire a mic button to a dictation session. Every call site had written out
+   * the same bookkeeping by hand: hide the button when dictation isn't
+   * available, track whether *this* button is the one recording, toggle the
+   * .listening class, and turn the two user-facing failures into the same two
+   * toasts. Only the interim flag and what to do with the text ever differed.
+   *
+   * opts: { interim, onStart, onResult }  — onStart runs just before the mic
+   * opens, for a caller that needs to snapshot state first (the task form
+   * remembers what was already typed).
+   *
+   * Returns { toggle, stop }; both are safe no-ops when dictation isn't
+   * supported, and stop() only stops a session this button actually started. */
+  function wire(btn, opts) {
+    if (!supported) {
+      btn.style.display = 'none';
+      return { toggle: () => {}, stop: () => {} };
+    }
+    let dictating = false;
+    const finish = () => { dictating = false; btn.classList.remove('listening'); };
+    const toggle = () => {
+      if (dictating) { stop(); return; }
+      if (opts.onStart) opts.onStart();
+      dictating = true;
+      btn.classList.add('listening');
+      start({
+        interim: !!opts.interim,
+        onResult: opts.onResult,
+        onEnd: finish,
+        onError: (err) => {
+          finish();
+          if (err === 'not-allowed' || err === 'service-not-allowed') toast('microphone permission denied');
+          else if (err === 'not-installed') toast('dictation engine not installed — install it in ⌨ Options');
+        },
+      });
+    };
+    btn.addEventListener('click', toggle);
+    return { toggle, stop: () => { if (dictating) stop(); } };
+  }
+
+  return { supported, start, stop, wire };
 })();
 window.Speech = Speech;

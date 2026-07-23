@@ -240,11 +240,7 @@ body::before {
   text-transform: uppercase;
 }
 #leftbar.expanded .rail-tile .ws-attn,
-#leftbar.hover-expanded .rail-tile .ws-attn {
-  position: static;
-  flex: none;
-  margin-left: auto;
-}
+#leftbar.hover-expanded .rail-tile .ws-attn,
 #leftbar.expanded .rail-tile .rail-n,
 #leftbar.hover-expanded .rail-tile .rail-n {
   position: static;
@@ -489,25 +485,20 @@ body::before {
   color: var(--text2);
 }
 #kbd-pop .kbd-opt { padding: 6px 0; }
-/* dictation installer row: the Install button carries a word, so it has to
- * escape .opt-ctl button's 24x24 stepper box */
-#stt-install-btn {
-  width: auto;
-  height: auto;
-  padding: 5px 10px;
-  font-size: 11px;
-}
-#stt-install-btn:disabled { opacity: 0.5; cursor: default; }
-#stt-install-btn:disabled:hover { color: var(--text2); border-color: var(--border3); }
-.stt-status.ok { color: var(--accent-text); }
+/* the two Options rows whose button carries a word (dictation Install, update
+ * Download/Restart) — both have to escape .opt-ctl button's 24x24 stepper box */
+#stt-install-btn,
 #update-action-btn {
   width: auto;
   height: auto;
   padding: 5px 10px;
   font-size: 11px;
 }
+#stt-install-btn:disabled,
 #update-action-btn:disabled { opacity: 0.5; cursor: default; }
+#stt-install-btn:disabled:hover,
 #update-action-btn:disabled:hover { color: var(--text2); border-color: var(--border3); }
+.stt-status.ok { color: var(--accent-text); }
 /* setup-stt.sh's output while it runs — pip and the model download can take
  * minutes, and silence reads as a hang */
 #stt-log {
@@ -1863,7 +1854,7 @@ body::before {
   align-items: center;
   gap: 8px;
 }
-#board-archive-btn.active { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+#board-archive-btn.active,
 #board-new-btn {
   color: var(--on-accent);
   background: var(--accent);
@@ -1871,7 +1862,9 @@ body::before {
 }
 #board-new-btn:hover { box-shadow: 0 0 14px -4px var(--accent-glow); background: var(--accent); color: var(--on-accent); }
 
-#board-main {
+/* the board's two swap-in panels — the columns view and the archive view */
+#board-main,
+#board-archive {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1963,10 +1956,22 @@ body::before {
   scrollbar-color: var(--border3) transparent;
 }
 #board-form-text:focus { border-color: var(--border-hover); }
-#board-form-text::-webkit-scrollbar { width: 8px; }
-#board-form-text::-webkit-scrollbar-track { background: transparent; }
-#board-form-text::-webkit-scrollbar-thumb { background: var(--border3); border-radius: 4px; }
-#board-form-text::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+/* one scrollbar treatment for every scrollable surface on the board (the task
+ * text box, the four columns, the archive list) — Chromium only, matching the
+ * scrollbar-width/color each of them also declares for the standard property */
+#board-form-text::-webkit-scrollbar,
+.board-col-list::-webkit-scrollbar,
+.board-archive-list::-webkit-scrollbar { width: 8px; }
+#board-form-text::-webkit-scrollbar-track,
+.board-col-list::-webkit-scrollbar-track,
+.board-archive-list::-webkit-scrollbar-track { background: transparent; }
+#board-form-text::-webkit-scrollbar-thumb,
+.board-col-list::-webkit-scrollbar-thumb,
+.board-archive-list::-webkit-scrollbar-thumb { background: var(--border3); border-radius: 4px; }
+#board-form-text::-webkit-scrollbar-thumb:hover,
+.board-col-list::-webkit-scrollbar-thumb:hover,
+.board-archive-list::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
 .board-form-row {
   display: flex;
   align-items: center;
@@ -2050,13 +2055,16 @@ body::before {
   box-shadow: 0 0 14px -4px var(--accent-glow);
 }
 
-.board-filters {
+/* the board's filter bar and the archive view's copy of it */
+.board-filters,
+.board-archive-filters {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
 }
-.board-filters select {
+.board-filters select,
+.board-archive-filters select {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text);
@@ -2123,10 +2131,6 @@ body::before {
   scrollbar-width: thin;
   scrollbar-color: var(--border3) transparent;
 }
-.board-col-list::-webkit-scrollbar { width: 8px; }
-.board-col-list::-webkit-scrollbar-track { background: transparent; }
-.board-col-list::-webkit-scrollbar-thumb { background: var(--border3); border-radius: 4px; }
-.board-col-list::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
 .board-col-empty {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2346,12 +2350,6 @@ body::before {
 .board-del:hover { color: #ff7a7a; }
 .board-del.armed { color: #ff5a5a; border-color: #ff5a5a; }
 
-#board-archive {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
 #board-archive[hidden] { display: none; }
 .board-archive-head {
   display: flex;
@@ -2382,12 +2380,6 @@ body::before {
 .board-archive-delall:hover { color: #ff7a7a; border-color: #ff7a7a; }
 .board-archive-delall.armed { color: #ff5a5a; border-color: #ff5a5a; }
 .board-archive-delall:disabled { opacity: 0.4; cursor: not-allowed; }
-.board-archive-filters {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
 #board-archive-search {
   flex: 1;
   font-family: var(--font-mono);
@@ -2400,15 +2392,6 @@ body::before {
   outline: none;
 }
 #board-archive-search:focus { border-color: var(--border-hover); }
-.board-archive-filters select {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text);
-  background: var(--term-bg);
-  border: 1px solid var(--border3);
-  border-radius: 6px;
-  padding: 6px 8px;
-}
 .board-archive-list {
   overflow-y: auto;
   min-height: 0;
@@ -2418,10 +2401,6 @@ body::before {
   scrollbar-width: thin;
   scrollbar-color: var(--border3) transparent;
 }
-.board-archive-list::-webkit-scrollbar { width: 8px; }
-.board-archive-list::-webkit-scrollbar-track { background: transparent; }
-.board-archive-list::-webkit-scrollbar-thumb { background: var(--border3); border-radius: 4px; }
-.board-archive-list::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
 
 #board-category-pop {
   position: fixed;

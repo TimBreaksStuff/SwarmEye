@@ -389,10 +389,8 @@ const Topbar = (() => {
   }
 
   /* archived workspaces: 🗃 pill (hidden when empty) + restore/delete popover.
-   * The ✕ arm/confirm state lives in module scope, not just a CSS class —
-   * this popover is rebuilt on every agent status flip, which would wipe an
-   * armed button mid-confirm and make the second click just re-arm. */
-  let armedArchPurge = { id: null, until: 0 };
+   * The ✕ is click-twice-to-confirm via Confirm, whose arm state outlives the
+   * rebuild this popover gets on every agent status flip. */
   function renderArchive(archived, handlers) {
     archiveBtn.style.display = archived.length ? '' : 'none';
     archiveBtn.querySelectorAll('.rail-n').forEach((el) => el.remove());
@@ -435,17 +433,8 @@ const Topbar = (() => {
       del.className = 'arch-del';
       del.textContent = '✕';
       del.dataset.tip = 'Remove from archive (click twice)';
-      del.addEventListener('click', () => {
-        if (armedArchPurge.id === ws.id && Date.now() < armedArchPurge.until) {
-          armedArchPurge = { id: null, until: 0 };
-          handlers.onPurge(ws.id);
-          return;
-        }
-        armedArchPurge = { id: ws.id, until: Date.now() + 3000 };
-        del.classList.add('armed');
-        setTimeout(() => del.classList.remove('armed'), 3000);
-      });
-      if (armedArchPurge.id === ws.id && Date.now() < armedArchPurge.until) del.classList.add('armed');
+      del.addEventListener('click', () => Confirm.armOrFire(del, 'arch:' + ws.id, () => handlers.onPurge(ws.id)));
+      Confirm.restoreArmed(del, 'arch:' + ws.id);
 
       row.append(info, restore, del);
       archivePop.appendChild(row);
@@ -552,19 +541,14 @@ const Topbar = (() => {
     // the collapsed rail has no room for text — the mini bars carry the
     // levels and the full detail lives in the tooltip; the expanded rail's
     // gauges spell out the percentage and reset countdown directly
-    if (s.ok) {
-      const p5 = renderRow('usage-5h', s.fiveHour);
-      const p7 = renderRow('usage-7d', s.weekly);
-      renderGauge('gauge-5h', 'gauge-5h-sub', s.fiveHour);
-      renderGauge('gauge-7d', 'gauge-7d-sub', s.weekly);
-      usageEl.dataset.tip = usageGaugesEl.dataset.tip = 'click to refresh';
-    } else {
-      renderRow('usage-5h', null);
-      renderRow('usage-7d', null);
-      renderGauge('gauge-5h', 'gauge-5h-sub', null);
-      renderGauge('gauge-7d', 'gauge-7d-sub', null);
-      usageEl.dataset.tip = usageGaugesEl.dataset.tip = 'click to refresh';
-    }
+    // a degraded snapshot blanks every widget — renderRow/renderGauge already
+    // treat "no data" as empty, so the failure case is just an absent window
+    const u = s.ok ? s : {};
+    renderRow('usage-5h', u.fiveHour);
+    renderRow('usage-7d', u.weekly);
+    renderGauge('gauge-5h', 'gauge-5h-sub', u.fiveHour);
+    renderGauge('gauge-7d', 'gauge-7d-sub', u.weekly);
+    usageEl.dataset.tip = usageGaugesEl.dataset.tip = 'click to refresh';
   }
 
   // keep "resets in" countdowns fresh between polls

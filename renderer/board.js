@@ -4,6 +4,7 @@
  * rendering and the creation form. Exposes window.Board. */
 
 const Board = (() => {
+  const { armOrFire, restoreArmed } = Confirm; // click-twice-to-confirm ✕ buttons
   const newBtn = document.getElementById('board-new-btn');
   const closeBtn = document.getElementById('board-close-btn');
   const formEl = document.getElementById('board-form');
@@ -73,9 +74,7 @@ const Board = (() => {
   const archivePriorityFilterEl = document.getElementById('board-archive-priority-filter');
   const archiveCategoryFilterEl = document.getElementById('board-archive-category-filter');
   let archiveShown = false;
-  let lastArchiveHandlers = null;
   let lastArchivedTasks = [];
-  let lastArchiveWorkspaces = [];
   let formWasOpenBeforeArchive = false;
 
   let autoUsageLimit = 85;
@@ -311,41 +310,26 @@ const Board = (() => {
   // stops an in-progress dictation (no-op otherwise) — without this the mic
   // kept recording invisibly after submit/cancel/board-close, and the next
   // recognition result resurrected the previous task's text in the cleared box
-  let stopDictation = () => {};
-  let toggleDictation = () => {};
-  if (!window.Speech || !window.Speech.supported) {
-    micBtn.style.display = 'none';
-  } else {
-    let dictating = false;
-    let micBase = '';
-    stopDictation = () => { if (dictating) window.Speech.stop(); };
-    toggleDictation = () => {
-      if (dictating) { window.Speech.stop(); return; }
+  // dictated text appends to whatever was already typed, so micBase has to be
+  // re-snapshotted when the mic opens and after every finalized phrase
+  let micBase = '';
+  const mic = window.Speech.wire(micBtn, {
+    interim: true,
+    onStart: () => {
       micBase = textEl.value;
       if (micBase && !/\s$/.test(micBase)) micBase += ' ';
-      dictating = true;
-      micBtn.classList.add('listening');
-      window.Speech.start({
-        interim: true,
-        onResult: (text, isFinal) => {
-          textEl.value = micBase + text;
-          textEl.dispatchEvent(new Event('input'));
-          if (isFinal) {
-            micBase = textEl.value;
-            if (!/\s$/.test(micBase)) micBase += ' ';
-          }
-        },
-        onEnd: () => { dictating = false; micBtn.classList.remove('listening'); },
-        onError: (err) => {
-          dictating = false;
-          micBtn.classList.remove('listening');
-          if (err === 'not-allowed' || err === 'service-not-allowed') toast('microphone permission denied');
-          else if (err === 'not-installed') toast('dictation engine not installed — install it in ⌨ Options');
-        },
-      });
-    };
-    micBtn.addEventListener('click', toggleDictation);
-  }
+    },
+    onResult: (text, isFinal) => {
+      textEl.value = micBase + text;
+      textEl.dispatchEvent(new Event('input'));
+      if (isFinal) {
+        micBase = textEl.value;
+        if (!/\s$/.test(micBase)) micBase += ' ';
+      }
+    },
+  });
+  const stopDictation = mic.stop;
+  const toggleDictation = mic.toggle;
   modeRadios.forEach((r) => r.addEventListener('change', updateAutoHint));
   newBtn.addEventListener('click', () => showForm(formEl.hidden));
   cancelBtn.addEventListener('click', () => showForm(false));
@@ -430,24 +414,6 @@ const Board = (() => {
   document.addEventListener('click', (e) => {
     if (!categoryPopEl.hidden && !categoryPopEl.contains(e.target)) categoryPopEl.hidden = true;
   });
-
-  /* arm/confirm state for the ✕ buttons lives here, not as a CSS class alone —
-   * the board rebuilds its cards on git polls and task events, which would
-   * wipe an armed button mid-confirm and make the second click just re-arm */
-  let armedDelete = { key: null, until: 0 };
-  function armOrFire(btn, key, fire) {
-    if (armedDelete.key === key && Date.now() < armedDelete.until) {
-      armedDelete = { key: null, until: 0 };
-      fire();
-      return;
-    }
-    armedDelete = { key, until: Date.now() + 3000 };
-    btn.classList.add('armed');
-    setTimeout(() => btn.classList.remove('armed'), 3000);
-  }
-  function restoreArmed(btn, key) {
-    if (armedDelete.key === key && Date.now() < armedDelete.until) btn.classList.add('armed');
-  }
 
   // shared by the live board and the archive view — who/badges/meta/text are
   // identical, only the action row (start/jump vs. permanent delete) differs
@@ -884,10 +850,12 @@ const Board = (() => {
     renderCols();
   }
 
+  // same handlers/workspaces objects render() gets — app.js drives both from
+  // one state, so the board and the archive never need their own copies
   function renderArchive(archivedTasks, workspaces, handlers) {
-    lastArchiveHandlers = handlers;
+    lastHandlers = handlers;
     lastArchivedTasks = archivedTasks;
-    lastArchiveWorkspaces = workspaces;
+    lastWorkspaces = workspaces;
     // same open-dropdown guard as render() above
     if (document.activeElement !== archiveCategoryFilterEl) {
       populateCategoryFilter(archiveCategoryFilterEl, archivedTasks, workspaces);
@@ -913,7 +881,7 @@ const Board = (() => {
       empty.textContent = lastArchivedTasks.length ? 'no archived tasks match' : 'no archived tasks';
       archiveListEl.appendChild(empty);
     } else {
-      for (const t of list) archiveListEl.appendChild(makeArchiveCard(t, lastArchiveWorkspaces, lastArchiveHandlers));
+      for (const t of list) archiveListEl.appendChild(makeArchiveCard(t, lastWorkspaces, lastHandlers));
     }
   }
 
@@ -939,8 +907,8 @@ const Board = (() => {
 
   archiveBtn.addEventListener('click', () => toggleArchive(!archiveShown));
   archiveDeleteAllBtn.addEventListener('click', () => {
-    if (!lastArchiveHandlers) return;
-    if (archiveDeleteAllBtn.classList.contains('armed')) { lastArchiveHandlers.onPurgeAll(); return; }
+    if (!lastHandlers) return;
+    if (archiveDeleteAllBtn.classList.contains('armed')) { lastHandlers.onPurgeAll(); return; }
     archiveDeleteAllBtn.classList.add('armed');
     setTimeout(() => archiveDeleteAllBtn.classList.remove('armed'), 3000);
   });

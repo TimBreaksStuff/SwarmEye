@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { IS_WIN, exec, toShellPath } = require('./platform');
+const { IS_WIN, exec, shQuote, toShellPath } = require('./platform');
 
 /* macOS: node-pty's darwin prebuild execs a separate `spawn-helper` binary
  * to set up the pty before exec'ing the real command. Some zip
@@ -19,7 +19,6 @@ if (!IS_WIN) {
   }
 }
 const pty = require('node-pty');
-const os = require('os');
 const config = require('./config');
 const { pickName } = require('./names');
 
@@ -59,6 +58,14 @@ const CONF_LINES = [
   'set -g visual-bell off',
 ];
 
+/* tmux drops OSC 8 hyperlinks (pi's login URL) unless the attached client's
+ * terminal is listed as hyperlinks-capable — xterm.js is (pane.js's
+ * linkHandler), tmux just can't know that. Only meaningful on tmux >= 3.4
+ * (where hyperlink forwarding exists), and kept out of CONF_LINES because
+ * tmux < 3.2 errors on the option, which at server start surfaces as a
+ * config-error message inside the first pane. */
+const HYPERLINKS_LINE = 'set -as terminal-features *:hyperlinks';
+
 /* IPC-supplied terminal dimensions end up inside a shell command line —
  * force them to sane integers no matter what the renderer sent. */
 function toDim(v, fallback, max) {
@@ -93,6 +100,26 @@ function claudeBase({ model } = {}) {
   return cmd;
 }
 
+/* kind 'pi' runs the Pi coding agent (github.com/earendil-works/pi) instead
+ * of claude. It gets no decoration: the model flag, permission flags and the
+ * hook --settings wrapper are all Claude Code concepts, so pi panes fall back
+ * to the output-timing status heuristics (same path as hookless claude). */
+function isPi(kind) {
+  return kind === 'pi';
+}
+
+/* PATH first (a pi the user installed themselves, or the managed symlink on
+ * Linux/WSL where ~/.local/bin is on login-shell PATH), then the managed
+ * install by explicit path — stock macOS has no user-writable directory on
+ * PATH at all, so the copy main/pi.js lays down would otherwise be
+ * unreachable. Same order pi.js status() reports, so what the Options row
+ * says is what a pane runs. Each branch execs itself, so the no-tmux
+ * fallback needs no `exec` prefix; no single quotes, so it survives the
+ * tmux new-session '<cmd>' wrapping. */
+function piCmd(args = '') {
+  return `command -v pi >/dev/null 2>&1 && exec pi${args} || exec ~/.swarmeye/pi-agent/pi${args}`;
+}
+
 class PtyManager {
   constructor({ maxSessions, onData, onExit, debugLog, decorateCmd }) {
     this.maxSessions = maxSessions;
@@ -110,8 +137,17 @@ class PtyManager {
     const found = await exec('command -v tmux');
     this.tmuxOk = !!(found && found.trim());
     if (this.tmuxOk) {
-      const conf = CONF_LINES.map((l) => `'${l}'`).join(' ');
+      const ver = /(\d+)\.(\d+)/.exec(await exec('tmux -V') || '');
+      const hyperlinksOk = !!ver && (+ver[1] > 3 || (+ver[1] === 3 && +ver[2] >= 4));
+      const lines = hyperlinksOk ? CONF_LINES.concat(HYPERLINKS_LINE) : CONF_LINES;
+      const conf = lines.map((l) => `'${l}'`).join(' ');
       await exec(`mkdir -p ~/.config/swarmeye && printf '%s\\n' ${conf} > ${TMUX_CONF}`);
+      // the conf only applies at server start, and the server outlives the
+      // app (that's the point) — apply to an already-running one too, once
+      if (hyperlinksOk) {
+        await exec(`${TMUX} show -s terminal-features 2>/dev/null | grep -q hyperlinks`
+          + ` || ${TMUX} set -as terminal-features "*:hyperlinks" 2>/dev/null; true`);
+      }
     }
     this.debugLog('[ptys] tmux ' + (this.tmuxOk ? 'available' : 'MISSING — sessions will not survive restarts'));
     return this.tmuxOk;
@@ -175,7 +211,8 @@ class PtyManager {
       tmuxName: 'swarmeye_' + id,
       createdAt: Date.now(),
     };
-    return this._launch(meta, cols, rows, this.decorateCmd(id, claudeBase(opts)));
+    if (isPi(opts.kind)) meta.kind = 'pi';
+    return this._launch(meta, cols, rows, isPi(opts.kind) ? piCmd() : this.decorateCmd(id, claudeBase(opts)));
   }
 
   /* Does this folder have a previous Claude conversation to continue?
@@ -187,12 +224,23 @@ class PtyManager {
     return !!(out && out.includes('yes'));
   }
 
+  /* Pi's equivalent: sessions live in ~/.pi/agent/sessions/--<cwd>--/, where
+   * <cwd> is the working directory with '/' replaced by '-' (other characters,
+   * including spaces, survive as-is — unlike Claude's munge). Globbed on both
+   * ends rather than reproducing the exact wrapping, and quoted because of
+   * those surviving spaces. */
+  async hasPiHistory(cwd) {
+    const munged = (toShellPath(cwd) || cwd).replace(/\//g, '-');
+    const out = await exec(`ls ~/.pi/agent/sessions/*${shQuote(munged)}*/*.jsonl >/dev/null 2>&1 && echo yes; true`);
+    return !!(out && out.includes('yes'));
+  }
+
   /* Respawn an exited agent in the same folder under the same name.
    * resume=true continues the last conversation in that directory —
    * silently downgraded to a fresh session when there is none. */
-  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume }) {
+  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, kind }) {
     if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
-    const resumed = resume ? await this.hasHistory(cwd) : false;
+    const resumed = resume ? await (isPi(kind) ? this.hasPiHistory(cwd) : this.hasHistory(cwd)) : false;
     // Checked here, right before the synchronous launch below, rather than
     // before the `await` above — two restarts racing the single remaining
     // slot would otherwise both pass the check while it awaited.
@@ -209,7 +257,11 @@ class PtyManager {
       tmuxName: 'swarmeye_' + id,
       createdAt: Date.now(),
     };
-    const session = this._launch(meta, cols, rows, this.decorateCmd(id, resumed ? claudeBase() + ' --continue' : claudeBase()));
+    if (isPi(kind)) meta.kind = 'pi';
+    const cmd = isPi(kind)
+      ? piCmd(resumed ? ' --continue' : '')
+      : this.decorateCmd(id, resumed ? claudeBase() + ' --continue' : claudeBase());
+    const session = this._launch(meta, cols, rows, cmd);
     return { session, resumed };
   }
 
@@ -235,7 +287,9 @@ class PtyManager {
     rows = toDim(rows, 30, 300);
     const script = this.tmuxOk
       ? `exec ${TMUX} new-session -A -s ${meta.tmuxName} -x ${cols} -y ${rows} '${cmd || 'claude'}'`
-      : `exec ${cmd || 'claude'}`;
+      : meta.kind === 'pi'
+        ? (cmd || piCmd()) // piCmd() is a self-exec'ing chain — an `exec` prefix would break it
+        : `exec ${cmd || 'claude'}`;
     // Windows reaches the agent through WSL, which takes the working
     // directory as a flag rather than a spawn option; macOS spawns the login
     // shell directly. A login shell either way, so ~/.local/bin is on PATH

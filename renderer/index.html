@@ -336,6 +336,12 @@
         <input type="checkbox" id="skip-permissions-toggle" data-tip="Launches new and restarted agents with --allow-dangerously-skip-permissions so claude's Shift+Tab mode cycle includes auto mode without activating it. Existing running agents need a restart to pick this up.">
       </span>
     </div>
+    <div class="kbd-row kbd-opt"><span>Enable Pi coding agent</span>
+      <span class="opt-ctl">
+        <span id="pi-status" class="stt-status"></span>
+        <input type="checkbox" id="enable-pi-toggle" data-tip="Adds an agent picker to + Coding Agent so each new session can be Claude or Pi (github.com/earendil-works/pi). Enabling downloads the latest Pi release from GitHub automatically — into WSL on Windows. A Pi you installed yourself is used as-is.">
+      </span>
+    </div>
     <div class="kbd-row kbd-opt"><span>Show last command in pane header</span>
       <span class="opt-ctl">
         <input type="checkbox" id="show-initial-cmd-toggle" data-tip="Shows a second header row under every pane's title with the most recently submitted command — a task's launch prompt until you type a new line, which then takes over.">
@@ -442,6 +448,7 @@
   <script src="../node_modules/@xterm/addon-search/lib/addon-search.js"></script>
   <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
   <script src="tooltip.js"></script>
+  <script src="confirm.js"></script>
   <script src="speech.js"></script>
   <script src="pane.js"></script>
   <script src="grid.js"></script>

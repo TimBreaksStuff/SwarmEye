@@ -11,6 +11,7 @@ const { IS_WIN } = require('./platform');
 const { UpdateChecker } = require('./update');
 const { SpeechBridge } = require('./speech');
 const { SkillsManager } = require('./skills');
+const pi = require('./pi');
 
 let win = null;
 let ptys = null;
@@ -409,13 +410,14 @@ function registerIpc() {
     return { sessions, persistent: ptys.tmuxOk };
   });
 
-  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model }) => {
+  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, kind }) => {
     await ptysReady;
     const cfg = config.load();
     const ws = cfg.workspaces.find((w) => w.id === workspaceId);
     if (!ws) { debugLog('[session:create] no-workspace ' + workspaceId); return { ok: false, reason: 'no-workspace' }; }
     try {
-      const session = ptys.spawn(ws, cols || 80, rows || 24, { model });
+      // kind lands in a shell command line — whitelist, don't pass through
+      const session = ptys.spawn(ws, cols || 80, rows || 24, { model, kind: kind === 'pi' ? 'pi' : undefined });
       debugLog('[session:create] ok ' + session.id + ' "' + session.agentName + '" in ' + ws.path);
       return { ok: true, session };
     } catch (err) {
@@ -438,6 +440,7 @@ function registerIpc() {
         cols: payload.cols,
         rows: payload.rows,
         resume: !!payload.resume,
+        kind: payload.kind === 'pi' ? 'pi' : undefined,
       });
       debugLog('[session:restart] ok ' + session.id + ' "' + session.agentName + '" wanted-resume=' + !!payload.resume + ' resumed=' + resumed);
       return { ok: true, session, resumed };
@@ -510,6 +513,15 @@ function registerIpc() {
   ipcMain.handle('usage:refresh', () => usage.refreshNow());
 
   ipcMain.handle('app:version', () => app.getVersion());
+  // Pi coding agent: presence check + install/update of the managed copy
+  // (the ⌨ Options toggle calls ensure when flipped on — see main/pi.js)
+  ipcMain.handle('pi:status', () => pi.status());
+  ipcMain.handle('pi:ensure', async () => {
+    const res = await pi.ensure();
+    debugLog('[pi] ensure ' + JSON.stringify(res));
+    return res;
+  });
+
   ipcMain.handle('update:check', () => updates.check());
   ipcMain.handle('update:download', () => updates.download());
   ipcMain.handle('update:install', () => updates.install());

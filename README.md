@@ -13,7 +13,7 @@ No accounts, no backend, no telemetry. SwarmEye rides entirely on your existing 
 ## What it does
 
 - **Workspaces** — each folder is a tile in the left rail; the selected one decides where new agents start.
-- **Agent panes** — launch as many agents as you want, a terminal each, auto-arranged into a grid you can resize and rearrange (or place by hand with auto-organize off), with search, transcript export, dictation and drag-and-drop file paths.
+- **Agent panes** — launch as many agents as you want, a terminal each, auto-arranged into a grid you can resize and rearrange (or place by hand with auto-organize off), with search, transcript export, dictation and drag-and-drop file paths. Text selection, clickable URLs and Ctrl+C copy work in every pane, even while the agent inside captures the mouse.
 - **Live agent state** — panes read Claude Code's hooks, not output timing: working (naming the tool), waiting on you, or done.
 - **Branch switcher** — each pane's git chip shows the workspace branch; click it to list local and remote branches, check one out, or create a new one.
 - **Task board** — queue work ahead of time with a model, permission mode, effort, priority and category; start it now, on a usage budget, or at the next session window.
@@ -23,6 +23,7 @@ No accounts, no backend, no telemetry. SwarmEye rides entirely on your existing 
 - **Swarm map** — a compact status grid in the left rail, above Archived: one slot per agent showing busy, needs attention, idle, or free at a glance across every workspace.
 - **Quick permission responses** — approve or deny an agent's numbered permission prompt straight from its pane header or the notification bell, without switching workspaces or opening the pane.
 - **In-app updates** — the app checks GitHub Releases for new versions and offers a one-click download-and-restart update from `⚙` Options.
+- **Pi coding agent (optional)** — enable it in `⚙` Options and **+ Coding Agent** offers a Claude/Pi picker, so a pane can run the [Pi coding agent](https://github.com/earendil-works/pi) instead of Claude. Enabling auto-installs the latest Pi release from GitHub (into WSL on Windows; an existing Pi install is used as-is). Pi panes track state via output-timing heuristics; the Claude-specific extras (hooks, model/permission presets, skills, tasks) stay Claude-only.
 
 ---
 
