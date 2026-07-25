@@ -19,12 +19,14 @@ const Board = (() => {
   const categoryPopInputEl = document.getElementById('board-category-pop-input');
   const categoryPopAddBtn = document.getElementById('board-category-pop-add');
   const categoryFilterEl = document.getElementById('board-category-filter');
+  const chainEl = document.getElementById('board-form-chain');
   const startModeSel = document.getElementById('board-form-startmode');
   const modelSel = document.getElementById('board-form-model');
   const effortSel = document.getElementById('board-form-effort');
   const focusToggle = document.getElementById('board-form-focus');
   const closeOnEndToggle = document.getElementById('board-form-closeonend');
   const prioritySel = document.getElementById('board-form-priority');
+  const repeatSel = document.getElementById('board-form-repeat');
   const autoHint = document.getElementById('board-form-auto-hint');
   const cancelBtn = document.getElementById('board-form-cancel');
   const submitBtn = document.getElementById('board-form-submit');
@@ -127,6 +129,11 @@ const Board = (() => {
     const found = Pane.MODES.find(([v]) => v === startMode);
     return found ? found[1] : 'default';
   }
+
+  // repeat intervals, shared with app.js (which queues the next run) so the
+  // labels on the card and the maths behind them can't drift apart
+  const REPEAT_MS = { hourly: 3600e3, daily: 864e5, weekly: 6048e5 };
+  const REPEAT_LABEL = { hourly: 'hourly', daily: 'daily', weekly: 'weekly' };
 
   // funny-feedback copy, tiered by how many tasks finished today — picked
   // deterministically from today's count + day-of-month so it holds steady
@@ -249,6 +256,7 @@ const Board = (() => {
     statsEl.hidden = !show;
     if (show) {
       textEl.value = '';
+      chainEl.value = '';
       submitBtn.disabled = true;
       startModeSel.value = defaults.defaultStartMode;
       modelSel.value = defaults.defaultModel;
@@ -256,6 +264,7 @@ const Board = (() => {
       focusToggle.checked = defaults.defaultFocus;
       closeOnEndToggle.checked = true;
       prioritySel.value = 'medium';
+      repeatSel.value = 'none';
       if (categorySel.querySelector('option[value="maintenance"]')) categorySel.value = 'maintenance';
       updateAutoHint();
       renderStats();
@@ -330,6 +339,13 @@ const Board = (() => {
   });
   const stopDictation = mic.stop;
   const toggleDictation = mic.toggle;
+  /* the follow-up box holds a whole pipeline: one prompt per step, steps split
+   * by a line of ---. Each step runs as its own task once the previous one
+   * completes (app.js startChain). */
+  function parseChain(raw) {
+    return String(raw || '').split(/^\s*-{3,}\s*$/m).map((s) => s.trim()).filter(Boolean);
+  }
+
   modeRadios.forEach((r) => r.addEventListener('change', updateAutoHint));
   newBtn.addEventListener('click', () => showForm(formEl.hidden));
   cancelBtn.addEventListener('click', () => showForm(false));
@@ -347,7 +363,9 @@ const Board = (() => {
       focus: focusToggle.checked,
       closeOnComplete: closeOnEndToggle.checked,
       priority: prioritySel.value,
+      repeat: repeatSel.value,
       category: categorySel.value,
+      chain: parseChain(chainEl.value),
     });
     showForm(true);
   });
@@ -535,6 +553,24 @@ const Board = (() => {
         cat.textContent = task.category;
         badges.appendChild(cat);
       }
+    }
+    if (REPEAT_LABEL[task.repeat]) {
+      const repeatBadge = document.createElement('span');
+      repeatBadge.className = 'board-card-badge';
+      repeatBadge.textContent = '⟳ ' + REPEAT_LABEL[task.repeat];
+      // a queued next run carries its due time; the run currently in flight
+      // (or already finished) has none, and only says how often it repeats
+      repeatBadge.dataset.tip = task.nextRunAt && task.status === 'pending'
+        ? 'repeats ' + REPEAT_LABEL[task.repeat] + ' — next run ' + new Date(task.nextRunAt).toLocaleString()
+        : 'repeats ' + REPEAT_LABEL[task.repeat] + ' — the next run is queued when this one finishes';
+      badges.appendChild(repeatBadge);
+    }
+    if (task.chain && task.chain.length) {
+      const chainBadge = document.createElement('span');
+      chainBadge.className = 'board-card-badge';
+      chainBadge.textContent = '+' + task.chain.length + ' next';
+      chainBadge.dataset.tip = 'follow-up agents once this finishes:\n— ' + task.chain.join('\n— ');
+      badges.appendChild(chainBadge);
     }
     badges.appendChild(badge);
     top.append(whoWrap, badges);
@@ -918,7 +954,7 @@ const Board = (() => {
   }
 
   return {
-    render, renderArchive, toggleArchive, setDefaults, showForm, closeSessionView,
+    render, renderArchive, toggleArchive, setDefaults, showForm, closeSessionView, REPEAT_MS,
     stopDictation: () => stopDictation(),
     toggleDictation: () => toggleDictation(),
     isFormOpen: () => !formEl.hidden,

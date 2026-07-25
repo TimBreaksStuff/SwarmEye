@@ -1,6 +1,7 @@
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const config = require('./config');
 const { IS_WIN, exec, shQuote, toShellPath } = require('./platform');
 
 /* Precise agent state via Claude Code hooks instead of output-timing guesses.
@@ -15,30 +16,102 @@ const { IS_WIN, exec, shQuote, toShellPath } = require('./platform');
  * through empty in practice). The reliable source is each session's own
  * transcript JSONL, whose assistant entries carry `message.model` — every
  * hook event already includes `transcript_path`, so on every Stop (turn
- * boundary) we tail that file and pull the latest one. */
+ * boundary) we read that file and pull the latest one.
+ *
+ * Those same entries carry `message.usage`, which is where the pane's cost
+ * and context panel comes from: tokens, the cache read/write split, and the
+ * size of the prompt the newest turn actually sent (= the live context). The
+ * read is incremental — only the bytes appended since the previous turn — so
+ * the per-turn cost of all of this is one small read. */
 
 const HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'Notification', 'Stop', 'SessionStart'];
-const TRANSCRIPT_TAIL_BYTES = 60000;
 
-/* Read only the last N bytes of the transcript — these files can grow to
- * several MB, and we only need the newest assistant message.model.
+/* How much transcript to parse in one go. Only bytes appended since the last
+ * turn are read, so this cap only bites on the first read of a long session
+ * reattached from a previous run: its oldest turns then fall outside the
+ * totals, which is what the `partial` flag tells the renderer. */
+const USAGE_MAX_READ = 4 * 1024 * 1024;
+const USAGE_SERIES_MAX = 60; // burn-sparkline points kept per session
+
+/* How many already-counted message ids to remember per session. A message's
+ * repeated lines are adjacent, so a small window is plenty — this only has to
+ * outlive the handful of lines one assistant turn writes. */
+const USAGE_SEEN_MAX = 400;
+
+/* Coalescing window for writing the totals back to config.json. */
+const USAGE_PERSIST_MS = 3000;
+
+/* List price per million tokens, matched against the model id. Cache reads
+ * bill at 0.1x input; cache writes at 1.25x (5-minute TTL) or 2x (1-hour) —
+ * the transcript reports that split per entry, so the cost is exact rather
+ * than an average. An id that matches nothing falls back to Sonnet-tier
+ * instead of guessing high. (Sonnet 5's introductory rate is lower than the
+ * list price used here, which makes its cost an upper bound until that
+ * promotion ends.) */
+const MODEL_PRICES = [
+  [/fable|mythos/, { input: 10, output: 50 }],
+  [/opus/, { input: 5, output: 25 }],
+  [/sonnet/, { input: 3, output: 15 }],
+  [/haiku/, { input: 1, output: 5 }],
+];
+const FALLBACK_PRICE = { input: 3, output: 15 };
+
+function priceFor(model) {
+  const id = String(model || '');
+  for (const [re, price] of MODEL_PRICES) if (re.test(id)) return price;
+  return FALLBACK_PRICE;
+}
+
+/* Local YYYY-MM-DD for a transcript entry's own ISO timestamp — the bucket key
+ * the cost rollup (main/spend.js) accumulates into. Deliberately the entry's
+ * time rather than now: a session reattached from a previous run has its whole
+ * backlog read in one go, and a long session crosses midnight, so "when we read
+ * it" would file both under the wrong day. */
+function dayKey(ts) {
+  let d = ts ? new Date(ts) : null;
+  if (!d || !Number.isFinite(d.getTime())) d = new Date();
+  return d.toLocaleDateString('en-CA'); // en-CA is ISO YYYY-MM-DD, in local time
+}
+
+/* The transcript bytes appended since `offset`, plus the file's current size.
  *
  * Windows reads it through the shell: the transcript belongs to the copy of
  * Claude Code running inside WSL, so its path is a WSL path that the Windows
- * fs APIs cannot open. One round trip per turn boundary is cheap. */
-function tailFile(filePath, maxBytes) {
-  if (IS_WIN) return exec(`tail -c ${maxBytes} ${shQuote(filePath)} 2>/dev/null`, 15000);
+ * fs APIs cannot open. Size and payload come back from a single round trip —
+ * first line is the size, everything after it is the data.
+ *
+ * A file that grew by more than `maxBytes` yields only its tail, and says so
+ * with `truncated` — the caller's running totals are a lower bound from then
+ * on rather than silently wrong. */
+function readNew(filePath, offset, maxBytes) {
+  if (IS_WIN) {
+    const q = shQuote(filePath);
+    const cmd = `sz=$(wc -c < ${q} 2>/dev/null || echo 0); echo "$sz"; ` +
+      `if [ "$sz" -gt "$((${offset} + ${maxBytes}))" ]; then tail -c ${maxBytes} ${q}; ` +
+      `else tail -c "+$((${offset} + 1))" ${q}; fi`;
+    return exec(cmd, 30000, { maxBuffer: maxBytes + 1024 * 1024 }).then((out) => {
+      if (out == null) return null;
+      const nl = out.indexOf('\n');
+      if (nl < 0) return null;
+      const size = Number(out.slice(0, nl).trim());
+      if (!Number.isFinite(size)) return null;
+      return { text: out.slice(nl + 1), size, truncated: size > offset + maxBytes };
+    });
+  }
   return new Promise((resolve) => {
-    fs.open(filePath, 'r', (err, fd) => {
+    fs.stat(filePath, (err, stats) => {
       if (err) return resolve(null);
-      fs.fstat(fd, (err2, stats) => {
-        if (err2) { fs.close(fd, () => {}); return resolve(null); }
-        const start = Math.max(0, stats.size - maxBytes);
-        const length = stats.size - start;
+      const size = stats.size;
+      const truncated = size > offset + maxBytes;
+      const start = truncated ? size - maxBytes : Math.min(offset, size);
+      const length = Math.max(0, size - start);
+      if (length === 0) return resolve({ text: '', size, truncated: false });
+      fs.open(filePath, 'r', (err2, fd) => {
+        if (err2) return resolve(null);
         const buf = Buffer.alloc(length);
         fs.read(fd, buf, 0, length, start, (err3) => {
           fs.close(fd, () => {});
-          resolve(err3 ? null : buf.toString('utf8'));
+          resolve(err3 ? null : { text: buf.toString('utf8'), size, truncated });
         });
       });
     });
@@ -46,15 +119,20 @@ function tailFile(filePath, maxBytes) {
 }
 
 class HookMonitor {
-  constructor({ onEvent, debugLog }) {
+  constructor({ onEvent, onSpend, debugLog }) {
     this.onEvent = onEvent;
+    // per-turn spend, bucketed by day and model, for the cross-session rollup
+    // (main/spend.js). Optional: the per-pane panel works without it.
+    this.onSpend = onSpend || (() => {});
     this.debugLog = debugLog;
     this.stateDir = path.join(app.getPath('userData'), 'hook-state');
     this.settingsFile = path.join(app.getPath('userData'), 'hook-settings.json');
     this.seen = new Map(); // filename -> mtimeMs already processed
     this.models = new Map(); // sessionId -> last known model id (from the transcript)
+    this.usage = new Map(); // sessionId -> accumulated transcript usage (see usageState)
     this.watcher = null;
     this.sweepTimer = null;
+    this.persistTimer = null; // coalesces the usage writes (see persistUsage)
   }
 
   init() {
@@ -70,6 +148,7 @@ class HookMonitor {
       const hooks = {};
       for (const ev of HOOK_EVENTS) hooks[ev] = [{ hooks: [{ type: 'command', command }] }];
       fs.writeFileSync(this.settingsFile, JSON.stringify({ hooks }, null, 2), 'utf8');
+      this.restoreUsage();
     } catch (err) {
       this.debugLog('[hooks] init FAILED — falling back to heuristics: ' + err.message);
       return;
@@ -117,8 +196,21 @@ class HookMonitor {
       const sessionId = f.slice(0, -'.json'.length);
       const event = payload.hook_event_name;
       if (!HOOK_EVENTS.includes(event)) continue;
+      // /clear rotates the agent onto a fresh transcript file, and that is the
+      // one thing that ends a session's tally: the totals belong to the
+      // conversation, not to the pane. A restart or resume reports the same
+      // path and keeps counting.
+      if (event === 'SessionStart' && payload.transcript_path) {
+        const prev = this.usage.get(sessionId);
+        if (prev && prev.path !== payload.transcript_path) {
+          this.usage.delete(sessionId);
+          this.persistUsage();
+          this.onEvent(sessionId, { event: 'UsageUpdate', tool: null, message: null, model: null, usage: null });
+        }
+      }
       if (event === 'Stop' && payload.transcript_path) {
-        this.refreshModelFromTranscript(sessionId, payload.transcript_path);
+        this.usageState(sessionId, payload.transcript_path).turns++;
+        this.refreshFromTranscript(sessionId, payload.transcript_path);
       }
       this.onEvent(sessionId, {
         event,
@@ -129,21 +221,219 @@ class HookMonitor {
     }
   }
 
-  /* Tail the transcript and pull the newest assistant `message.model`. Fires
-   * once per Stop event (turn boundary), not per tool call. On success,
-   * pushes a follow-up event so the renderer's chip catches up even though
-   * this resolves after the Stop event itself was emitted. */
-  async refreshModelFromTranscript(sessionId, transcriptPath) {
-    const text = await tailFile(transcriptPath, TRANSCRIPT_TAIL_BYTES);
-    if (!text) return;
-    const matches = [...text.matchAll(/"model":"([^"]*)"/g)].map((m) => m[1]);
-    for (let i = matches.length - 1; i >= 0; i--) {
-      if (matches[i] && matches[i] !== '<synthetic>') {
-        if (this.models.get(sessionId) === matches[i]) return; // unchanged
-        this.models.set(sessionId, matches[i]);
-        this.onEvent(sessionId, { event: 'ModelUpdate', tool: null, message: null, model: matches[i] });
-        return;
+  /* Running per-session totals, keyed to the transcript they were read from:
+   * a different file is a different conversation, so the tally starts over
+   * rather than continuing on top of somebody else's numbers. */
+  usageState(sessionId, transcriptPath) {
+    let st = this.usage.get(sessionId);
+    if (!st || st.path !== transcriptPath) {
+      st = {
+        path: transcriptPath,
+        offset: 0,
+        busy: false,
+        partial: false, // true once a read had to skip bytes: totals are a lower bound
+        input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
+        cost: 0,
+        context: 0,
+        turns: 0,
+        series: [],
+        seen: new Set(), // message ids already billed (see refreshFromTranscript)
+        seenOrder: [],
+      };
+      this.usage.set(sessionId, st);
+    }
+    return st;
+  }
+
+  /* Has this message already been counted? Claude Code writes one JSONL line
+   * per content block and repeats the *whole* message's usage on every one of
+   * them, so a thinking + text + tool_use turn appears three times with
+   * identical numbers. Billing each line inflates the totals several-fold. */
+  countedAlready(st, id) {
+    if (!id) return false; // no id to dedupe on — count it rather than lose it
+    if (st.seen.has(id)) return true;
+    st.seen.add(id);
+    st.seenOrder.push(id);
+    if (st.seenOrder.length > USAGE_SEEN_MAX) st.seen.delete(st.seenOrder.shift());
+    return false;
+  }
+
+  /* What the renderer draws in the cost & context panel — also exactly what
+   * gets persisted, so a restart can hand it straight back. */
+  snapshot(sessionId) {
+    const st = this.usage.get(sessionId);
+    if (!st) return null;
+    return {
+      input: st.input,
+      output: st.output,
+      cacheRead: st.cacheRead,
+      cacheWrite: st.cacheWrite,
+      cost: st.cost,
+      context: st.context,
+      turns: st.turns,
+      partial: st.partial,
+      model: this.models.get(sessionId) || null,
+      series: st.series.slice(),
+    };
+  }
+
+  /* Totals outlive the app: closing SwarmEye leaves the agent running in tmux,
+   * so its spend so far is still true when the window comes back. The
+   * transcript offset rides along, which is what lets the next Stop pick up
+   * from where this run stopped reading instead of re-counting the file. */
+  persistUsage() {
+    // config.json carries the archived task logs and is well into six figures
+    // of bytes; a turn boundary for every agent is far too often to rewrite it,
+    // so writes are coalesced (and flushed on quit — see stop()).
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => this.flushUsage(), USAGE_PERSIST_MS);
+  }
+
+  flushUsage() {
+    clearTimeout(this.persistTimer);
+    this.persistTimer = null;
+    const out = {};
+    for (const [id, st] of this.usage) {
+      out[id] = { ...this.snapshot(id), path: st.path, offset: st.offset };
+    }
+    try { config.patch({ usage: out }); } catch (err) {
+      this.debugLog('[hooks] usage persist failed: ' + err.message);
+    }
+  }
+
+  restoreUsage() {
+    const saved = config.load().usage || {};
+    for (const [id, s] of Object.entries(saved)) {
+      if (!s || typeof s.path !== 'string') continue;
+      this.usage.set(id, {
+        path: s.path,
+        offset: s.offset || 0,
+        busy: false,
+        partial: !!s.partial,
+        input: s.input || 0,
+        output: s.output || 0,
+        cacheRead: s.cacheRead || 0,
+        cacheWrite: s.cacheWrite || 0,
+        cost: s.cost || 0,
+        context: s.context || 0,
+        turns: s.turns || 0,
+        series: Array.isArray(s.series) ? s.series : [],
+        seen: new Set(),
+        seenOrder: [],
+      });
+      if (s.model) this.models.set(id, s.model);
+    }
+  }
+
+  /* Sessions that didn't survive the restart (tmux gone) leave their totals
+   * behind — drop them once the reconciled list of live ids is known. */
+  pruneUsage(liveIds) {
+    const live = new Set(liveIds);
+    let dropped = false;
+    for (const id of [...this.usage.keys()]) {
+      if (live.has(id)) continue;
+      this.usage.delete(id);
+      this.models.delete(id);
+      dropped = true;
+    }
+    if (dropped) this.persistUsage();
+  }
+
+  /* Read whatever the transcript gained since the last turn, and fold it into
+   * this session's totals: tokens, cost, the live context size, and one burn
+   * sample per turn. Fires once per Stop event (turn boundary), not per tool
+   * call. Both follow-up events are pushed after the Stop that triggered them
+   * — the renderer's model chip and cost panel catch up a beat later. */
+  async refreshFromTranscript(sessionId, transcriptPath) {
+    const st = this.usageState(sessionId, transcriptPath);
+    if (st.busy) return; // two turns landing together must not read the same bytes twice
+    st.busy = true;
+    try {
+      const res = await readNew(transcriptPath, st.offset, USAGE_MAX_READ);
+      if (!res) return;
+      if (res.truncated) st.partial = true;
+      // A turn can land mid-write, leaving a half-written final line that
+      // won't parse. Leave its bytes unconsumed so the next read sees the line
+      // whole, rather than advancing past it and losing that turn entirely.
+      const lastNl = res.text.lastIndexOf('\n');
+      const pending = lastNl < 0 ? res.text : res.text.slice(lastNl + 1);
+      st.offset = res.size - Buffer.byteLength(pending, 'utf8');
+
+      let model = null;
+      let turnTokens = 0;
+      // what these bytes added, split by the day and model they belong to —
+      // handed to onSpend below so the rollup can accumulate across sessions
+      const delta = {};
+      for (const line of res.text.split('\n')) {
+        if (!line || line.charCodeAt(0) !== 123 /* { */) continue;
+        let entry;
+        // a truncated read starts mid-line, and the last line can be a
+        // half-written one — both simply fail to parse and are skipped
+        try { entry = JSON.parse(line); } catch { continue; }
+        const msg = entry && entry.message;
+        const u = msg && msg.usage;
+        if (!u || entry.type !== 'assistant') continue;
+        // synthetic entries are Claude Code's own local messages (API errors,
+        // interrupts): all-zero usage, never billed — and letting one through
+        // would blank the context reading until the next real turn
+        if (msg.model === '<synthetic>') continue;
+        if (this.countedAlready(st, msg.id)) continue;
+
+        const input = u.input_tokens || 0;
+        const output = u.output_tokens || 0;
+        const cacheRead = u.cache_read_input_tokens || 0;
+        const write1h = (u.cache_creation && u.cache_creation.ephemeral_1h_input_tokens) || 0;
+        const write5m = (u.cache_creation && u.cache_creation.ephemeral_5m_input_tokens) || 0;
+        // older entries only carry the flat total — bill those at the 5m rate
+        const cacheWrite = (write1h + write5m) || u.cache_creation_input_tokens || 0;
+        const price = priceFor(msg.model);
+        const cost = (input * price.input
+          + output * price.output
+          + cacheRead * price.input * 0.1
+          + write1h * price.input * 2
+          + (cacheWrite - write1h) * price.input * 1.25) / 1e6;
+
+        st.input += input;
+        st.output += output;
+        st.cacheRead += cacheRead;
+        st.cacheWrite += cacheWrite;
+        st.cost += cost;
+        turnTokens += input + output + cacheRead + cacheWrite;
+
+        const day = dayKey(entry.timestamp);
+        const byModel = delta[day] || (delta[day] = {});
+        const id = msg.model || 'unknown';
+        const bucket = byModel[id] || (byModel[id] = { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+        bucket.cost += cost;
+        bucket.input += input;
+        bucket.output += output;
+        bucket.cacheRead += cacheRead;
+        bucket.cacheWrite += cacheWrite;
+        if (msg.model) model = msg.model;
+        // the newest main-chain prompt IS the live context size; sub-agent
+        // (sidechain) turns run in their own window and must not stomp it
+        if (entry.isSidechain !== true) st.context = input + cacheRead + cacheWrite;
       }
+
+      if (turnTokens > 0) {
+        st.series.push({ t: Date.now(), tokens: turnTokens });
+        if (st.series.length > USAGE_SERIES_MAX) st.series.shift();
+        this.onSpend(sessionId, delta);
+      }
+      if (model && this.models.get(sessionId) !== model) {
+        this.models.set(sessionId, model);
+        this.onEvent(sessionId, { event: 'ModelUpdate', tool: null, message: null, model });
+      }
+      this.persistUsage();
+      this.onEvent(sessionId, {
+        event: 'UsageUpdate',
+        tool: null,
+        message: null,
+        model: null, // the chip's model rides ModelUpdate only (see applyHookEvent)
+        usage: this.snapshot(sessionId),
+      });
+    } finally {
+      st.busy = false;
     }
   }
 
@@ -152,12 +442,15 @@ class HookMonitor {
     if (!/^[A-Za-z0-9_]+$/.test(sessionId)) return;
     this.seen.delete(sessionId + '.json');
     this.models.delete(sessionId);
+    this.usage.delete(sessionId);
+    this.persistUsage();
     try { fs.unlinkSync(path.join(this.stateDir, sessionId + '.json')); } catch { /* ignore */ }
   }
 
   stop() {
     if (this.watcher) { try { this.watcher.close(); } catch { /* ignore */ } }
     clearInterval(this.sweepTimer);
+    if (this.persistTimer) this.flushUsage(); // the last turns must not be lost on quit
   }
 }
 

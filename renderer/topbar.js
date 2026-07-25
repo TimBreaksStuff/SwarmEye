@@ -13,6 +13,12 @@ const Topbar = (() => {
   let lastUsage = null;
   const WS_DRAG = 'text/swarmeye-ws';
 
+  // workspace identity palette — the one copy lives in main/config.js
+  // (WORKSPACE_COLORS), which assigns each new workspace its default and
+  // validates every pick against the list; app.js hands it over at boot and
+  // it drives the flyout swatches
+  let WS_COLORS = [];
+
   /* the 66px rail only shows initials — hovering a tile opens a flyout with
    * the full name (double-click to rename) and the ✕ remove button */
   const flyout = document.createElement('div');
@@ -21,6 +27,10 @@ const Topbar = (() => {
   document.body.appendChild(flyout);
   let flyoutWsId = null;
   let flyoutHideTimer = null;
+  // context from the last renderWorkspaces, so a colour pick or a programmatic
+  // flyout-open (openWorkspaceFlyout, used after "add workspace") can rebuild it
+  let railCtx = { workspaces: [], counts: {}, handlers: null };
+  const tileById = new Map();
   flyout.addEventListener('mouseenter', () => clearTimeout(flyoutHideTimer));
   flyout.addEventListener('mouseleave', scheduleHideFlyout);
 
@@ -53,7 +63,24 @@ const Topbar = (() => {
     const sub = document.createElement('div');
     sub.className = 'rail-flyout-sub';
     sub.textContent = `${info.n} agent${info.n === 1 ? '' : 's'} · ${ws.path}`;
-    infoEl.append(name, sub);
+
+    // a row of swatches to set this workspace's identity colour — the pick
+    // repaints the rail tile dot and the swarm-map slot borders via onSetColor
+    const colors = document.createElement('div');
+    colors.className = 'rail-flyout-colors';
+    WS_COLORS.forEach((c) => {
+      const sw = document.createElement('button');
+      sw.className = 'ws-swatch' + (c === ws.color ? ' active' : '');
+      sw.style.background = c;
+      sw.dataset.tip = 'Set workspace colour';
+      sw.addEventListener('click', () => {
+        ws.color = c; // keep the flyout's local copy in sync for the active ring
+        colors.querySelectorAll('.ws-swatch').forEach((s) => s.classList.toggle('active', s === sw));
+        handlers.onSetColor(ws.id, c);
+      });
+      colors.appendChild(sw);
+    });
+    infoEl.append(name, sub, colors);
 
     const x = document.createElement('button');
     x.className = 'rail-flyout-x';
@@ -76,6 +103,8 @@ const Topbar = (() => {
     // refresh; the rename's own commit triggers a re-render that catches up
     if (flyout.querySelector('[contenteditable]')) return;
     if (flyoutWsId && !workspaces.some((w) => w.id === flyoutWsId)) hideFlyout();
+    railCtx = { workspaces, counts, handlers };
+    tileById.clear();
     workspacesEl.innerHTML = '';
     workspaces.forEach((ws) => {
       const info = counts[ws.id] || { n: 0, attn: false };
@@ -94,6 +123,15 @@ const Topbar = (() => {
       name.className = 'rail-tile-name';
       name.textContent = ws.name;
       tile.append(glyph, name);
+
+      // identity-colour dot (bottom-left corner, mirrors the top-right .ws-attn)
+      if (ws.color) {
+        const cdot = document.createElement('span');
+        cdot.className = 'ws-color-dot';
+        cdot.style.background = ws.color;
+        tile.appendChild(cdot);
+      }
+      tileById.set(ws.id, tile);
 
       // drag up/down to rearrange; dropping on a tile inserts before or
       // after it depending on which half the pointer is over
@@ -184,6 +222,15 @@ const Topbar = (() => {
       nameEl.removeEventListener('keydown', onKey);
       commit(true);
     }, { once: true });
+  }
+
+  /* open a workspace's flyout without a hover — used right after adding a
+   * workspace so its colour can be picked immediately */
+  function openWorkspaceFlyout(wsId) {
+    const tile = tileById.get(wsId);
+    const ws = railCtx.workspaces.find((w) => w.id === wsId);
+    if (!tile || !ws || !railCtx.handlers) return;
+    showFlyout(tile, ws, railCtx.counts[wsId] || { n: 0, attn: false }, railCtx.handlers);
   }
 
   /* notification center: 🔔 with unread badge + event-history popover */
@@ -299,7 +346,7 @@ const Topbar = (() => {
       time.textContent = fmtClock(n.time);
 
       row.append(dot, body, time);
-      if (n.kind === 'wait') row.append(notifRespondButtons(n, handlers));
+      if (n.kind === 'wait' && n.canRespond) row.append(notifRespondButtons(n, handlers));
       notifPop.appendChild(row);
     }
   }
@@ -383,7 +430,7 @@ const Topbar = (() => {
       body.appendChild(time);
 
       row.append(dot, body);
-      if (n.kind === 'wait') row.append(notifRespondButtons(n, handlers));
+      if (n.kind === 'wait' && n.canRespond) row.append(notifRespondButtons(n, handlers));
       notifPanelList.appendChild(row);
     }
   }
@@ -449,24 +496,45 @@ const Topbar = (() => {
   const swarmMapGrid = document.getElementById('swarm-map-grid');
   const swarmMapFooter = document.getElementById('swarm-map-footer');
 
-  function renderSwarmMap(panes, totalSlots, onOpen) {
+  function renderSwarmMap(panes, totalSlots, onOpen, wsColor = {}) {
     const live = panes.filter((p) => !p.exited);
     const liveCount = live.filter((p) => p.status === 'working' || p.status === 'attention').length;
     const waitingCount = live.filter((p) => p.status === 'idle').length;
     const freeCount = Math.max(totalSlots - live.length, 0);
     const slotCount = Math.max(totalSlots, live.length);
 
-    swarmMapGrid.innerHTML = '';
+    // Reconcile slots in place rather than rebuilding from scratch: this runs on
+    // every state update, and wiping innerHTML would destroy the slot node the
+    // cursor is resting on — Chromium fires no mouseout for a removed node, so
+    // its hover tooltip would orphan and never hide. Reusing nodes keeps the
+    // hovered slot alive (and its tooltip fresh) across re-renders.
+    while (swarmMapGrid.children.length > slotCount) swarmMapGrid.lastChild.remove();
+    while (swarmMapGrid.children.length < slotCount) {
+      swarmMapGrid.appendChild(document.createElement('span'));
+    }
     for (let i = 0; i < slotCount; i++) {
       const pane = live[i];
       const cls = !pane ? ''
         : pane.status === 'working' ? 'busy'
         : pane.status === 'attention' ? 'attn'
         : 'idle';
-      const slot = document.createElement('span');
-      slot.className = 'swarm-map-slot' + (cls ? ' ' + cls : '');
-      if (pane) slot.addEventListener('dblclick', () => onOpen(pane.session.id));
-      swarmMapGrid.appendChild(slot);
+      const slot = swarmMapGrid.children[i];
+      slot.className = 'swarm-map-slot' + (cls ? ' ' + cls : '') + (pane ? ' clickable' : '');
+      if (pane) {
+        slot.dataset.tip = pane.session.agentName;
+        // last input the agent received — its most recently submitted command,
+        // shown after a vertical rule in the hover tooltip (see tooltip.js)
+        if (pane.initialCommandText) slot.dataset.tipSecondary = pane.initialCommandText;
+        else delete slot.dataset.tipSecondary;
+        // the slot's border carries its workspace's identity colour
+        slot.style.borderColor = wsColor[pane.session.workspaceId] || '';
+        slot.onclick = () => onOpen(pane.session.id);
+      } else {
+        delete slot.dataset.tip;
+        delete slot.dataset.tipSecondary;
+        slot.style.borderColor = '';
+        slot.onclick = null;
+      }
     }
 
     const footerText = waitingCount
@@ -554,7 +622,9 @@ const Topbar = (() => {
   // keep "resets in" countdowns fresh between polls
   setInterval(() => renderUsage(null), 30000);
 
-  return { renderWorkspaces, renderArchive, renderNotifications, renderNotifPanel, updateSessionCount, renderUsage, renderSwarmMap };
+  const setWorkspaceColors = (colors) => { WS_COLORS = colors || []; };
+
+  return { renderWorkspaces, renderArchive, renderNotifications, renderNotifPanel, updateSessionCount, renderUsage, renderSwarmMap, openWorkspaceFlyout, setWorkspaceColors, fmtIn };
 })();
 
 window.Topbar = Topbar;

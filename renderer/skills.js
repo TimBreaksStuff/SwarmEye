@@ -24,6 +24,7 @@ const Skills = (() => {
   const statsUpdatesEl = document.getElementById('skills-stats-updates');
 
   let skills = [];
+  let loaded = false; // list fetched at least once — see getActiveSkills
 
   /* repoIds currently collapsed by the user — toggled without a full
    * render() so the click is a single class flip, not a rebuild */
@@ -297,8 +298,12 @@ const Skills = (() => {
    * agent session starts, to auto-invoke each one. Returns objects rather
    * than bare ids because a workspace-local skill needs both its own invoke
    * name (the folder, not our synthetic id) and the workspace it's scoped to:
-   * `/that-skill` doesn't resolve in an agent running anywhere else. */
-  function getActiveSkills() {
+   * `/that-skill` doesn't resolve in an agent running anywhere else.
+   * Loads the list on first use: opening the Skills screen is what normally
+   * fills it, so without this a fresh app run injects nothing until the user
+   * happens to visit that screen. */
+  async function getActiveSkills() {
+    if (!loaded) await refresh();
     return skills.filter((s) => s.active).map((s) => ({
       command: s.invokeName || s.id,
       workspaceId: s.workspaceId || null,
@@ -307,6 +312,7 @@ const Skills = (() => {
 
   async function refresh() {
     skills = (await window.swarm.listSkills()) || [];
+    loaded = true;
     render();
     window.swarm.checkSkillUpdates(); // background — results stream in via onSkillUpdateStatus
   }

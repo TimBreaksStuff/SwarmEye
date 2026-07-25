@@ -80,8 +80,18 @@
         <div class="swarm-map-footer" id="swarm-map-footer"></div>
       </div>
 
+      <button id="swarm-view-btn" class="rail-tile" aria-label="Swarm View — live map of every agent (Ctrl+Shift+S)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2.6"/><circle cx="12" cy="12" r="8.5" stroke-dasharray="2.4 2.8"/><circle cx="12" cy="3.5" r="1.6" fill="currentColor" stroke="none"/><circle cx="19.4" cy="16.2" r="1.6" fill="currentColor" stroke="none"/><circle cx="4.6" cy="16.2" r="1.6" fill="currentColor" stroke="none"/></svg>
+        <span class="rail-tile-name">Swarm View</span>
+      </button>
+
       <button id="archive-btn" class="rail-tile" aria-label="Archived workspaces — restore or delete" style="display:none">
         <span class="rail-tile-glyph">🗃</span><span class="rail-tile-name">Archived</span>
+      </button>
+
+      <button id="costs-btn" class="rail-tile" aria-label="Costs — what the swarm has spent">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V5M16 20v-7M22 20H2"/></svg>
+        <span class="rail-tile-name">Costs</span>
       </button>
 
       <button id="skills-btn" class="rail-tile" aria-label="Skills — install and manage agent skills">
@@ -142,10 +152,17 @@
                 <option value="high">high priority</option>
                 <option value="critical">critical priority</option>
               </select>
+              <select id="board-form-repeat" data-tip="Repeat — when this task completes, its next run is queued one interval later">
+                <option value="none" selected>no repeat</option>
+                <option value="hourly">every hour</option>
+                <option value="daily">every day</option>
+                <option value="weekly">every week</option>
+              </select>
               <label><input type="checkbox" id="board-form-focus" /> focus mode</label>
               <label data-tip="Close this task's agent window automatically when the task completes"><input type="checkbox" id="board-form-closeonend" checked /> close on complete</label>
               <span id="board-form-auto-hint" class="board-form-hint" hidden></span>
             </div>
+            <textarea id="board-form-chain" rows="2" placeholder="When done, run these as follow-up agents — separate steps with a line containing ---" data-tip="Each step becomes a new task with these same settings once the previous one finishes"></textarea>
             <div class="board-form-actions">
               <button id="board-form-cancel">cancel</button>
               <button id="board-form-submit">add task</button>
@@ -232,6 +249,86 @@
           <div id="skills-list"></div>
         </div>
       </div>
+    </div>
+
+    <div id="costs-view" hidden>
+      <div class="board-box">
+        <div class="board-head">
+          <div class="kbd-title">Costs</div>
+          <div class="board-head-actions">
+            <span id="costs-range" class="costs-range" data-tip="Which period the breakdowns below cover"></span>
+            <button id="costs-clear-btn" class="pill" data-tip="Forget all recorded spend (click twice)">🗑 Clear History</button>
+            <button id="costs-close-btn" class="pill" data-tip="Close costs (Esc)">✕ Close</button>
+          </div>
+        </div>
+        <div id="costs-main">
+          <div id="costs-stats"></div>
+          <div id="costs-summary"></div>
+          <div id="costs-sections"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="swarm-view" hidden>
+      <div class="board-box">
+        <div class="board-head">
+          <div class="kbd-title">Swarm View</div>
+          <div class="board-head-actions">
+            <span id="sv-counts" class="sv-counts"></span>
+            <span class="sv-seg">
+              <button id="sv-font-minus" class="pill sv-font-btn" data-tip="Smaller text on this screen">−</button>
+              <button id="sv-font-plus" class="pill sv-font-btn" data-tip="Bigger text on this screen">+</button>
+            </span>
+            <span id="sv-layout" class="sv-seg" data-tip="How the map arranges agents">
+              <button class="pill" data-layout="clusters">clusters</button>
+              <button class="pill" data-layout="ring">ring</button>
+            </span>
+            <button id="sv-preview-btn" class="pill" data-tip="Show a live terminal preview of every running agent above the activity list">▤ Previews</button>
+            <button id="sv-click-btn" class="pill" data-tip="Whether a single click on an agent selects it here or jumps straight to its pane">⤳ Click</button>
+            <button id="sv-new-btn" class="pill">+ Agent</button>
+            <button id="swarm-view-close-btn" class="pill" data-tip="Close swarm view (Esc)">✕ Close</button>
+          </div>
+        </div>
+        <div id="sv-body">
+          <div id="sv-canvas">
+            <div id="sv-scene">
+              <svg id="sv-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+              <div id="sv-hubs"></div>
+              <div id="sv-nodes"></div>
+            </div>
+            <button id="sv-zoom" data-tip="Reset zoom to 100%" hidden>100%</button>
+            <div id="sv-empty" class="skills-empty" hidden>no agents running — start one with + Agent</div>
+            <div id="sv-legend">
+              <span class="sv-legend-item sv-legend-busy">busy</span>
+              <span class="sv-legend-item sv-legend-waiting">waiting</span>
+              <span class="sv-legend-item sv-legend-done">done</span>
+              <span class="sv-legend-item sv-legend-idle">idle</span>
+              <span class="sv-legend-item sv-legend-exited">exited</span>
+              <span class="sv-legend-note">ring = status · fill = workspace</span>
+              <span class="sv-legend-note sv-legend-hint">scroll = zoom · drag = pan · right-click: an agent for its actions, the map for a new one</span>
+            </div>
+          </div>
+          <div id="sv-resizer" data-tip="Drag to resize the dock"></div>
+          <aside id="sv-dock">
+            <div id="sv-terms" hidden></div>
+            <div id="sv-agents">
+              <div class="sv-panel-head">
+                <span class="sv-panel-title">Agents</span>
+                <span id="sv-agents-meta" class="sv-panel-meta"></span>
+              </div>
+              <div id="sv-agents-list"></div>
+            </div>
+            <div id="sv-notes">
+              <div class="sv-panel-head">
+                <span class="sv-panel-title sv-panel-title-amber">Notifications</span>
+                <span class="sv-panel-meta">live feed</span>
+              </div>
+              <div id="sv-notes-list"></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <div id="sv-menu" hidden></div>
     </div>
 
     <aside id="notif-panel" hidden>
@@ -347,6 +444,16 @@
         <input type="checkbox" id="show-initial-cmd-toggle" data-tip="Shows a second header row under every pane's title with the most recently submitted command — a task's launch prompt until you type a new line, which then takes over.">
       </span>
     </div>
+    <div class="kbd-row kbd-opt"><span>Show cost &amp; context panel</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="usage-panel-toggle" data-tip="Adds a panel to the bottom of every Claude pane: how full its context window is, what it has spent, cache hit rate, tokens per turn, how long the current turn has run, its share of the 5-hour limit and the last tools it used. Costs two rows of terminal height per pane.">
+      </span>
+    </div>
+    <div class="kbd-row kbd-opt"><span>Show Costs screen</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="costs-screen-toggle" data-tip="Shows the Costs tile in the left rail — spend per day, per workspace and per model. Off hides the tile and closes the screen; spend keeps being recorded either way, so turning it back on loses nothing.">
+      </span>
+    </div>
     <div class="kbd-row kbd-opt"><span>Auto-organize agent windows</span>
       <span class="opt-ctl">
         <input type="checkbox" id="auto-organize-toggle" data-tip="On: new agents are laid out automatically. Off: place agents yourself with each pane's → and ↓ buttons.">
@@ -414,7 +521,7 @@
     </div>
     <div class="kbd-row kbd-opt"><span>Theme background overlay</span>
       <span class="opt-ctl">
-        <input type="checkbox" id="theme-overlay-toggle" data-tip="On: the theme also tints the faint background grid and the app's flat background. Off: the grid is hidden and the background stays the default dark shade — only in-app colours (buttons, accents, terminal) follow the theme.">
+        <input type="checkbox" id="theme-overlay-toggle" data-tip="On: the theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, agent panes — stays the default dark shade; only the theme's colours (borders, text, accents, terminal) follow the theme.">
       </span>
     </div>
     <button type="button" id="kbd-shortcuts-btn" class="kbd-row kbd-opt kbd-submenu-btn kbd-title-mid">
@@ -437,6 +544,7 @@
     <div class="kbd-row"><span>Search in pane</span><kbd>Ctrl+Shift+F</kbd></div>
     <div class="kbd-row"><span>Search across all agents</span><kbd>Ctrl+Shift+G</kbd></div>
     <div class="kbd-row"><span>Task board</span><kbd>Ctrl+Shift+B</kbd></div>
+    <div class="kbd-row"><span>Swarm view</span><kbd>Ctrl+Shift+S</kbd></div>
     <div class="kbd-row"><span>Font bigger / smaller / reset</span><kbd>Ctrl++ · Ctrl+− · Ctrl+0</kbd></div>
     <div class="kbd-row"><span>Type a literal tab in terminal</span><kbd data-keep-ctrl>Ctrl+I</kbd></div>
     <div class="kbd-row"><span>Close search / this panel</span><kbd>Esc</kbd></div>
@@ -455,6 +563,8 @@
   <script src="topbar.js"></script>
   <script src="board.js"></script>
   <script src="skills.js"></script>
+  <script src="costs.js"></script>
+  <script src="swarmview.js"></script>
   <script src="sounds.js"></script>
   <script src="app.js"></script>
 </body>

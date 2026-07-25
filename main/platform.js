@@ -32,11 +32,15 @@ function shellArgv(cmd, { login = false } = {}) {
 }
 
 /* Run a shell command, resolve its stdout, resolve null on any failure.
- * Never rejects — every caller treats "couldn't tell" the same as "no". */
-function exec(cmd, timeout = 20000, opts) {
+ * Never rejects — every caller treats "couldn't tell" the same as "no".
+ *
+ * `maxBuffer` raises execFile's 1MB stdout cap; a command that outruns it
+ * fails outright, which is why the transcript reader (hooks.js) has to ask
+ * for more — session transcripts run to several megabytes. */
+function exec(cmd, timeout = 20000, opts = {}) {
   const [file, args] = shellArgv(cmd, opts);
   return new Promise((resolve) => {
-    execFile(file, args, { timeout }, (err, stdout) => {
+    execFile(file, args, { timeout, maxBuffer: opts.maxBuffer || 1024 * 1024 }, (err, stdout) => {
       resolve(err ? null : String(stdout));
     });
   });

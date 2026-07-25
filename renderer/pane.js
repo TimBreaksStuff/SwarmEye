@@ -405,6 +405,89 @@ const XTERM_THEMES = {
 function glassTheme(palette) {
   return { ...palette, background: 'rgba(0, 0, 0, 0)' };
 }
+
+/* ---- readability pass for the light-background themes ----
+ *
+ * Two problems the palettes above cannot fix on their own, both only hitting
+ * the two themes whose panes are near-white:
+ *
+ *  - agents assume a dark terminal. Claude Code's TUI paints its text in
+ *    whites and pale greys, and sends most of them as *256-colour indices*
+ *    (TERM=xterm-256color, so chalk drops to the fixed 16–255 table) — colours
+ *    no palette entry covers, and invisible on a white pane. This is the
+ *    "text sometimes unreadable in Light" report.
+ *  - with "Theme background overlay" off, app.css pins every pane dark, so
+ *    those same two themes would draw their near-black text on black.
+ *
+ * Both are one job: push a colour away from the backdrop it will actually be
+ * drawn on until it clears a readable contrast ratio, and leave everything
+ * that already clears it untouched. Blending keeps the hue, so a red stays
+ * red — it just stops being pale.
+ */
+const LIGHT_THEMES = new Set(['light', 'sepia']);
+/* What .pane-term resolves to for those two — term-bg at 45% over the pane's
+ * 55% surface over --bg (see app.css). The contrast maths needs the real
+ * backdrop, not the palette's nominal `background`, which glassTheme drops. */
+const LIGHT_PANE_BG = { light: '#f8f9fb', sepia: '#f8f2e6' };
+/* and what app.css pins that same stack to while the overlay is off */
+const FLAT_PANE_BG = '#0b0d10';
+
+function hexRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbHex(rgb) {
+  return '#' + rgb.map((c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0')).join('');
+}
+function luminance([r, g, b]) {
+  const lin = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+function contrast(a, b) {
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+/* walk `hex` toward black (light backdrop) or white (dark one) until it reads
+ * at `min`:1 against it */
+function readable(hex, bgLum, min) {
+  const rgb = hexRgb(hex);
+  if (contrast(luminance(rgb), bgLum) >= min) return hex;
+  const toward = bgLum > 0.4 ? 0 : 255;
+  for (let t = 0.05; t < 1; t += 0.05) {
+    const step = rgb.map((c) => c + (toward - c) * t);
+    if (contrast(luminance(step), bgLum) >= min) return rgbHex(step);
+  }
+  return toward ? '#ffffff' : '#000000';
+}
+
+// palette keys painted *behind* text rather than as text: forcing contrast on
+// them would fight the very thing it is trying to fix
+const BACKDROP_KEYS = new Set(['background', 'cursorAccent', 'selectionBackground']);
+// body text earns AAA; the rest of the ramp is decoration, AA is enough
+const BODY_KEYS = new Set(['foreground', 'white', 'brightWhite']);
+
+function readablePalette(palette, bgHex) {
+  const bgLum = luminance(hexRgb(bgHex));
+  const out = {};
+  for (const [key, value] of Object.entries(palette)) {
+    out[key] = BACKDROP_KEYS.has(key) ? value : readable(value, bgLum, BODY_KEYS.has(key) ? 7 : 4.5);
+  }
+  return out;
+}
+
+/* xterm's fixed 16–255 colours: a 6×6×6 cube, then a 24-step grey ramp. They
+ * are what an app reaches for when it wants "grey" or "white" without asking
+ * the theme — exactly the ones that disappear on a light pane. */
+const CUBE_LEVELS = [0, 95, 135, 175, 215, 255];
+function extendedAnsiFor(bgHex) {
+  const bgLum = luminance(hexRgb(bgHex));
+  const out = [];
+  for (let n = 0; n < 216; n++) {
+    out.push(readable(rgbHex([CUBE_LEVELS[Math.floor(n / 36)], CUBE_LEVELS[Math.floor(n / 6) % 6], CUBE_LEVELS[n % 6]]), bgLum, 4.5));
+  }
+  for (let i = 0; i < 24; i++) out.push(readable(rgbHex([8 + i * 10, 8 + i * 10, 8 + i * 10]), bgLum, 4.5));
+  return out;
+}
+
 let activeXtermTheme = glassTheme(XTERM_THEMES.dark);
 
 const DEFAULT_FONT_SIZE = 13;
@@ -421,6 +504,60 @@ let showInitialCommand = false;
 // the → / ↓ split buttons are how the user places new agents themselves, so
 // they only make sense to show while auto-organize is off
 let autoOrganize = true;
+
+/* ---- cost & context panel ---- */
+
+// "Show cost & context panel" option in ⌨ Options — off by default, since the
+// panel costs every pane two rows of terminal height
+let showUsagePanel = false;
+// newest 5-hour usage window ({usedPct, resetsAt}), pushed by app.js — the
+// denominator for each agent's share of the quota
+let usageWindow = null;
+// every pane currently alive, so one pane's share can be measured against
+// what the whole swarm burned in the same window
+const livePanes = new Set();
+
+// Claude Code compacts against a 200k window; a session that ever reports a
+// bigger prompt than that is plainly running on the 1M one, so the meter
+// re-scales itself instead of guessing per model id.
+const CONTEXT_WINDOW = 200000;
+const CONTEXT_WINDOW_LARGE = 1000000;
+const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+const SPARK_CHARS = '▁▂▃▄▅▆▇█';
+const TOOL_TRAIL_MAX = 3;
+
+function fmtTokens(n) {
+  if (!n) return '0';
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+  return String(Math.round(n));
+}
+
+function fmtCost(n) {
+  if (!n) return '$0';
+  if (n < 0.01) return '<$0.01';
+  return '$' + n.toFixed(n >= 100 ? 0 : 2);
+}
+
+function fmtDuration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm' + String(s % 60).padStart(2, '0') + 's';
+  return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm';
+}
+
+/* One block character per turn, scaled to the biggest turn in the window —
+ * a burn chart that costs nothing to draw and rescales with the font. */
+function sparkline(series) {
+  if (!series || !series.length) return '';
+  const peak = Math.max(...series.map((p) => p.tokens));
+  if (!peak) return '';
+  return series
+    .slice(-24)
+    .map((p) => SPARK_CHARS[Math.min(SPARK_CHARS.length - 1, Math.round((p.tokens / peak) * (SPARK_CHARS.length - 1)))])
+    .join('');
+}
 const IDLE_AFTER_MS = 2500;
 // output arriving this soon after a keystroke/mouse report is its echo, not
 // the agent working — typing or clicking must not light the busy indicator
@@ -521,7 +658,8 @@ class Pane {
   /**
    * @param {object} session {id, num, agentName, workspaceName, cwd, persistent, lastCommand}
    * @param {object} handlers {onClose, onMaximize, onResize, onRename,
-   *                           onRestart, onFocus, onStatusChange, onShortcut, onSplit, setLastCommand}
+   *                           onRestart, onToggleAutoRestart, onFocus, onStatusChange,
+   *                           onShortcut, onSplit, setLastCommand}
    * @param {object} [opts] {managed} — managed is true when a board task
    *                         started this agent; false for a manually-added one
    */
@@ -537,11 +675,24 @@ class Pane {
     this.trustDialogHandled = false; // one-shot: auto-accept the folder-trust dialog at most once per session
     this.bypassDialogHandled = false; // one-shot: auto-accept the bypass-permissions warning at most once per session
     this.hookAlive = false; // true once Claude Code hook events flow — they replace the output-timing heuristics
-    this.awaitingPrompt = false; // true while a live numbered permission prompt is up (Notification hook, cleared on the next turn) — gates the ✓/✕ quick-respond buttons
+    this.awaitingPrompt = false; // true while the agent is blocked on the user (Notification hook, cleared on the next turn)
+    this.promptAnswerable = false; // true while a numbered yes/no menu is actually on screen — with awaitingPrompt, gates the ✓/✕ quick-respond buttons
+    this.statusText = ''; // what the hooks say the agent is doing right now (tool name / 'vibing...' / 'done'), mirrored for the swarm view
     this.lastInputAt = 0; // last keystroke/mouse report — its echo must not read as agent activity
     this.idleTimer = null;
     this.closeArmTimer = null;
     this.bufferTextCache = null; // memoized getBufferText result
+
+    // cost & context panel state — usage arrives per turn from the hooks'
+    // transcript read (UsageUpdate); the rest is derived from hook events.
+    // A reattached session brings its totals back with it, so the panel is
+    // populated before this agent's next turn ever runs.
+    this.usage = session.usage || null;
+    this.toolTrail = [];
+    this.turnStartedAt = 0; // when the agent started working, 0 while it isn't
+    this.waitingSince = 0; // when it started waiting on the user, 0 while it isn't
+    this.usageTimer = null; // 1s tick, only while the panel is visible
+    livePanes.add(this);
 
     this.el = document.createElement('section');
     this.el.className = 'pane';
@@ -559,9 +710,12 @@ class Pane {
     this.taskEl.dataset.tip = 'Started by a board task';
     this.taskEl.style.display = this.managed ? '' : 'none';
 
+    // the model is drawn in exactly one place at a time — see syncModelChip
     this.llmEl = document.createElement('span');
     this.llmEl.className = 'pane-llm';
     this.llmEl.style.display = 'none';
+    this.modelLabel = '';
+    this.modelTip = 'Claude model for this agent';
 
     this.gitEl = document.createElement('span');
     this.gitEl.className = 'pane-git';
@@ -591,9 +745,8 @@ class Pane {
     // pi panes: a static agent chip in the model slot (no hook events ever
     // fill it) and no mode selector — Shift+Tab mode cycling is Claude-only
     if (session.kind === 'pi') {
-      this.llmEl.textContent = 'pi';
-      this.llmEl.style.display = '';
-      this.llmEl.dataset.tip = 'Pi coding agent';
+      this.modelLabel = 'pi';
+      this.modelTip = 'Pi coding agent';
       this.modeSel.style.display = 'none';
     }
     this.modeBusy = false;
@@ -646,6 +799,27 @@ class Pane {
     this.btnRestart.textContent = '↻';
     this.btnRestart.style.display = 'none';
     this.btnRestart.addEventListener('click', (e) => handlers.onRestart(this, { resume: !e.shiftKey }));
+
+    // armed = app.js respawns this agent (continuing its conversation) if its
+    // session really dies; a mere tmux detach is not a death and is left alone
+    this.autoRestart = !!session.autoRestart;
+    this.autoRestartTries = 0; // consecutive auto-restarts, reset once one sticks
+    this.btnAutoRestart = document.createElement('button');
+    this.btnAutoRestart.className = 'pane-btn auto-restart';
+    this.btnAutoRestart.addEventListener('click', () => this.setAutoRestart(!this.autoRestart));
+    this.syncAutoRestartButton();
+
+    // /clear — only shown once the agent is idle (finished a turn); wipes its
+    // conversation context without restarting the process. Pi has no /clear.
+    this.btnClear = document.createElement('button');
+    this.btnClear.className = 'pane-btn clear';
+    this.btnClear.dataset.tip = "Clear this agent's context (/clear)";
+    this.btnClear.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20H8.5L3.6 15a1.4 1.4 0 0 1 0-2L12.8 3.8a1.4 1.4 0 0 1 2 0l5.2 5.2a1.4 1.4 0 0 1 0 2L11.5 20"/><path d="M6.5 10.5l7 7"/></svg>';
+    this.btnClear.style.display = 'none';
+    this.btnClear.addEventListener('click', () => {
+      if (this.exited || this.session.kind === 'pi') return;
+      window.swarm.writeSession(this.session.id, '/clear\r');
+    });
 
     const btnExport = document.createElement('button');
     btnExport.className = 'pane-btn export';
@@ -716,7 +890,7 @@ class Pane {
 
     header.append(
       this.dot, this.taskEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.badge,
-      this.btnRestart, btnExport, btnSearch, btnMic, btnFontDown, btnFontUp, btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
+      this.btnAutoRestart, this.btnRestart, this.btnClear, btnExport, btnSearch, btnMic, btnFontDown, btnFontUp, btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
 
     // search row (hidden until toggled)
@@ -759,8 +933,43 @@ class Pane {
     this.termEl = document.createElement('div');
     this.termEl.className = 'pane-term';
 
-    this.el.append(header, this.subheaderEl, this.searchEl, this.termEl);
+    // bottom panel: what this agent has spent and how full its context is.
+    // Two rows — the meter, and the slower-moving detail under it — hidden
+    // entirely unless the option is on.
+    this.usageEl = document.createElement('div');
+    this.usageEl.className = 'pane-usage';
+    this.usageEl.style.display = 'none';
+    this.usageBarEl = document.createElement('span');
+    this.usageBarEl.className = 'pane-usage-bar';
+    this.usageBarFillEl = document.createElement('i');
+    this.usageBarEl.appendChild(this.usageBarFillEl);
+    this.usageCtxEl = document.createElement('span');
+    this.usageCtxEl.className = 'pane-usage-ctx';
+    this.usageCostEl = document.createElement('span');
+    this.usageCostEl.className = 'pane-usage-cost';
+    this.usageCacheEl = document.createElement('span');
+    this.usageCacheEl.className = 'pane-usage-cache';
+    this.usageModelEl = document.createElement('span');
+    this.usageModelEl.className = 'pane-usage-model';
+    const usageTop = document.createElement('div');
+    usageTop.className = 'pane-usage-row';
+    usageTop.append(this.usageBarEl, this.usageCtxEl, this.usageCostEl, this.usageCacheEl, this.usageModelEl);
+
+    this.usageSparkEl = document.createElement('span');
+    this.usageSparkEl.className = 'pane-usage-spark';
+    this.usageTurnsEl = document.createElement('span');
+    this.usageTimeEl = document.createElement('span');
+    this.usageShareEl = document.createElement('span');
+    this.usageToolsEl = document.createElement('span');
+    this.usageToolsEl.className = 'pane-usage-tools';
+    const usageSub = document.createElement('div');
+    usageSub.className = 'pane-usage-row pane-usage-sub';
+    usageSub.append(this.usageSparkEl, this.usageTurnsEl, this.usageTimeEl, this.usageShareEl, this.usageToolsEl);
+    this.usageEl.append(usageTop, usageSub);
+
+    this.el.append(header, this.subheaderEl, this.searchEl, this.termEl, this.usageEl);
     this.syncInitialCommandHeader();
+    this.syncUsagePanel();
 
     this.term = new Terminal({
       theme: activeXtermTheme,
@@ -935,6 +1144,10 @@ class Pane {
     this.dot.classList.toggle('attn', status === 'attention');
     this.el.classList.toggle('attn', status === 'attention');
     this.busyEl.style.display = status === 'working' ? '' : 'none';
+    // /clear appears once the agent is done working and free (not mid-turn, not
+    // blocked on a permission prompt, not exited); Pi has no /clear command
+    const canClear = !this.exited && !this.working && !this.awaitingPrompt && this.session.kind !== 'pi';
+    this.btnClear.style.display = canClear ? '' : 'none';
   }
 
   flagAttention() {
@@ -983,12 +1196,13 @@ class Pane {
   /* ---- precise state from Claude Code hooks ---- */
 
   setStatusText(text) {
+    this.statusText = text || '';
     this.statusEl.textContent = text || '';
     this.statusEl.style.display = text ? '' : 'none';
   }
 
   syncPromptButtons() {
-    const show = this.awaitingPrompt && !this.exited;
+    const show = this.awaitingPrompt && this.promptAnswerable && !this.exited;
     this.btnApprove.style.display = show ? '' : 'none';
     this.btnDeny.style.display = show ? '' : 'none';
   }
@@ -1005,23 +1219,57 @@ class Pane {
    * remember-this-choice variant) over a plain one, falling back to plain
    * yes if no such option exists. No matching option = nothing sent; caller
    * shows a toast instead of guessing. */
-  respondToPrompt(kind, always) {
-    if (this.exited) return false;
-    const lines = this.tailLines(30);
+  promptOptions(lines = this.tailLines(30)) {
     const options = [];
     for (const line of lines) {
       const m = MENU_OPTION_RE.exec(line);
-      if (m) options.push({ digit: m[2], text: line.slice(m[1].length).trim() });
+      // the label only — the "1." itself has to come off, or every option
+      // starts with a digit and nothing ever matches ^yes / ^no
+      if (m) options.push({ digit: m[2], text: line.slice(m[1].length + m[2].length + 1).trim() });
     }
+    return options;
+  }
+
+  pickPromptOption(kind, always, options = this.promptOptions()) {
     const wantAlways = kind === 'yes' && always;
     let pick = null;
     for (const o of options) {
       if (!new RegExp('^' + kind, 'i').test(o.text)) continue;
-      const mentionsAlways = /don'?t ask|always/i.test(o.text);
-      if (wantAlways ? mentionsAlways : !mentionsAlways) { pick = o; break; }
+      // "…and don't ask again", "…allow all edits during this session" — the
+      // remember-this-choice variant, whichever wording this prompt uses
+      const mentionsAlways = /don'?t ask|always|allow all/i.test(o.text);
+      if (wantAlways ? mentionsAlways : !mentionsAlways) return o;
       if (!pick) pick = o; // fallback candidate of the right yes/no family
     }
-    if (!pick) return false;
+    return pick;
+  }
+
+  /* Whether the ✓/✕ pair has anything to click — a numbered menu with both a
+   * yes and a no option on screen right now. The Notification hook fires for
+   * *any* block on the user, and its commonest form is the idle "Claude is
+   * waiting for your input" nudge, which has no menu behind it (in bypass
+   * permissions mode it is the only notification there is). Gating on
+   * awaitingPrompt alone therefore offered buttons that could only ever
+   * answer "couldn't read the prompt". Re-run whenever output settles, since
+   * the hook can land a beat before the TUI paints the menu. */
+  refreshPromptOptions(lines = this.tailLines(30)) {
+    const options = this.exited ? [] : this.promptOptions(lines);
+    const answerable = !!(this.pickPromptOption('yes', false, options)
+      && this.pickPromptOption('no', false, options));
+    if (answerable === this.promptAnswerable) return;
+    this.promptAnswerable = answerable;
+    this.syncPromptButtons();
+    // the bell and the swarm view carry their own copy of these buttons
+    this.handlers.onStatusChange(this, 'prompt');
+  }
+
+  respondToPrompt(kind, always) {
+    if (this.exited) return false;
+    const pick = this.pickPromptOption(kind, always);
+    if (!pick) {
+      this.refreshPromptOptions(); // the menu moved on — stop offering the buttons
+      return false;
+    }
     this.awaitingPrompt = false;
     this.syncPromptButtons();
     this.clearAttention();
@@ -1029,8 +1277,16 @@ class Pane {
     return true;
   }
 
-  applyHookEvent({ event, tool, message, model }) {
+  applyHookEvent({ event, tool, message, model, usage }) {
     if (this.exited) return;
+    // per-turn totals from the transcript — a bookkeeping event, not a state
+    // change, so it returns before any of the working/waiting handling below
+    if (event === 'UsageUpdate') {
+      // a null payload is the reset /clear sends: the tally starts over
+      this.usage = usage || null;
+      this.renderUsagePanel();
+      return;
+    }
     const wasWorking = this.working;
     if (!this.hookAlive) {
       this.hookAlive = true;
@@ -1051,20 +1307,33 @@ class Pane {
     if (event === 'UserPromptSubmit') {
       this.working = true;
       this.awaitingPrompt = false;
+      this.noteTurnStart();
       this.setStatusText('');
     } else if (event === 'PreToolUse') {
       this.working = true;
       this.awaitingPrompt = false;
+      this.noteTurnStart();
+      if (tool) {
+        this.toolTrail.push(tool);
+        if (this.toolTrail.length > TOOL_TRAIL_MAX) this.toolTrail.shift();
+      }
       this.setStatusText(tool === 'Bash' ? 'vibing...' : (tool || ''));
     } else if (event === 'Notification') {
       // claude is blocked on the user (permission prompt / waiting for input)
       this.working = false;
       this.awaitingPrompt = true;
+      this.turnStartedAt = 0;
+      this.waitingSince = this.waitingSince || Date.now();
       this.setStatusText(message || 'waiting for you');
+      // a permission prompt is usually already painted by the time its hook
+      // lands; a plain "waiting for your input" nudge never has a menu at all
+      this.refreshPromptOptions();
       this.flagAttention();
     } else if (event === 'Stop') {
       this.working = false;
       this.awaitingPrompt = false;
+      this.turnStartedAt = 0;
+      this.waitingSince = 0;
       this.setStatusText('done');
       this.flagAttention();
       // completion must reach app.js even when flagAttention suppresses its
@@ -1079,13 +1348,128 @@ class Pane {
     }
   }
 
+  /* ---- cost & context panel ---- */
+
+  noteTurnStart() {
+    this.waitingSince = 0;
+    if (!this.turnStartedAt) this.turnStartedAt = Date.now();
+  }
+
+  /* Show or hide the panel, and keep the terminal's row count honest — two
+   * rows of panel are two rows the terminal no longer has. */
+  syncUsagePanel() {
+    const show = showUsagePanel && this.session.kind !== 'pi'; // pi panes report no usage
+    const was = this.usageEl.style.display !== 'none';
+    this.usageEl.style.display = show ? '' : 'none';
+    clearInterval(this.usageTimer);
+    this.usageTimer = null;
+    if (show) {
+      this.renderUsagePanel();
+      // the turn timer and the 5h share both move on their own
+      this.usageTimer = setInterval(() => this.renderUsagePanel(), 1000);
+    }
+    this.syncModelChip(); // the panel takes the model over from the header
+
+    if (show !== was && this.fit) this.refit();
+  }
+
+  /* Tokens this agent burned inside the current 5-hour usage window. Also the
+   * numerator and (summed across panes) the denominator of its quota share. */
+  windowTokens() {
+    if (!this.usage || !this.usage.series) return 0;
+    const start = (usageWindow && usageWindow.resetsAt ? usageWindow.resetsAt : Date.now() + FIVE_HOURS_MS) - FIVE_HOURS_MS;
+    let total = 0;
+    for (const point of this.usage.series) if (point.t >= start) total += point.tokens;
+    return total;
+  }
+
+  renderUsagePanel() {
+    if (this.usageEl.style.display === 'none') return;
+    const u = this.usage;
+    if (!u) {
+      // no turn counted yet — either a brand-new agent or one just /clear'ed,
+      // in which case last conversation's figures must not linger
+      this.usageCtxEl.textContent = 'waiting for the first turn…';
+      this.usageBarFillEl.style.width = '0%';
+      this.usageEl.classList.remove('warn', 'hot');
+      this.usageCostEl.textContent = '';
+      this.usageCacheEl.textContent = '';
+      this.usageSparkEl.textContent = '';
+      this.usageTurnsEl.textContent = '';
+      this.usageShareEl.style.display = 'none';
+      return;
+    }
+
+    const limit = u.context > CONTEXT_WINDOW ? CONTEXT_WINDOW_LARGE : CONTEXT_WINDOW;
+    const filled = Math.min(100, Math.round((u.context / limit) * 100));
+    this.usageBarFillEl.style.width = filled + '%';
+    this.usageEl.classList.toggle('warn', filled >= 70 && filled < 90);
+    this.usageEl.classList.toggle('hot', filled >= 90);
+    this.usageBarEl.dataset.tip = `Context in use: ${u.context.toLocaleString()} of ${fmtTokens(limit)} tokens — Claude Code compacts the conversation as this fills`;
+    this.usageCtxEl.textContent = `${fmtTokens(u.context)} / ${fmtTokens(limit)}`;
+
+    this.usageCostEl.textContent = (u.partial ? '≈' : '') + fmtCost(u.cost);
+    this.usageCostEl.dataset.tip = 'Estimated spend for this agent at list prices — in '
+      + fmtTokens(u.input) + ' · out ' + fmtTokens(u.output)
+      + ' · cache read ' + fmtTokens(u.cacheRead) + ' · cache write ' + fmtTokens(u.cacheWrite)
+      + (u.partial ? ' (session was already long when SwarmEye started counting, so this is a floor)' : '');
+
+    const cached = u.cacheRead + u.cacheWrite + u.input;
+    const hit = cached ? Math.round((u.cacheRead / cached) * 100) : 0;
+    this.usageCacheEl.textContent = hit + '% cached';
+    this.usageCacheEl.dataset.tip = 'Share of input served from the prompt cache at a tenth of the price — higher is cheaper';
+    // the transcript's model is the same one ModelUpdate carries, but it can
+    // arrive first on a reattach — take it when the chip is still blank
+    if (!this.modelLabel && u.model) this.setModel(prettyModelName(u.model));
+
+    this.usageSparkEl.textContent = sparkline(u.series);
+    this.usageSparkEl.dataset.tip = 'Tokens per turn, most recent on the right';
+    this.usageTurnsEl.textContent = u.turns + (u.turns === 1 ? ' turn' : ' turns');
+
+    const now = Date.now();
+    if (this.turnStartedAt) this.usageTimeEl.textContent = 'working ' + fmtDuration(now - this.turnStartedAt);
+    else if (this.waitingSince) this.usageTimeEl.textContent = 'waiting ' + fmtDuration(now - this.waitingSince);
+    else this.usageTimeEl.textContent = 'idle';
+
+    // this agent's slice of the 5-hour quota: its share of everything the
+    // swarm burned this window, applied to the window's own percentage. The
+    // API reports a percentage rather than tokens, so this is an estimate —
+    // hence the ≈.
+    const mine = this.windowTokens();
+    let swarm = 0;
+    for (const pane of livePanes) swarm += pane.windowTokens();
+    const used = usageWindow && typeof usageWindow.usedPct === 'number' ? usageWindow.usedPct : null;
+    if (used != null && swarm > 0) {
+      const share = (mine / swarm) * used;
+      this.usageShareEl.textContent = '≈' + (share < 1 ? share.toFixed(1) : Math.round(share)) + '% of 5h';
+      this.usageShareEl.dataset.tip = `This agent burned ${fmtTokens(mine)} of the swarm's ${fmtTokens(swarm)} tokens this session window, which is ${used}% used overall`;
+      this.usageShareEl.style.display = '';
+    } else {
+      this.usageShareEl.style.display = 'none';
+    }
+
+    this.usageToolsEl.textContent = this.toolTrail.join(' → ');
+    this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran';
+  }
+
   /* ---- model chip ---- */
 
   setModel(label) {
     if (!label) return;
-    this.llmEl.textContent = label;
-    this.llmEl.dataset.tip = 'Claude model for this agent';
-    this.llmEl.style.display = '';
+    this.modelLabel = label;
+    this.syncModelChip();
+  }
+
+  /* One model, one place: the cost & context panel owns it whenever that
+   * panel is on, and the header chip only fills in when it is off (which is
+   * always the case for pi panes, whose panel never shows). */
+  syncModelChip() {
+    const inPanel = this.usageEl.style.display !== 'none';
+    this.llmEl.textContent = this.modelLabel;
+    this.llmEl.dataset.tip = this.modelTip;
+    this.llmEl.style.display = this.modelLabel && !inPanel ? '' : 'none';
+    this.usageModelEl.textContent = this.modelLabel;
+    this.usageModelEl.style.display = this.modelLabel ? '' : 'none';
   }
 
   /* Last `n` buffer lines as plain text. Shared by every settle-time scan
@@ -1348,6 +1732,27 @@ class Pane {
     this.btnSplitDown.style.display = autoOrganize ? 'none' : '';
   }
 
+  /* ---- auto-restart ---- */
+
+  /* `silent` is for the pane that inherits the flag from an auto-restarted
+   * predecessor: the new session's metadata already carries it (see
+   * PtyManager.restart), so re-persisting it would be a pointless round trip. */
+  setAutoRestart(on, { silent = false } = {}) {
+    this.autoRestart = !!on;
+    this.session.autoRestart = this.autoRestart;
+    if (!this.autoRestart) this.autoRestartTries = 0;
+    this.syncAutoRestartButton();
+    if (!silent) this.handlers.onToggleAutoRestart(this, this.autoRestart);
+  }
+
+  syncAutoRestartButton() {
+    this.btnAutoRestart.textContent = this.autoRestart ? '◉' : '◎';
+    this.btnAutoRestart.classList.toggle('armed', this.autoRestart);
+    this.btnAutoRestart.dataset.tip = this.autoRestart
+      ? 'Auto-restart is on — respawns this agent (continuing its conversation) if it exits'
+      : 'Auto-restart is off — click to respawn this agent automatically if it exits';
+  }
+
   /* ---- rename ---- */
 
   startRename() {
@@ -1461,6 +1866,7 @@ class Pane {
       this.syncMode(lines);
       this.syncModelFromBuffer(lines);
       this.autoAcceptDialogs(lines);
+      this.refreshPromptOptions(lines);
     }, 500);
   }
 
@@ -1473,6 +1879,7 @@ class Pane {
     this.attention = false;
     this.working = false;
     this.awaitingPrompt = false;
+    this.promptAnswerable = false;
     this.syncPromptButtons();
     if (this.stopDictation) this.stopDictation(); // agent gone — mic must not stay hot
     clearTimeout(this.idleTimer);
@@ -1536,6 +1943,8 @@ class Pane {
     clearTimeout(this.idleTimer);
     clearTimeout(this.closeArmTimer);
     clearTimeout(this.modeTimer);
+    clearInterval(this.usageTimer);
+    livePanes.delete(this);
     this.observer.disconnect();
     // the webgl addon's dispose can throw (upstream bug) — detach it first
     // and never let any teardown error keep the pane element on screen
@@ -1547,9 +1956,19 @@ class Pane {
 }
 
 /* app.js calls this on theme switch; new panes pick it up via the constructor,
- * existing terminals are restyled by the caller with the returned palette */
-Pane.setXtermTheme = (name) => {
-  activeXtermTheme = glassTheme(XTERM_THEMES[name] || XTERM_THEMES.dark);
+ * existing terminals are restyled by the caller with the returned palette.
+ * `overlayOn` is the "Theme background overlay" option — with it off the panes
+ * are dark whatever the theme, which flips the backdrop the light themes'
+ * palettes have to read against (see the readability pass above). */
+Pane.setXtermTheme = (name, overlayOn = true) => {
+  const base = XTERM_THEMES[name] || XTERM_THEMES.dark;
+  if (!LIGHT_THEMES.has(name)) {
+    activeXtermTheme = glassTheme(base);
+    return activeXtermTheme;
+  }
+  const bg = overlayOn ? LIGHT_PANE_BG[name] : FLAT_PANE_BG;
+  activeXtermTheme = glassTheme(readablePalette(base, bg));
+  activeXtermTheme.extendedAnsi = extendedAnsiFor(bg);
   return activeXtermTheme;
 };
 
@@ -1572,6 +1991,16 @@ Pane.setShowInitialCommand = (on) => { showInitialCommand = !!on; };
 
 /* same pattern as setShowInitialCommand, for the → / ↓ split buttons */
 Pane.setAutoOrganize = (on) => { autoOrganize = !!on; };
+
+/* same pattern again, for the bottom cost & context panel — the caller
+ * re-syncs already-open panes (which also refits their terminals) */
+Pane.setShowUsagePanel = (on) => { showUsagePanel = !!on; };
+
+/* app.js hands over each usage poll: the 5-hour window is what every pane's
+ * "≈x% of 5h" share is measured against */
+Pane.setUsageWindow = (win) => {
+  usageWindow = win || null;
+};
 
 // exposed so the task board can build its starting-mode picker from the
 // same single source of truth as the per-pane mode dropdown

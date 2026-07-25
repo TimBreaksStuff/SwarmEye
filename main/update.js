@@ -49,11 +49,6 @@ class UpdateChecker {
     clearInterval(this.timer);
   }
 
-  async check() {
-    await this.tick();
-    return this.latest;
-  }
-
   async tick() {
     try {
       const res = await fetch(LATEST_RELEASE_URL, { signal: AbortSignal.timeout(10000) });

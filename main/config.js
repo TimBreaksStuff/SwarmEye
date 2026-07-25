@@ -6,6 +6,12 @@ const FILE = () => path.join(app.getPath('userData'), 'config.json');
 
 const DEFAULT_TASK_CATEGORIES = ['maintenance', 'bugfix', 'features'];
 
+// per-workspace identity colours — assigned round-robin as workspaces are
+// added, then surfaced as the rail-tile dot, the flyout swatch picker, and the
+// swarm-map slot borders. Chosen to read as a border on both light and dark
+// themes. The renderer keeps a matching copy (WS_COLORS in topbar.js).
+const WORKSPACE_COLORS = ['#e5484d', '#e5822d', '#e0b341', '#d6ff4b', '#5bbf3a', '#2bb9a3', '#3d8bf0', '#7c5cff', '#c44de5', '#e5489b', '#8b93a0'];
+
 const DEFAULTS = {
   workspaces: [],
   archivedWorkspaces: [],
@@ -13,6 +19,7 @@ const DEFAULTS = {
   windowBounds: null,
   maxAgents: 10,
   sessions: {},
+  usage: {}, // sessionId -> persisted cost/context totals (see hooks.js)
   tasks: [],
   archivedTasks: [],
   skills: [],
@@ -42,6 +49,9 @@ function load() {
   // backfill categories on workspaces saved before this field existed
   for (const ws of cache.workspaces) if (!Array.isArray(ws.categories)) ws.categories = [...DEFAULT_TASK_CATEGORIES];
   for (const ws of cache.archivedWorkspaces || []) if (!Array.isArray(ws.categories)) ws.categories = [...DEFAULT_TASK_CATEGORIES];
+  // backfill identity colour on workspaces saved before this field existed
+  cache.workspaces.forEach((ws, i) => { if (!ws.color) ws.color = WORKSPACE_COLORS[i % WORKSPACE_COLORS.length]; });
+  (cache.archivedWorkspaces || []).forEach((ws, i) => { if (!ws.color) ws.color = WORKSPACE_COLORS[i % WORKSPACE_COLORS.length]; });
   return cache;
 }
 
@@ -58,4 +68,4 @@ function patch(partial) {
   save({ ...load(), ...partial });
 }
 
-module.exports = { load, save, patch, DEFAULT_TASK_CATEGORIES };
+module.exports = { load, save, patch, DEFAULT_TASK_CATEGORIES, WORKSPACE_COLORS };

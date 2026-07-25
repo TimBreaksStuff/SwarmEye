@@ -5,6 +5,7 @@ const config = require('./config');
 const { PtyManager } = require('./sessions');
 const { UsageMonitor } = require('./usage');
 const { HookMonitor } = require('./hooks');
+const { SpendStore } = require('./spend');
 const { GitMonitor, listBranches, checkoutBranch } = require('./git');
 const { HealthMonitor } = require('./health');
 const { IS_WIN } = require('./platform');
@@ -18,6 +19,7 @@ let ptys = null;
 let usage = null;
 let ptysReady = null;
 let hooks = null;
+let spend = null;
 let git = null;
 let health = null;
 let updates = null;
@@ -154,7 +156,10 @@ function createWindow() {
 }
 
 function registerIpc() {
-  ipcMain.handle('config:get', () => config.load());
+  // the palette rides along so the renderer's swatch picker doesn't keep a
+  // hand-synced copy of it — main owns the list (it assigns each new
+  // workspace's default and validates every pick against it)
+  ipcMain.handle('config:get', () => ({ ...config.load(), workspaceColors: config.WORKSPACE_COLORS }));
 
   ipcMain.handle('config:set-max-agents', (e, n) => {
     const raw = Math.round(Number(n));
@@ -179,6 +184,7 @@ function registerIpc() {
       name: path.basename(p),
       path: p,
       categories: [...config.DEFAULT_TASK_CATEGORIES],
+      color: config.WORKSPACE_COLORS[cfg.workspaces.length % config.WORKSPACE_COLORS.length],
     };
     cfg.workspaces.push(ws);
     if (!cfg.selectedWorkspaceId) cfg.selectedWorkspaceId = ws.id;
@@ -292,6 +298,16 @@ function registerIpc() {
     return { workspaces: cfg.workspaces };
   });
 
+  ipcMain.handle('workspace:set-color', (e, { id, color }) => {
+    const cfg = config.load();
+    const ws = cfg.workspaces.find((w) => w.id === id);
+    // only accept a colour from the known palette — the value ends up inline in
+    // the renderer's styles, so don't let an arbitrary string through
+    if (ws && config.WORKSPACE_COLORS.includes(color)) ws.color = color;
+    config.save(cfg);
+    return { workspaces: cfg.workspaces };
+  });
+
   ipcMain.handle('workspace:select', (e, id) => {
     config.patch({ selectedWorkspaceId: id });
     return { ok: true };
@@ -317,7 +333,7 @@ function registerIpc() {
   // the renderer once an agent slot and usage headroom are both available
   const TASK_PATCH_KEYS = ['status', 'paneId', 'startedAt', 'completedAt', 'targetResetsAt', 'stopped', 'sessionLog', 'priority', 'category'];
 
-  ipcMain.handle('task:create', (e, { text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, targetResetsAt }) => {
+  ipcMain.handle('task:create', (e, { text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt, targetResetsAt }) => {
     const cfg = config.load();
     const ws = cfg.workspaces.find((w) => w.id === workspaceId);
     const clean = String(text || '').slice(0, 4000).trim();
@@ -336,6 +352,18 @@ function registerIpc() {
       closeOnComplete: closeOnComplete !== false,
       priority: ['low', 'medium', 'high', 'critical'].includes(priority) ? priority : 'medium',
       category: String(category || '').trim().slice(0, 30),
+      // follow-up prompts: each one is queued as a fresh task (carrying the
+      // rest of the list) when this task completes. Same per-prompt cap as
+      // text, and a length cap so one paste can't queue an endless pipeline.
+      chain: (Array.isArray(chain) ? chain : [])
+        .map((s) => String(s || '').slice(0, 4000).trim())
+        .filter(Boolean)
+        .slice(0, 10),
+      // recurring tasks: when this one completes, a clone of it is queued
+      // with nextRunAt one interval out, and the scheduler holds that clone
+      // back until the wall clock passes it
+      repeat: ['hourly', 'daily', 'weekly'].includes(repeat) ? repeat : 'none',
+      nextRunAt: Number.isFinite(nextRunAt) ? nextRunAt : null,
       // manual-mode tasks start life in the Manual column, untouched by the
       // scheduler, until the user explicitly moves them to Scheduled
       status: cleanMode === 'manual' ? 'manual' : 'pending',
@@ -407,7 +435,14 @@ function registerIpc() {
   ipcMain.handle('session:list', async () => {
     await ptysReady;
     const sessions = await ptys.attachExisting();
-    return { sessions, persistent: ptys.tmuxOk };
+    // whatever each agent had spent when the app closed rides back with it, so
+    // the cost panel is filled in before its next turn — and totals belonging
+    // to sessions that didn't survive are dropped here
+    hooks.pruneUsage(sessions.map((s) => s.id));
+    return {
+      sessions: sessions.map((s) => ({ ...s, usage: hooks.snapshot(s.id) })),
+      persistent: ptys.tmuxOk,
+    };
   });
 
   ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, kind }) => {
@@ -441,6 +476,7 @@ function registerIpc() {
         rows: payload.rows,
         resume: !!payload.resume,
         kind: payload.kind === 'pi' ? 'pi' : undefined,
+        autoRestart: !!payload.autoRestart,
       });
       debugLog('[session:restart] ok ' + session.id + ' "' + session.agentName + '" wanted-resume=' + !!payload.resume + ' resumed=' + resumed);
       return { ok: true, session, resumed };
@@ -457,6 +493,11 @@ function registerIpc() {
 
   ipcMain.handle('session:set-last-command', (e, { id, cmd }) => {
     ptys.setLastCommand(id, cmd);
+    return { ok: true };
+  });
+
+  ipcMain.handle('session:set-auto-restart', (e, { id, on }) => {
+    ptys.setAutoRestart(id, on);
     return { ok: true };
   });
 
@@ -512,6 +553,10 @@ function registerIpc() {
 
   ipcMain.handle('usage:refresh', () => usage.refreshNow());
 
+  // cost rollup: the whole day/workspace/model tree, and the reset button
+  ipcMain.handle('spend:get', () => spend.all());
+  ipcMain.handle('spend:clear', () => spend.clear());
+
   ipcMain.handle('app:version', () => app.getVersion());
   // Pi coding agent: presence check + install/update of the managed copy
   // (the ⌨ Options toggle calls ensure when flipped on — see main/pi.js)
@@ -522,7 +567,6 @@ function registerIpc() {
     return res;
   });
 
-  ipcMain.handle('update:check', () => updates.check());
   ipcMain.handle('update:download', () => updates.download());
   ipcMain.handle('update:install', () => updates.install());
 
@@ -593,6 +637,8 @@ app.whenReady().then(() => {
   ]));
   createWindow();
 
+  spend = new SpendStore({ debugLog, onChange: (data) => sendToWin('spend:update', data) });
+
   hooks = new HookMonitor({
     debugLog,
     // a Stop hook fires the instant the agent's turn ends, via fs.watch — that
@@ -602,6 +648,12 @@ app.whenReady().then(() => {
     onEvent: (id, payload) => {
       flushPtyBuffers();
       sendToWin('session:state', { id, ...payload });
+    },
+    // hooks knows the session, not the folder — resolve the workspace here (the
+    // pty manager owns that mapping) before the turn's spend is filed away
+    onSpend: (id, delta) => {
+      const s = ptys && ptys.sessions.get(id);
+      spend.add(s ? s.session.workspaceId : null, delta);
     },
   });
   hooks.init();
@@ -693,6 +745,7 @@ app.on('before-quit', (e) => {
   if (health) health.stop();
   if (updates) updates.stop();
   if (hooks) hooks.stop();
+  if (spend) spend.flush(); // the last few turns are still inside the write debounce
   if (ptys) ptys.shutdown();
 });
 

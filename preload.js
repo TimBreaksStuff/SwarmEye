@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('swarm', {
   purgeWorkspace: (id) => ipcRenderer.invoke('workspace:purge', id),
   reorderWorkspaces: (ids) => ipcRenderer.invoke('workspace:reorder', ids),
   renameWorkspace: (id, name) => ipcRenderer.invoke('workspace:rename', { id, name }),
+  setWorkspaceColor: (id, color) => ipcRenderer.invoke('workspace:set-color', { id, color }),
   selectWorkspace: (id) => ipcRenderer.invoke('workspace:select', id),
   addWorkspaceCategory: (id, name) => ipcRenderer.invoke('workspace:add-category', { id, name }),
   removeWorkspaceCategory: (id, name) => ipcRenderer.invoke('workspace:remove-category', { id, name }),
@@ -31,6 +32,7 @@ contextBridge.exposeInMainWorld('swarm', {
   reattachSession: (id, cols, rows) => ipcRenderer.invoke('session:reattach', { id, cols, rows }),
   renameSession: (id, name) => ipcRenderer.invoke('session:rename', { id, name }),
   setLastCommand: (id, cmd) => ipcRenderer.invoke('session:set-last-command', { id, cmd }),
+  setAutoRestart: (id, on) => ipcRenderer.invoke('session:set-auto-restart', { id, on }),
   exportSession: (name, text) => ipcRenderer.invoke('session:export', { name, text }),
   writeSession: (id, data) => ipcRenderer.send('session:write', { id, data }),
   resizeSession: (id, cols, rows) => ipcRenderer.send('session:resize', { id, cols, rows }),
@@ -42,6 +44,10 @@ contextBridge.exposeInMainWorld('swarm', {
   pathForFile: (file) => webUtils.getPathForFile(file),
 
   refreshUsage: () => ipcRenderer.invoke('usage:refresh'),
+
+  getSpend: () => ipcRenderer.invoke('spend:get'),
+  clearSpend: () => ipcRenderer.invoke('spend:clear'),
+  onSpendUpdate: (cb) => ipcRenderer.on('spend:update', (e, p) => cb(p)),
 
   piStatus: () => ipcRenderer.invoke('pi:status'),
   ensurePi: () => ipcRenderer.invoke('pi:ensure'),
@@ -78,7 +84,6 @@ contextBridge.exposeInMainWorld('swarm', {
   onGitUpdate: (cb) => ipcRenderer.on('git:update', (e, p) => cb(p)),
   onHealthUpdate: (cb) => ipcRenderer.on('health:update', (e, p) => cb(p)),
   getAppVersion: () => ipcRenderer.invoke('app:version'),
-  checkForUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   onUpdateAvailable: (cb) => ipcRenderer.on('update:available', (e, p) => cb(p)),

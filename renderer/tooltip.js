@@ -36,7 +36,25 @@
     const text = target.getAttribute('data-tip');
     if (!text) return;
     const tip = get();
-    tip.textContent = text;
+    // data-tip-secondary opts an element into the split layout: the primary
+    // label on the left, a vertical rule, then the secondary text on the right
+    // (used by the swarm-map slots to show the agent name and its last input).
+    const secondary = target.getAttribute('data-tip-secondary');
+    tip.classList.toggle('split', !!secondary);
+    if (secondary) {
+      tip.textContent = '';
+      const primary = document.createElement('span');
+      primary.className = 'app-tooltip-primary';
+      primary.textContent = text;
+      const sep = document.createElement('span');
+      sep.className = 'app-tooltip-sep';
+      const sec = document.createElement('span');
+      sec.className = 'app-tooltip-secondary';
+      sec.textContent = secondary;
+      tip.append(primary, sep, sec);
+    } else {
+      tip.textContent = text;
+    }
     anchor = target;
     position(target);
   }

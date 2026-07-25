@@ -237,8 +237,10 @@ class PtyManager {
 
   /* Respawn an exited agent in the same folder under the same name.
    * resume=true continues the last conversation in that directory —
-   * silently downgraded to a fresh session when there is none. */
-  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, kind }) {
+   * silently downgraded to a fresh session when there is none.
+   * autoRestart carries the pane's "restart me if I die" opt-in onto the new
+   * session, which is a new id with fresh metadata. */
+  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, kind, autoRestart }) {
     if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
     const resumed = resume ? await (isPi(kind) ? this.hasPiHistory(cwd) : this.hasHistory(cwd)) : false;
     // Checked here, right before the synchronous launch below, rather than
@@ -258,6 +260,7 @@ class PtyManager {
       createdAt: Date.now(),
     };
     if (isPi(kind)) meta.kind = 'pi';
+    if (autoRestart) meta.autoRestart = true;
     const cmd = isPi(kind)
       ? piCmd(resumed ? ' --continue' : '')
       : this.decorateCmd(id, resumed ? claudeBase() + ' --continue' : claudeBase());
@@ -365,6 +368,17 @@ class PtyManager {
     const cfg = config.load();
     const meta = (cfg.sessions || {})[id];
     if (meta) this._saveMeta({ ...meta, lastCommand: cmd });
+  }
+
+  /* Per-pane "respawn me if I die" opt-in. Persisted on the session metadata
+   * like lastCommand, so it survives an app restart (the pane is rebuilt from
+   * this meta when the tmux session is reattached). */
+  setAutoRestart(id, on) {
+    const s = this.sessions.get(id);
+    if (s) s.session.autoRestart = !!on;
+    const cfg = config.load();
+    const meta = (cfg.sessions || {})[id];
+    if (meta) this._saveMeta({ ...meta, autoRestart: !!on });
   }
 
   write(id, data) {
