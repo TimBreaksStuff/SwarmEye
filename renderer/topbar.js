@@ -82,13 +82,24 @@ const Topbar = (() => {
     });
     infoEl.append(name, sub, colors);
 
+    // pinning floats this workspace to the top of the rail — the favourites
+    // stay reachable as the list grows past a screenful
+    const pin = document.createElement('button');
+    pin.className = 'rail-flyout-pin' + (ws.pinned ? ' on' : '');
+    pin.textContent = '📌';
+    pin.dataset.tip = ws.pinned ? 'Unpin — back to drag order' : 'Pin to the top of the rail';
+    pin.addEventListener('click', () => {
+      hideFlyout();
+      handlers.onSetPinned(ws.id, !ws.pinned);
+    });
+
     const x = document.createElement('button');
     x.className = 'rail-flyout-x';
     x.textContent = '✕';
     x.dataset.tip = 'Remove workspace';
     x.addEventListener('click', () => handlers.onRemove(ws.id));
 
-    flyout.append(infoEl, x);
+    flyout.append(infoEl, pin, x);
     flyout.hidden = false;
     const r = tile.getBoundingClientRect();
     flyout.style.left = Math.round(r.right + 10) + 'px';
@@ -130,6 +141,14 @@ const Topbar = (() => {
         cdot.className = 'ws-color-dot';
         cdot.style.background = ws.color;
         tile.appendChild(cdot);
+      }
+      // pinned marker, before .ws-attn/.rail-n in the DOM so the expanded
+      // rail's `~` spacing rules can trail the badges after it
+      if (ws.pinned) {
+        const pin = document.createElement('span');
+        pin.className = 'ws-pin';
+        pin.textContent = '📌';
+        tile.appendChild(pin);
       }
       tileById.set(ws.id, tile);
 

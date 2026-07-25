@@ -608,6 +608,17 @@ const Board = (() => {
     text.dataset.tip = task.text;
     card.appendChild(text);
 
+    // what the agent said when it finished (main/hooks.js reads it out of the
+    // transcript; the ⚙ option can turn it off) — the answer to "what came of
+    // this task", without opening the transcript popup
+    if (task.summary) {
+      const summary = document.createElement('div');
+      summary.className = 'board-card-summary';
+      summary.textContent = task.summary;
+      summary.dataset.tip = task.summary;
+      card.appendChild(summary);
+    }
+
     return agentName;
   }
 

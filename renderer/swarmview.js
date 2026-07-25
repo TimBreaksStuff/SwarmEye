@@ -4,7 +4,7 @@
  * Left is the map — each agent a node whose fill is its workspace's identity
  * colour and whose ring animation is its status; right is the dock: a live
  * terminal preview of every running agent on top (optional), then the activity
- * list, then the notification feed.
+ * list.
  *
  * All state is owned by app.js and handed in on every render() — this module
  * keeps only what is purely presentational (selection, the two layout/dock
@@ -27,6 +27,8 @@ const SwarmView = (() => {
   const dockEl = document.getElementById('sv-dock');
   const fontMinusEl = document.getElementById('sv-font-minus');
   const fontPlusEl = document.getElementById('sv-font-plus');
+  const mapFontMinusEl = document.getElementById('sv-map-font-minus');
+  const mapFontPlusEl = document.getElementById('sv-map-font-plus');
   const linksEl = document.getElementById('sv-links');
   const hubsEl = document.getElementById('sv-hubs');
   const nodesEl = document.getElementById('sv-nodes');
@@ -40,7 +42,6 @@ const SwarmView = (() => {
   const menuEl = document.getElementById('sv-menu');
   const agentsListEl = document.getElementById('sv-agents-list');
   const agentsMetaEl = document.getElementById('sv-agents-meta');
-  const notesListEl = document.getElementById('sv-notes-list');
 
   /* status here is finer-grained than Pane.status: a pane blocked on a
    * permission prompt and one that merely finished its turn are both
@@ -85,6 +86,8 @@ const SwarmView = (() => {
 
   let fontScale = parseFloat(localStorage.getItem('swarmeye.svFont'));
   if (!(fontScale >= FONT_MIN && fontScale <= FONT_MAX)) fontScale = 1;
+  let mapFontScale = parseFloat(localStorage.getItem('swarmeye.svMapFont'));
+  if (!(mapFontScale >= FONT_MIN && mapFontScale <= FONT_MAX)) mapFontScale = 1;
   let dockW = parseInt(localStorage.getItem('swarmeye.svDockW'), 10);
   if (!Number.isFinite(dockW) || dockW <= 0) dockW = 0; // 0 = never dragged, let the stylesheet decide
 
@@ -674,53 +677,6 @@ const SwarmView = (() => {
     }
   }
 
-  /* ---- dock: notification feed ---- */
-
-  function fmtWhen(t) {
-    const d = Date.now() - t;
-    if (d < 60000) return 'now';
-    if (d < 3600000) return Math.floor(d / 60000) + 'm';
-    if (d < 86400000) return Math.floor(d / 3600000) + 'h';
-    return new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
-  }
-
-  function paintNotes(notifs) {
-    notesListEl.textContent = '';
-    if (!notifs.length) {
-      const empty = document.createElement('div');
-      empty.className = 'sv-notes-empty';
-      empty.textContent = 'nothing yet — agent events land here';
-      notesListEl.appendChild(empty);
-      return;
-    }
-    for (const n of notifs.slice(0, 20)) {
-      const row = document.createElement('div');
-      row.className = 'sv-note';
-      row.dataset.tip = 'Jump to this agent';
-      row.addEventListener('click', () => ctx.handlers.onOpen(n.paneId));
-
-      const dot = document.createElement('span');
-      dot.className = 'notif-dot ' + n.kind;
-
-      const main = document.createElement('div');
-      main.className = 'sv-note-main';
-      const who = document.createElement('div');
-      who.className = 'sv-note-who';
-      who.textContent = `${n.agent} · ${n.ws}`;
-      const msg = document.createElement('div');
-      msg.className = 'sv-note-msg';
-      msg.textContent = n.text;
-      main.append(who, msg);
-
-      const time = document.createElement('span');
-      time.className = 'sv-note-time';
-      time.textContent = fmtWhen(n.time);
-
-      row.append(dot, main, time);
-      notesListEl.appendChild(row);
-    }
-  }
-
   /* ---- the counts, which are also the filter ----
    * Counted over every agent, not the filtered set — a chip that vanished
    * once it was the only thing showing could never be switched off again. */
@@ -878,6 +834,7 @@ const SwarmView = (() => {
       item('Approve — stop asking', () => call('onApprove', id, true));
       item('Deny', () => call('onDeny', id));
     }
+    item('Message it', () => call('onMessage', id), { disabled: pane.exited });
     sep();
     item('Interrupt (Esc)', () => call('onInterrupt', id), { disabled: pane.exited });
     item('Clear context (/clear)', () => call('onClear', id), { disabled: pane.exited || pane.session.kind === 'pi' });
@@ -1066,18 +1023,33 @@ const SwarmView = (() => {
 
   function applyFont() {
     setVar(el, '--sv-fs', String(fontScale));
+    setVar(el, '--sv-fsm', String(mapFontScale));
     fontMinusEl.disabled = fontScale <= FONT_MIN + 0.001;
     fontPlusEl.disabled = fontScale >= FONT_MAX - 0.001;
+    mapFontMinusEl.disabled = mapFontScale <= FONT_MIN + 0.001;
+    mapFontPlusEl.disabled = mapFontScale >= FONT_MAX - 0.001;
+  }
+
+  function step(scale, dir) {
+    const raw = dir > 0 ? scale * FONT_STEP : scale / FONT_STEP;
+    return Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(raw * 100) / 100));
   }
 
   function stepFont(dir) {
-    const raw = dir > 0 ? fontScale * FONT_STEP : fontScale / FONT_STEP;
-    const next = Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(raw * 100) / 100));
+    const next = step(fontScale, dir);
     if (next === fontScale) return;
     fontScale = next;
     localStorage.setItem('swarmeye.svFont', String(fontScale));
     applyFont();
     applyPreviewSize(); // bigger type, fewer lines in the same card
+  }
+
+  function stepMapFont(dir) {
+    const next = step(mapFontScale, dir);
+    if (next === mapFontScale) return;
+    mapFontScale = next;
+    localStorage.setItem('swarmeye.svMapFont', String(mapFontScale));
+    applyFont();
   }
 
   /* Clamp against the live body width rather than the stored one — a window
@@ -1186,7 +1158,6 @@ const SwarmView = (() => {
     const docked = dockOrder(panes);
     paintPreviews(docked);
     paintRows(docked);
-    paintNotes(ctx.notifs || []);
     paintOptions();
   }
 
@@ -1221,6 +1192,8 @@ const SwarmView = (() => {
 
   fontMinusEl.addEventListener('click', () => stepFont(-1));
   fontPlusEl.addEventListener('click', () => stepFont(1));
+  mapFontMinusEl.addEventListener('click', () => stepMapFont(-1));
+  mapFontPlusEl.addEventListener('click', () => stepMapFont(1));
 
   /* Wheel over the map zooms it. Deltas are normalised because the same
    * gesture arrives in pixels from a trackpad and in lines from a mouse. */

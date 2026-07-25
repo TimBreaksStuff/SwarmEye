@@ -22,9 +22,11 @@ const Skills = (() => {
   const statsEnabledEl = document.getElementById('skills-stats-enabled');
   const statsActiveEl = document.getElementById('skills-stats-active');
   const statsUpdatesEl = document.getElementById('skills-stats-updates');
+  const searchEl = document.getElementById('skills-search');
 
   let skills = [];
   let loaded = false; // list fetched at least once — see getActiveSkills
+  let query = ''; // the filter box, lowercased
 
   /* repoIds currently collapsed by the user — toggled without a full
    * render() so the click is a single class flip, not a rebuild */
@@ -277,11 +279,25 @@ const Skills = (() => {
     return wrap;
   }
 
+  /* The filter box matches anything you'd recognise a skill by — what it's
+   * called, what it says it does, the command you'd type, and where it came
+   * from. Substring, case-insensitive; the stat cards keep counting the whole
+   * library, since "12 installed" shouldn't change as you type. */
+  function matches(skill) {
+    if (!query) return true;
+    return [skill.name, skill.description, skill.id, skill.invokeName, skill.repoUrl, skill.dir, skill.sourceLabel]
+      .some((s) => s && String(s).toLowerCase().includes(query));
+  }
+
   function render() {
     listEl.innerHTML = '';
-    emptyEl.hidden = skills.length > 0;
+    const visible = skills.filter(matches);
+    emptyEl.hidden = visible.length > 0;
+    emptyEl.textContent = skills.length
+      ? 'no skill matches that filter'
+      : 'no skills installed yet — click + Add Skill and paste a GitHub repo URL';
     let hue = 0;
-    for (const group of groupByRepo(skills)) {
+    for (const group of groupByRepo(visible)) {
       listEl.appendChild(makeRepoGroup(group, group.local ? 0 : hue++));
     }
     statsTotalEl.textContent = skills.length;
@@ -336,6 +352,21 @@ const Skills = (() => {
   });
   urlEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') submitBtn.click();
+  });
+
+  searchEl.addEventListener('input', () => {
+    query = searchEl.value.trim().toLowerCase();
+    render();
+  });
+  // Esc clears the filter rather than closing the whole screen, as long as
+  // there is something to clear
+  searchEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && searchEl.value) {
+      searchEl.value = '';
+      query = '';
+      render();
+      e.stopPropagation();
+    }
   });
 
   window.swarm.onSkillUpdateStatus(({ id, updateAvailable }) => {

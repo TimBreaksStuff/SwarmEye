@@ -24,8 +24,12 @@
     <button id="update-pill" hidden></button>
     <span id="session-count"></span>
     <button id="gsearch-btn" data-tip="Search across all agents (Ctrl+Shift+G)">⌕</button>
+    <button id="msg-btn" data-tip="Message agents — @name, or @all to broadcast (Ctrl+Shift+E)">✉</button>
+    <button id="preview-btn" data-tip="Preview — open a local dev server beside the grid">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="13" rx="2"/><path d="M9 20.5h6M12 17.5v3"/></svg>
+    </button>
     <button id="notif-btn" data-tip="Notifications — what your agents did"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5v2M8.6 4.5h6.8l1.2 8 2 3.5H5.4l2-3.5 1.2-8Z"/><path d="M9.8 19.2a2.2 2.2 0 0 0 4.4 0"/></svg><span id="notif-n" hidden></span></button>
-    <button id="add-agent" data-tip="Start a Claude session in the selected workspace">+ Coding Agent</button>
+    <button id="add-agent" data-tip="Start a plain agent or a role preset in the selected workspace">+ Coding Agent</button>
   </header>
 
   <div id="body-wrap">
@@ -92,6 +96,11 @@
       <button id="costs-btn" class="rail-tile" aria-label="Costs — what the swarm has spent">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V5M16 20v-7M22 20H2"/></svg>
         <span class="rail-tile-name">Costs</span>
+      </button>
+
+      <button id="history-btn" class="rail-tile" aria-label="History — past conversations, resumable in a new pane">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V10H9"/><path d="M12 7.8V12l3 1.8"/></svg>
+        <span class="rail-tile-name">History</span>
       </button>
 
       <button id="skills-btn" class="rail-tile" aria-label="Skills — install and manage agent skills">
@@ -245,8 +254,31 @@
               <button id="skills-form-submit">install</button>
             </div>
           </div>
+          <div class="skills-filters">
+            <input id="skills-search" type="search" placeholder="filter skills by name, description or repo…" spellcheck="false" />
+          </div>
           <div id="skills-empty" class="skills-empty" hidden>no skills installed yet — click + Add Skill and paste a GitHub repo URL</div>
           <div id="skills-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="history-view" hidden>
+      <div class="board-box">
+        <div class="board-head">
+          <div class="kbd-title">History</div>
+          <div class="board-head-actions">
+            <select id="history-ws" data-tip="Which workspace's past conversations to list"></select>
+            <button id="history-refresh-btn" class="pill" data-tip="Re-read the transcript folder">⟳ Refresh</button>
+            <button id="history-close-btn" class="pill" data-tip="Close history (Esc)">✕ Close</button>
+          </div>
+        </div>
+        <div id="history-main">
+          <div class="skills-filters">
+            <input id="history-search" type="search" placeholder="filter past conversations…" spellcheck="false" />
+          </div>
+          <div id="history-empty" class="skills-empty" hidden></div>
+          <div id="history-list"></div>
         </div>
       </div>
     </div>
@@ -276,8 +308,13 @@
           <div class="board-head-actions">
             <span id="sv-counts" class="sv-counts"></span>
             <span class="sv-seg">
-              <button id="sv-font-minus" class="pill sv-font-btn" data-tip="Smaller text on this screen">−</button>
-              <button id="sv-font-plus" class="pill sv-font-btn" data-tip="Bigger text on this screen">+</button>
+              <span class="sv-font-tag">map</span>
+              <button id="sv-map-font-minus" class="pill sv-font-btn" data-tip="Smaller labels on the map">−</button>
+              <button id="sv-map-font-plus" class="pill sv-font-btn" data-tip="Bigger labels on the map">+</button>
+            </span>
+            <span class="sv-seg">
+              <button id="sv-font-minus" class="pill sv-font-btn" data-tip="Smaller text in the dock and panels">−</button>
+              <button id="sv-font-plus" class="pill sv-font-btn" data-tip="Bigger text in the dock and panels">+</button>
             </span>
             <span id="sv-layout" class="sv-seg" data-tip="How the map arranges agents">
               <button class="pill" data-layout="clusters">clusters</button>
@@ -285,6 +322,7 @@
             </span>
             <button id="sv-preview-btn" class="pill" data-tip="Show a live terminal preview of every running agent above the activity list">▤ Previews</button>
             <button id="sv-click-btn" class="pill" data-tip="Whether a single click on an agent selects it here or jumps straight to its pane">⤳ Click</button>
+            <button id="sv-timeline-btn" class="pill" data-tip="Show the last hour as a ribbon under the map — one lane per agent, coloured by what it was doing">▦ Timeline</button>
             <button id="sv-new-btn" class="pill">+ Agent</button>
             <button id="swarm-view-close-btn" class="pill" data-tip="Close swarm view (Esc)">✕ Close</button>
           </div>
@@ -318,15 +356,9 @@
               </div>
               <div id="sv-agents-list"></div>
             </div>
-            <div id="sv-notes">
-              <div class="sv-panel-head">
-                <span class="sv-panel-title sv-panel-title-amber">Notifications</span>
-                <span class="sv-panel-meta">live feed</span>
-              </div>
-              <div id="sv-notes-list"></div>
-            </div>
           </aside>
         </div>
+        <div id="sv-timeline" hidden></div>
       </div>
       <div id="sv-menu" hidden></div>
     </div>
@@ -341,6 +373,24 @@
       </div>
       <div id="notif-panel-list"></div>
     </aside>
+
+    <aside id="preview" hidden>
+      <div id="preview-resizer" data-tip="Drag to resize the preview"></div>
+      <div id="preview-body">
+        <div id="preview-bar">
+          <button id="preview-back" data-tip="Back">‹</button>
+          <button id="preview-fwd" data-tip="Forward">›</button>
+          <button id="preview-reload" data-tip="Reload">⟳</button>
+          <input id="preview-url" spellcheck="false" placeholder="localhost:3000" />
+          <button id="preview-external" data-tip="Open in your usual browser">↗</button>
+          <button id="preview-close" data-tip="Close the preview">✕</button>
+        </div>
+        <!-- its own session partition: main filters main-frame requests there
+             down to localhost without touching the rest of the app -->
+        <webview id="preview-web" src="about:blank" partition="persist:swarmeye-preview"></webview>
+        <div id="preview-msg" class="preview-msg" hidden></div>
+      </div>
+    </aside>
   </div>
 
   <div id="toast"></div>
@@ -350,6 +400,12 @@
       <input id="gs-input" placeholder="search all agents…" spellcheck="false" />
       <div id="gs-results"></div>
     </div>
+  </div>
+
+  <div id="msg-pop" hidden>
+    <input id="msg-input" placeholder="@name your message… (@all broadcasts)" spellcheck="false" />
+    <div id="msg-hint" class="msg-hint"></div>
+    <div id="msg-targets" class="msg-targets"></div>
   </div>
 
   <div id="archive-pop" hidden></div>
@@ -484,6 +540,16 @@
         <input type="checkbox" id="default-focus-toggle" data-tip="Preset new tasks with focus mode enabled">
       </span>
     </div>
+    <div class="kbd-row kbd-opt"><span>Task summary on completion</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="task-summary-toggle" data-tip="Puts the agent's closing message on the task card when a task finishes, read from its own transcript — so the Completed column says what came of a task without opening its transcript.">
+      </span>
+    </div>
+    <div class="kbd-row kbd-opt"><span>Desktop notifications</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="desktop-notif-toggle" data-tip="Raises a real OS notification — naming the agent and what it did — when an agent finishes a turn or needs you while the SwarmEye window isn't focused. Clicking it brings the window back.">
+      </span>
+    </div>
     <div class="kbd-row kbd-opt"><span>Notification sound</span>
       <span class="opt-ctl">
         <select id="notif-sound-sel" data-tip="Played when an agent finishes its turn"></select>
@@ -517,6 +583,13 @@
         <button class="theme-dot" data-theme="kanagawa" data-tip="Kanagawa"></button>
         <button class="theme-dot" data-theme="nord" data-tip="Nord"></button>
         <button class="theme-dot" data-theme="one-dark" data-tip="One Dark"></button>
+        <button class="theme-dot" data-theme="paper" data-tip="Paper"></button>
+        <button class="theme-dot" data-theme="frost" data-tip="Frost"></button>
+        <button class="theme-dot" data-theme="blossom" data-tip="Blossom"></button>
+        <button class="theme-dot" data-theme="ash" data-tip="Ash"></button>
+        <button class="theme-dot" data-theme="slate" data-tip="Slate"></button>
+        <button class="theme-dot" data-theme="fog" data-tip="Fog"></button>
+        <button class="theme-dot" data-theme="zinc" data-tip="Zinc"></button>
       </span>
     </div>
     <div class="kbd-row kbd-opt"><span>Theme background overlay</span>
@@ -543,6 +616,7 @@
     <div class="kbd-row"><span>Maximize / restore pane</span><kbd>Ctrl+Shift+M</kbd></div>
     <div class="kbd-row"><span>Search in pane</span><kbd>Ctrl+Shift+F</kbd></div>
     <div class="kbd-row"><span>Search across all agents</span><kbd>Ctrl+Shift+G</kbd></div>
+    <div class="kbd-row"><span>Message agents (@name / @all)</span><kbd>Ctrl+Shift+E</kbd></div>
     <div class="kbd-row"><span>Task board</span><kbd>Ctrl+Shift+B</kbd></div>
     <div class="kbd-row"><span>Swarm view</span><kbd>Ctrl+Shift+S</kbd></div>
     <div class="kbd-row"><span>Font bigger / smaller / reset</span><kbd>Ctrl++ · Ctrl+− · Ctrl+0</kbd></div>
@@ -564,7 +638,11 @@
   <script src="board.js"></script>
   <script src="skills.js"></script>
   <script src="costs.js"></script>
+  <script src="history.js"></script>
   <script src="swarmview.js"></script>
+  <script src="timeline.js"></script>
+  <script src="message.js"></script>
+  <script src="preview.js"></script>
   <script src="sounds.js"></script>
   <script src="app.js"></script>
 </body>

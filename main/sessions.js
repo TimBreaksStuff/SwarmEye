@@ -81,6 +81,34 @@ function claudeProjectDirName(cwd) {
   return (toShellPath(cwd) || cwd).replace(/[^A-Za-z0-9]/g, '-');
 }
 
+/* Role presets for + Coding Agent: a short system prompt appended at launch
+ * and the model tier that job is worth. Deliberately quote-free and free of
+ * $ ` and backslashes — the prompt is interpolated into the command line that
+ * _launch wraps in single quotes for tmux, so a quote here would break the
+ * whole launch. Main owns the table; the renderer only ever sees key + label. */
+const ROLES = {
+  builder: {
+    label: 'Builder',
+    model: 'sonnet',
+    prompt: 'You are the builder in a swarm of agents. Implement exactly what you are asked and nothing more: the smallest working diff, the patterns already in this codebase, no speculative abstractions. When you are done, say in a few lines what you changed and what you left alone.',
+  },
+  reviewer: {
+    label: 'Reviewer',
+    model: 'opus',
+    prompt: 'You are the reviewer in a swarm of agents. Read the code and report what is wrong with it: correctness first, then security, then clarity. Do not edit files unless you are explicitly asked to fix something. One line per finding, most severe first, and say plainly when you found nothing.',
+  },
+  scout: {
+    label: 'Scout',
+    model: 'haiku',
+    prompt: 'You are the scout in a swarm of agents. Locate things and report where they are: file paths with line numbers, call sites, naming conventions. Read only. Do not edit files and do not propose designs. Keep the answer short.',
+  },
+  planner: {
+    label: 'Planner',
+    model: 'opus',
+    prompt: 'You are the planner in a swarm of agents. Turn the request into a short ordered plan: which files it touches, the steps in order, and the risks. Read only. Do not edit files and do not write the code yourself.',
+  },
+};
+
 /* --allow-dangerously-skip-permissions is opt-in (⌨ Options) — without it
  * claude won't offer bypass-permissions ("auto") mode in the Shift+Tab cycle
  * at all. Unlike --dangerously-skip-permissions, the --allow- variant only
@@ -94,9 +122,22 @@ function claudeProjectDirName(cwd) {
  * every agent started afterward. `--model` only affects this one process.
  * Already whitelisted server-side (main.js task:create) — re-checked here
  * since it lands directly in a shell command line. */
-function claudeBase({ model } = {}) {
+function claudeBase({ model, resume, role } = {}) {
   let cmd = config.load().skipPermissions ? 'claude --allow-dangerously-skip-permissions' : 'claude';
-  if (model && /^[a-zA-Z0-9._-]+$/.test(model)) cmd += ' --model ' + model;
+  const preset = ROLES[role];
+  // the role's model is a default, not an override — an explicit pick (the
+  // task's own model select, or the Options default) still wins
+  const effectiveModel = model || (preset && preset.model);
+  if (effectiveModel && /^[a-zA-Z0-9._-]+$/.test(effectiveModel)) cmd += ' --model ' + effectiveModel;
+  // roles are a launch flag rather than a typed first message: --append-system-prompt
+  // costs no turn and cannot collide with the task board's own prompt injection.
+  // The texts below are ours and contain no shell metacharacters — that is what
+  // makes them safe inside the single-quoted tmux command (see _launch).
+  if (preset) cmd += ` --append-system-prompt "${preset.prompt}"`;
+  // a conversation id picked from the History screen. Claude Code names its
+  // transcripts after the session uuid, so the id is what --resume takes;
+  // re-validated here since it lands in a shell command line.
+  if (resume && /^[A-Za-z0-9-]{8,64}$/.test(resume)) cmd += ' --resume ' + resume;
   return cmd;
 }
 
@@ -212,6 +253,9 @@ class PtyManager {
       createdAt: Date.now(),
     };
     if (isPi(opts.kind)) meta.kind = 'pi';
+    // persisted so a pane rebuilt from tmux after a restart still shows its
+    // role chip — the flag itself is long gone by then, it lives in the process
+    if (!isPi(opts.kind) && ROLES[opts.role]) meta.role = opts.role;
     return this._launch(meta, cols, rows, isPi(opts.kind) ? piCmd() : this.decorateCmd(id, claudeBase(opts)));
   }
 
@@ -240,7 +284,7 @@ class PtyManager {
    * silently downgraded to a fresh session when there is none.
    * autoRestart carries the pane's "restart me if I die" opt-in onto the new
    * session, which is a new id with fresh metadata. */
-  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, kind, autoRestart }) {
+  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, kind, role, autoRestart }) {
     if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
     const resumed = resume ? await (isPi(kind) ? this.hasPiHistory(cwd) : this.hasHistory(cwd)) : false;
     // Checked here, right before the synchronous launch below, rather than
@@ -260,10 +304,13 @@ class PtyManager {
       createdAt: Date.now(),
     };
     if (isPi(kind)) meta.kind = 'pi';
+    // a restarted agent keeps the role it was launched with — the system
+    // prompt has to be re-appended, it is not part of the resumed conversation
+    if (!isPi(kind) && ROLES[role]) meta.role = role;
     if (autoRestart) meta.autoRestart = true;
     const cmd = isPi(kind)
       ? piCmd(resumed ? ' --continue' : '')
-      : this.decorateCmd(id, resumed ? claudeBase() + ' --continue' : claudeBase());
+      : this.decorateCmd(id, resumed ? claudeBase({ role }) + ' --continue' : claudeBase({ role }));
     const session = this._launch(meta, cols, rows, cmd);
     return { session, resumed };
   }
@@ -427,4 +474,4 @@ class PtyManager {
   }
 }
 
-module.exports = { PtyManager };
+module.exports = { PtyManager, claudeProjectDirName, ROLES };

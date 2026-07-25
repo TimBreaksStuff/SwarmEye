@@ -7,7 +7,7 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
 ## Contents
 
 - [Key features](#key-features)
-  - [Cost & context panel](#cost--context-panel) · [Costs screen](#costs-screen) · [Swarm view](#swarm-view)
+  - [Cost & context panel](#cost--context-panel) · [Costs screen](#costs-screen) · [Swarm view](#swarm-view) · [Swarm timeline](#swarm-timeline) · [History](#history) · [Messages between agents](#messages-between-agents) · [Preview dock](#preview-dock)
 - [The task board](#the-task-board)
 - [Skills](#skills)
 - [Voice dictation](#voice-dictation)
@@ -31,23 +31,36 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
 
 A vertical rail runs down the left side: the usage widget at the top, then each workspace as a tile, a dashed `+` tile that opens a folder picker, and the `Task Board` tile — pinned to the bottom are the swarm map status grid, `Swarm View`, the `🗃` archive, `Costs`, `Skills`, and `⚙` Options tiles.
 
-The selected tile decides which folder new agents start in. A tile whose agents need attention turns amber with a pulsing dot, and a corner badge shows its agent count. Hover a tile for a flyout with the full name and path — double-click the name there to rename, or hit `✕` to archive it (running agents are killed after a confirm click). The `🗃` archive restores or permanently forgets archived workspaces; the folder on disk is never touched. Drag tiles to reorder them.
+The selected tile decides which folder new agents start in. A tile whose agents need attention turns amber with a pulsing dot, and a corner badge shows its agent count. Hover a tile for a flyout with the full name and path — double-click the name there to rename, `📌` to pin it, or `✕` to archive it (running agents are killed after a confirm click). The `🗃` archive restores or permanently forgets archived workspaces; the folder on disk is never touched. Drag tiles to reorder them.
+
+**Pinning** floats a workspace to the top of the rail, marked with a pin in its corner, and `Ctrl+Tab` cycles in the order you see rather than the stored one. Inside each group (pinned, then the rest) the drag order is kept, so unpinning drops a workspace back exactly where it was instead of at the end.
 
 The rail comes **Expanded** (full workspace names, tile labels, radial usage gauges) or **Collapsed** (66px icons only, hover to preview the wider layout as an overlay).
 
 ### Agent panes
 
-`+ Coding Agent` spawns a terminal pane running `claude` in the selected workspace. Each agent gets a random name (HAL 9001, GLaDOS Jr., Roomba Prime, …) — click to rename. All agents share one grid regardless of workspace; hover a pane's git chip (or check the rail) to see where it lives.
+`+ Coding Agent` opens a small picker and spawns a terminal pane running `claude` in the selected workspace. Each agent gets a random name (HAL 9001, GLaDOS Jr., Roomba Prime, …) — click to rename. All agents share one grid regardless of workspace; hover a pane's git chip (or check the rail) to see where it lives.
+
+**Role presets** — the picker's first entry, `Claude`, is a plain agent on your **Default model**. Under it sit four roles:
+
+| Role | Model | What its system prompt says |
+|---|---|---|
+| **Builder** | Sonnet | Implement exactly what was asked, smallest working diff, this codebase's patterns, then say what changed. |
+| **Reviewer** | Opus | Report what's wrong — correctness, then security, then clarity. Don't edit unless asked. One line per finding. |
+| **Scout** | Haiku | Locate things and report where they are: paths with line numbers, call sites. Read only, keep it short. |
+| **Planner** | Opus | Turn the request into an ordered plan: files touched, steps, risks. Read only, don't write the code. |
+
+A role is launched as `--append-system-prompt`, so it costs no turn and never lands in the conversation as a message; its model tier is a default that the role picks *instead of* the Options default. The pane header wears the role as a chip, `→`/`↓` splits inherit it, and `↻` restart re-applies it (the system prompt belongs to the process, not to the resumed conversation). `Ctrl+N` always spawns a plain agent. Roles are Claude-only — a Pi pane never gets one. The table lives in `main/sessions.js`; the renderer only ever sees the labels.
 
 Each pane header carries:
 
 - **Status dot + live state** — see below.
 - **Mode dropdown** — `manual` (Claude asks before edits), `accept edits`, `plan`, `auto` (bypass permissions). Claude has no set-mode command for a running session, so SwarmEye reads the mode from Claude's own footer and taps `Shift+Tab` through the cycle until yours is active; it stays in sync if you switch modes by hand. `auto` requires the Options toggle below.
 - **Model chip** — which model the agent is actually replying with (`Sonnet 5`, `Opus 4.8`, …), read from the session transcript after each turn. A `/model` switch you run yourself shows up instantly.
-- **Git chip** — the folder's branch (`⎇ main`), amber with a dot when there are uncommitted changes. Refreshed every 15s. Click it to open a branch list (local + remote, fetched fresh from the workspace's git remote) and check out another branch, or pick `+ new branch…` to create one off the current HEAD; checkout errors (e.g. uncommitted changes in the way) show as a toast.
-- **Buttons** — `↻` restart · `⤓` export transcript · `⌕` in-pane search · mic (dictation) · `−`/`+` text size · `⛶` maximize · `→`/`↓` place a new agent beside/below (only with auto-organize off) · `✕` close (click twice while running).
+- **Git chip** — the folder's branch (`⎇ main`), amber with a dot when there are uncommitted changes. Refreshed every 15s. Click it and the popover opens with a **`git diff --stat` summary of the working tree** — staged and unstaged together, which is what "dirty" on the chip actually means — followed by a count of untracked files, which no diff reports. Under that is the branch list (local + remote, fetched fresh from the workspace's git remote): pick one to check it out, or `+ new branch…` to create one off the current HEAD; checkout errors (e.g. uncommitted changes in the way) show as a toast. The diff is read in parallel with the branch fetch, so it is up long before the network call finishes, and a long stat is elided in the middle with git's own "N files changed" line always kept.
+- **Buttons** — `↻` restart · `⤓` export transcript · `⧉` copy the last 200 lines (shift-click: the whole scrollback) · `⌕` in-pane search · mic (dictation) · `−`/`+` text size · `⛶` maximize · `→`/`↓` place a new agent beside/below (only with auto-organize off) · `✕` close (click twice while running).
 - **Quick-respond** — while a pane is waiting on a numbered permission prompt (Claude's `1. Yes` / `2. No` style), it grows `✓` approve and `✕` deny buttons right next to the status text — no need to click into the terminal. Shift-click `✓` prefers a "don't ask again" / "allow all" option over a plain yes, if the prompt offers one. The same two buttons show up on `waiting` entries in the notification bell and its docked panel, and on the swarm view's nodes, rows and preview cards. They appear only while a yes/no menu is genuinely on screen: an agent that is merely waiting for you to type something — the commonest kind of `waiting`, and the only kind there is in bypass-permissions mode — says so without offering buttons that have nothing to answer. If the prompt is answered elsewhere between the buttons being drawn and clicked, nothing is sent and a toast says so instead of guessing.
-**The grid** auto-arranges (1 → 2×1 → 2×2 → 3×2 → 3×3 → 4×3) and refits terminals on resize. Turn **Auto-organize agent windows** off in Options to place agents yourself instead: each pane grows `→` and `↓` buttons that open the new agent beside or below it, and the column count stays where you put it. Panes are translucent glass; the focused pane wears a glowing accent border. Drag the gaps between panes to resize rows and columns, and drag a pane by its header onto another to swap them — your arrangement is remembered per workspace while the app runs. Terminals render on the GPU (WebGL, DOM fallback) and URLs in output are clickable.
+**The grid** auto-arranges (1 → 2×1 → 2×2 → 3×2 → 3×3 → 4×3) and refits terminals on resize. Turn **Auto-organize agent windows** off in Options to place agents yourself instead: each pane grows `→` and `↓` buttons that open the new agent beside or below it, and the column count stays where you put it. Panes are translucent glass; the focused pane wears a glowing accent border. Drag the gaps between panes to resize rows and columns, and drag a pane by its header onto another to swap them — your arrangement is remembered per workspace while the app runs. Terminals render on the GPU (WebGL, DOM fallback) and URLs in output are clickable. A pane in a workspace you haven't looked at for a minute **gives its GPU context back** — a browser page can only hold about sixteen at once, and every pane in every workspace holds one — and takes it again the moment you switch back. Nothing else changes: the agent, its output and its scrollback are untouched, since only the renderer is swapped for xterm's DOM one while nobody is watching.
 
 **Drag & drop** any file onto a terminal to paste its path — converted to WSL form on Windows (`C:\Users\me\shot.png` → `/mnt/c/Users/me/shot.png`) so Claude can read it. Multiple files paste space-separated; paths with spaces are quoted.
 
@@ -111,13 +124,34 @@ A node that is waiting on you or sitting finished also grows a **halo that swell
 - **Clusters** — one hub per workspace, its agents in orbit around it, the hubs themselves ringing a central swarm core. This is the one to use when you care about which *project* is busy.
 - **Ring** — every agent on a single ring around one hub, regardless of workspace. Best with a handful of agents, or when you think of the swarm as one pool.
 
-The **right dock** carries the detail. On top, the **activity list**: one row per agent with its workspace, name, what it is doing right now (the running tool, `vibing...`, the permission message, `done`), how long it has been doing it, and what it has spent and how full its context is. Above that, optionally, a **terminal preview** of the selected agent's last output lines — `▤ Preview` in the header turns it off if you'd rather have a longer list. Underneath, the **notification feed**: the same events the bell collects, newest first, click one to jump to that agent.
+The **right dock** carries the detail. On top, the **activity list**: one row per agent with its workspace, name, what it is doing right now (the running tool, `vibing...`, the permission message, `done`), how long it has been doing it, and what it has spent and how full its context is. Above that, optionally, a **terminal preview** of the selected agent's last output lines — `▤ Preview` in the header turns it off if you'd rather have a longer list. Agent events live in the bell in the top bar, not on the map. Drag the dock's left edge to resize it, and size the type with the header's two `−`/`+` pairs — the first for the dock and panels, the `map` one for the map's own labels (names, status lines, hubs, legend), 75–200% each. Both stick between sessions.
 
 **Right-click empty map to start an agent there.** The map is laid out by workspace, so the spot you point at already says which project you mean: the form opens with the nearest workspace pre-selected (measured as things currently sit on screen, zoom and pan included) — override it in the picker if the guess is wrong. Type the first prompt in the box, or click the **mic** beside it and dictate it (see [Voice dictation](#voice-dictation)); leave it empty for a bare agent. Tick **auto-close once completed** and the agent is ended as soon as it finishes that turn — the map's equivalent of a task's *close on complete*, for the one-off agents you don't want to remember to close. `Launch agent`, or `Ctrl+Enter`; `Esc` dismisses the form and releases the mic. The view stays on the map, and the new agent simply appears as a node in its workspace's cluster.
 
 An agent blocked on a permission prompt gets `✓` and `✕` buttons on both its node and its row — shift-click `✓` to approve and stop it asking — so a swarm can be unblocked from the map without opening a single pane. Clicking an agent selects it (the dock follows); double-click jumps to its pane. `⤳ Click` in the header flips that: one click jumps straight there, like the rail's swarm-map slots. `+ Agent` starts a new one in the selected workspace, `Esc` or the tile closes the view, and — like the Task Board, Skills and Costs — it takes over the grid's slot rather than floating above it.
 
 All motion respects `prefers-reduced-motion`.
+
+### Swarm timeline
+
+`▦ Timeline` in the swarm view header docks a **one-hour ribbon** under the map: one lane per agent, banded by what that agent was doing — lime busy, amber waiting on you, grey idle, red exited — with minute labels across the top and `now` at the right edge. Hover a band for the tool it was running and how long it lasted (*"busy · Edit · 10:49 for 15m"*).
+
+Nothing is sampled on a timer: a band runs from the state change that opened it to the next one, so an agent that stays busy for ten minutes costs a single entry. Lanes are reconciled rather than rebuilt on each repaint — the swarm view redraws several times a second with a busy swarm, and a full rebuild would tear out the band the cursor is resting on and orphan its tooltip.
+
+The ribbon is renderer-only and not persisted: it answers "what has this swarm been doing since I sat down", not "what happened last Tuesday". The toggle itself is remembered.
+
+### History
+
+The `History` tile opens a full-screen list of every past Claude conversation for one workspace — Claude Code writes a transcript per session under `~/.claude/projects/<munged-cwd>/<session-id>.jsonl`, and `claude --resume <id>` reopens any of them, so a closed pane stops being a lost thread.
+
+Each row shows the conversation's **opening request**, how long ago it last ran, its transcript size and its session id. The preview deliberately skips the machinery Claude Code records as user turns — an active skill's `/command` envelope, the skill body it injects in reply, `Launching skill: …` — and shows the first turn that was actually you.
+
+- The workspace picker in the header switches folders; `⟳ Refresh` re-reads (the list is re-read on every visit anyway, since agents keep writing to that folder).
+- The filter box narrows by preview text or session id.
+- `▶ Resume` spawns a **new** agent (new name, new tmux session) running `claude --resume` on that transcript, switches to its workspace and focuses the pane. Only the conversation comes back; the old process does not.
+- `📋` copies the session id, for resuming from a terminal yourself.
+
+Newest 60 per workspace. On Windows the transcripts are read from inside WSL through the shell rather than with `fs` — that is where the copy of Claude Code that wrote them lives.
 
 ### Sessions survive restarts
 
@@ -132,6 +166,25 @@ The bell in the top bar keeps a history of agent events — turn finished, waiti
 `details ▸` opens a docked panel on the right edge with the same history in full, untruncated detail — full text, a full date+time stamp, and a meta line giving the model, permission mode and how long the agent had been running when the event fired — plus `🗑 Clear All`.
 
 A short synthesized sound plays with a "turn finished" notification (configurable — see Options).
+
+**Desktop notifications** (on by default) go one step further: while the SwarmEye window isn't focused, an agent finishing its turn or blocking on you raises a real OS notification naming the agent, its workspace and what happened — the thing that reaches you with SwarmEye minimized behind an editor, which neither the bell nor the taskbar flash can do. Clicking it restores and focuses the window. The OS toast is deliberately silent, since SwarmEye already plays the sound you picked; and the `attention` event that always precedes a `done` is suppressed, so a finished turn produces one notification rather than two. Turn it off with **Desktop notifications** in `⚙` Options.
+
+### Messages between agents
+
+The `✉` button in the top bar (`Ctrl+Shift+E`) opens a one-line composer that writes straight into a running agent's input:
+
+- Address with `@name` — several are allowed (`@dora @kite run the tests`), and `@all` broadcasts to every running agent.
+- The chips under the box list every running agent (plus `@all`); clicking one addresses it, so a name never has to be typed from memory.
+- The hint line names who `Enter` will send to, and refuses to send at all while an address matches no agent.
+- The swarm view's right-click menu on an agent has **Message it**, which opens the composer with that agent already addressed — the map is where you can see who is idle.
+
+Delivery is the same channel a task's prompt uses: the text, a beat, then `Enter`, so Claude's input box sees a real keystroke rather than a pasted chunk. Sessions are tmux-backed, so this is one write per agent — nothing is queued or stored.
+
+### Preview dock
+
+The monitor button in the top bar docks a browser to the right of the grid: URL bar, `‹` `›` back/forward, `⟳` reload, `↗` open in your usual browser, `✕` close. Drag its left edge to resize (remembered), and each **workspace keeps its own address**, so switching to the API repo doesn't leave the web app's page up. Typing a bare port is enough — `3000` becomes `http://localhost:3000`.
+
+It is deliberately **local-only**. The URL box refuses anything that isn't `localhost` / `127.0.0.1`, and the main process enforces the same rule twice more — at attach, and on the top-level document request of any navigation the page starts on its own — in the webview's own session partition, so nothing else in the app is filtered. A page that fails to load says so ("is the dev server running?") rather than showing a browser error page. Subresources are left alone: a local page can still pull a font or a script from wherever it normally would.
 
 ### Search across all agents
 
@@ -197,6 +250,8 @@ Cards sit in **Manual / Scheduled / Active / Completed** columns. Once a task ha
 
 A task **completes** automatically when its agent finishes a turn, and returns to Scheduled if the agent exits first. Closing a running task's agent yourself moves it to Completed with a red `■ stopped` badge, so it reads as cut short rather than finished.
 
+A completed card also carries the agent's **closing message** — the last thing it said on the turn that finished the task, quoted under the task text and clamped to three lines (hover for the whole thing). It is read from the session's own transcript on the same pass that already records the turn's cost, so it costs no extra call, and it never comes from a sub-agent's answer. Turn it off with **Task summary on completion** in Options.
+
 Completed cards keep two buttons: `▤` opens the agent's **full transcript**, captured the moment it finished and kept even after the pane is long gone (with its own `⤓` export), and `⟳` **re-queues the task** as a fresh *start now* task with the same settings — follow-ups included, so re-running the first task re-runs the whole pipeline.
 
 `✕` (click twice) archives a card. `🗄 Archive` opens a read-only list of archived tasks with search plus category and priority filters, each purgeable individually or all at once.
@@ -210,6 +265,8 @@ A **Shipped** stats panel beside the form counts tasks finished today / this wee
 The `Skills` tile opens a third full-screen view for managing Claude Code skills.
 
 **Installing from GitHub** — `+ Add Skill` clones a repo URL into SwarmEye's skills folder, reading each `SKILL.md` frontmatter for a name and description. Skills are grouped into a colour-tinted box per source repo (click the header to collapse; the `owner/repo` name links to GitHub), each with its own `🗑 all` delete button.
+
+**Finding one** — the filter box above the list matches a skill's name, description, invoke command, source repo or on-disk folder. The stat cards keep counting the whole library while you type, so "12 installed" stays honest; `Esc` in the box clears the filter rather than closing the screen.
 
 Each installed skill row has two checkboxes:
 
@@ -257,10 +314,12 @@ The `⚙` tile at the bottom of the icon rail opens the Options panel. `↺ Rese
 | **Default model** | default | Presets the new-task form's model picker, *and* is applied directly to agents started with `+ Coding Agent` / `Ctrl+N`. |
 | **Default task effort** | default | Presets the new-task form's effort picker. |
 | **Default focus mode** | off | Presets the new-task form's focus checkbox. |
+| **Task summary on completion** | on | Puts the agent's closing message on the task card when a task finishes, read from its own transcript on the pass that already records the turn's cost. Off leaves Completed cards as they were. |
+| **Desktop notifications** | on | Raises a real OS notification — naming the agent, its workspace and what happened — when an agent finishes a turn or needs you while the SwarmEye window isn't focused. Clicking it brings the window back. See [Notification center](#notification-center). |
 | **Notification sound** | Chime | Played when an agent finishes a turn — Chime, Ping, Pop, Blip or None. |
 | **Dictation engine** | not installed | Shows install state and installs the local Whisper engine — see [Voice dictation](#voice-dictation). Deliberately **not** part of `↺ Reset`: an install isn't a preference. |
-| **Colour theme** | Dark | Restyles the whole cockpit *and* every terminal's ANSI palette. 19 themes: Dark, Light, Orange, Neo, Matrix, Crimson, Ocean, Mono, Sepia, System, Tokyo Night, Everforest, Ayu, Catppuccin, Catppuccin Macchiato, Gruvbox, Kanagawa, Nord, One Dark. |
-| **Theme background overlay** | on | The selected theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, pane and terminal surfaces — stays the default dark shade, and only the theme's own colours (borders, text, accents, terminal ramp) still follow the theme. The two light themes swap to a light-on-dark ramp when it is off, so their near-black text stays readable. |
+| **Colour theme** | Dark | Restyles the whole cockpit *and* every terminal's ANSI palette. 26 themes: Dark, Light, Orange, Neo, Matrix, Crimson, Ocean, Mono, Sepia, System, Tokyo Night, Everforest, Ayu, Catppuccin, Catppuccin Macchiato, Gruvbox, Kanagawa, Nord, One Dark, and seven light ones — Paper, Frost and Blossom on white, Ash, Slate, Fog and Zinc on light grey. |
+| **Theme background overlay** | on | The selected theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, pane and terminal surfaces — stays the default dark shade, and only the theme's own colours (borders, text, accents, terminal ramp) still follow the theme. The nine light themes swap to a light-on-dark ramp when it is off, so their near-black text stays readable. |
 
 ---
 
@@ -280,6 +339,7 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 | `Ctrl+Shift+M` | Maximize / restore focused pane |
 | `Ctrl+Shift+F` | Search in focused pane |
 | `Ctrl+Shift+G` | Search across all agents |
+| `Ctrl+Shift+E` | Message agents — `@name`, or `@all` to broadcast |
 | `Ctrl+Shift+B` | Task board |
 | `Ctrl+Shift+S` | Swarm view |
 | `Ctrl +` / `Ctrl −` / `Ctrl 0` | Font size of the focused pane |
@@ -296,6 +356,7 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 |---|---|---|
 | Config, logs, hook state | `%APPDATA%\swarmeye\` | `~/Library/Application Support/SwarmEye/` |
 | Dictation engine | `~/.local/share/swarmeye/stt` (inside WSL) | `~/.local/share/swarmeye/stt` |
+| Past conversations (read-only, Claude Code's) | `~/.claude/projects/` (inside WSL) | `~/.claude/projects/` |
 | tmux config | `~/.config/swarmeye/tmux.conf` (inside WSL) | `~/.config/swarmeye/tmux.conf` |
 
 Workspaces, sessions, tasks, skills and every option live in a single `config.json`, written atomically. The cost rollup behind the Costs screen has its own `spend.json` beside it — it takes a write on every agent turn, so it stays out of the file that carries archived task transcripts.
@@ -329,4 +390,5 @@ chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper
 - Agent state comes from Claude Code hooks: spawned agents run with `--settings <userData>/hook-settings.json`, whose hooks `cat` their JSON into `hook-state/<sessionId>.json`; the main process fs-watches that directory and relays events to the renderer. Agents reattached from an older version, or hook failures, fall back to output-timing heuristics.
 - The model chip isn't a hook field — verified absent from the real payload — so on every `Stop` event SwarmEye tails the session's transcript JSONL for the newest assistant `message.model`.
 - No bundler; xterm.js and its addons (fit, webgl, search, web-links) load straight from `node_modules` as UMD.
+- The preview dock is an Electron `<webview>` in its own session partition. Main allows it at all (`webviewTag`), strips node access and any preload from it at attach, and pins its top-level document to `localhost` — at attach, at `will-navigate`, and at the main-frame request itself, which is the one that also catches a `src` set from the renderer.
 - Main process modules: `platform.js` (OS shim), `sessions.js` (PTY/tmux), `usage.js` (usage poller), `config.js` (persistence), `hooks.js` (hook settings + state watcher), `git.js`, `health.js` (WSL probe, Windows only), `update.js`, `skills.js`, `speech.js`, `names.js`. The IPC surface is enumerated in `preload.js`.

@@ -41,6 +41,11 @@ const USAGE_SEEN_MAX = 400;
 /* Coalescing window for writing the totals back to config.json. */
 const USAGE_PERSIST_MS = 3000;
 
+/* How much of an agent's closing message rides along to the task card. Long
+ * enough for a real "here's what I changed", short enough that config.json
+ * (where completed tasks live) doesn't grow by a page per task. */
+const SUMMARY_MAX = 600;
+
 /* List price per million tokens, matched against the model id. Cache reads
  * bill at 0.1x input; cache writes at 1.25x (5-minute TTL) or 2x (1-hour) —
  * the transcript reports that split per entry, so the cost is exact rather
@@ -361,6 +366,7 @@ class HookMonitor {
 
       let model = null;
       let turnTokens = 0;
+      let summary = ''; // the newest assistant text block — what the agent said last
       // what these bytes added, split by the day and model they belong to —
       // handed to onSpend below so the rollup can accumulate across sessions
       const delta = {};
@@ -377,6 +383,19 @@ class HookMonitor {
         // interrupts): all-zero usage, never billed — and letting one through
         // would blank the context reading until the next real turn
         if (msg.model === '<synthetic>') continue;
+        // What the agent actually said, for the completed task's card. Read
+        // before the dedupe below, not after: Claude Code writes one line per
+        // content block and repeats the message's usage on each, so a turn
+        // whose thinking block comes first would have its text line skipped as
+        // "already counted". Sub-agent turns are somebody else's answer.
+        if (entry.isSidechain !== true && Array.isArray(msg.content)) {
+          const text = msg.content
+            .filter((c) => c && c.type === 'text' && typeof c.text === 'string')
+            .map((c) => c.text.trim())
+            .filter(Boolean)
+            .join('\n\n');
+          if (text) summary = text;
+        }
         if (this.countedAlready(st, msg.id)) continue;
 
         const input = u.input_tokens || 0;
@@ -431,6 +450,9 @@ class HookMonitor {
         message: null,
         model: null, // the chip's model rides ModelUpdate only (see applyHookEvent)
         usage: this.snapshot(sessionId),
+        // rides along rather than getting its own event: this read is the only
+        // place the transcript is opened, and the renderer wants both at once
+        summary: summary ? summary.slice(0, SUMMARY_MAX) : null,
       });
     } finally {
       st.busy = false;

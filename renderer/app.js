@@ -76,12 +76,13 @@ function syncChromeNow() {
     else if (pane.status === 'working') byStatus.working += 1;
     else byStatus.idle += 1; // idle + attention: not doing work right now
   }
-  Topbar.renderWorkspaces(state.workspaces, state.selectedWorkspaceId, counts, {
+  Topbar.renderWorkspaces(orderedWorkspaces(), state.selectedWorkspaceId, counts, {
     onSelect: (id) => { toggleBoard(false); selectWorkspace(id); }, // a pill always means "show me the grid"
     onRemove: removeWorkspace,
     onReorder: reorderWorkspaces,
     onRename: renameWorkspace,
     onSetColor: setWorkspaceColor,
+    onSetPinned: setWorkspacePinned,
   });
   Topbar.renderArchive(state.archived, archiveHandlers);
   const wsColor = {};
@@ -96,13 +97,46 @@ function syncChromeNow() {
 function syncGrid() {
   grid.setPanes(panesForWs(state.selectedWorkspaceId), state.selectedWorkspaceId);
   if (state.lastFocused && !grid.panes.includes(state.lastFocused)) state.lastFocused = null;
+  syncRendererReclaim();
   requestAnimationFrame(() => grid.panes.forEach((p) => p.refit()));
+}
+
+/* ---- renderer reclaim for workspaces nobody is looking at ----
+ * Agents in other workspaces keep running, and each pane holds a WebGL
+ * context for its terminal. Chromium caps a page at ~16 of those, so a busy
+ * swarm across a few workspaces walks into contexts being killed under the
+ * running app. A pane that has been off screen for a minute gives its context
+ * back (xterm falls back to the DOM renderer — nothing is lost but GPU
+ * acceleration nobody can see) and takes it again the moment it's shown. */
+const RENDERER_RECLAIM_MS = 60000;
+const reclaimTimers = new Map(); // sessionId -> pending drop
+
+function syncRendererReclaim() {
+  const visible = new Set(grid.panes.map((p) => p.session.id));
+  for (const [id, pane] of state.panes) {
+    const timer = reclaimTimers.get(id);
+    if (visible.has(id)) {
+      if (timer) { clearTimeout(timer); reclaimTimers.delete(id); }
+      pane.restoreRenderer();
+    } else if (!timer && !pane.rendererDropped) {
+      reclaimTimers.set(id, setTimeout(() => {
+        reclaimTimers.delete(id);
+        const p = state.panes.get(id);
+        if (p && !grid.panes.includes(p)) p.dropRenderer();
+      }, RENDERER_RECLAIM_MS));
+    }
+  }
+  // panes closed while their drop was pending
+  for (const [id, timer] of reclaimTimers) {
+    if (!state.panes.has(id)) { clearTimeout(timer); reclaimTimers.delete(id); }
+  }
 }
 
 async function selectWorkspace(id) {
   if (id === state.selectedWorkspaceId) return;
   state.selectedWorkspaceId = id;
   await window.swarm.selectWorkspace(id);
+  Preview.setWorkspace(id); // each workspace remembers its own preview address
   syncGrid();
   syncChrome();
 }
@@ -147,6 +181,20 @@ async function renameWorkspace(id, name) {
   const ws = state.workspaces.find((w) => w.id === id);
   if (ws) ws.name = name; // optimistic; syncChrome() below repaints the pill
   await window.swarm.renameWorkspace(id, name);
+  syncChrome();
+}
+
+/* Pinned workspaces are drawn (and cycled through) first; inside each group
+ * the drag order in state.workspaces is preserved, so unpinning a workspace
+ * drops it back exactly where it was rather than to the end. */
+function orderedWorkspaces() {
+  return [...state.workspaces.filter((w) => w.pinned), ...state.workspaces.filter((w) => !w.pinned)];
+}
+
+async function setWorkspacePinned(id, pinned) {
+  const ws = state.workspaces.find((w) => w.id === id);
+  if (ws) ws.pinned = pinned; // optimistic; syncChrome() below re-sorts the rail
+  await window.swarm.setWorkspacePinned(id, pinned);
   syncChrome();
 }
 
@@ -200,10 +248,12 @@ async function addWorkspace() {
 }
 
 function cycleWorkspace(dir) {
-  const n = state.workspaces.length;
+  // the rail's own order, pinned first — Ctrl+Tab must walk what's on screen
+  const list = orderedWorkspaces();
+  const n = list.length;
   if (n < 2) return;
-  const i = state.workspaces.findIndex((w) => w.id === state.selectedWorkspaceId);
-  const next = state.workspaces[((i === -1 ? 0 : i) + dir + n) % n];
+  const i = list.findIndex((w) => w.id === state.selectedWorkspaceId);
+  const next = list[((i === -1 ? 0 : i) + dir + n) % n];
   selectWorkspace(next.id);
 }
 
@@ -266,7 +316,7 @@ function isShortcut(e) {
   if (e.code === 'KeyR' && !e.shiftKey) return true;
   if (!e.shiftKey) return false;
   return e.code === 'KeyM' || e.code === 'KeyF' || e.code === 'KeyG' || e.code === 'KeyB'
-    || e.code === 'KeyS' || /^Digit\d$/.test(e.code);
+    || e.code === 'KeyS' || e.code === 'KeyE' || /^Digit\d$/.test(e.code);
 }
 
 function handleShortcut(e) {
@@ -297,6 +347,7 @@ function handleShortcut(e) {
   if (e.code === 'KeyG') { toggleGlobalSearch(gsearchEl.hidden); return true; }
   if (e.code === 'KeyB') { toggleBoard(boardEl.hidden); return true; }
   if (e.code === 'KeyS') { toggleSwarmView(swarmViewEl.hidden); return true; }
+  if (e.code === 'KeyE') { if (Messenger.isOpen()) Messenger.close(); else Messenger.open(); return true; }
 
   const m = /^Digit(\d)$/.exec(e.code);
   if (m) {
@@ -317,6 +368,7 @@ function handleShortcut(e) {
  * down this file. */
 const ESCAPABLE = [
   [() => gsearchEl, () => toggleGlobalSearch(false)],
+  [() => msgPopEl, () => Messenger.close()],
   [() => kbdShortcutsPop, () => { kbdShortcutsPop.hidden = true; }],
   [() => kbdPop, () => { kbdPop.hidden = true; }],
   [() => archivePopEl, () => { archivePopEl.hidden = true; }],
@@ -326,6 +378,7 @@ const ESCAPABLE = [
   [() => boardEl, () => toggleBoard(false)],
   [() => skillsEl, () => toggleSkills(false)],
   [() => costsEl, () => toggleCosts(false)],
+  [() => historyEl, () => toggleHistory(false)],
   [() => swarmViewEl, () => toggleSwarmView(false)],
 ];
 
@@ -458,7 +511,6 @@ function renderNotifs() {
   }
   Topbar.renderNotifications(notifs, notifUnread, notifHandlers);
   Topbar.renderNotifPanel(notifs, notifHandlers);
-  renderSwarmView(); // the swarm view docks its own copy of this feed
 }
 
 function pushNotif(pane, kind, text) {
@@ -530,6 +582,7 @@ const applyTopbarZoom = makeZoomControl({
     document.getElementById('topbar'),
     leftbarEl,
     document.getElementById('gsearch'),
+    document.getElementById('msg-pop'),
     notifPopEl,
     archivePopEl,
   ],
@@ -581,6 +634,7 @@ const applyBoardZoom = makeZoomControl({
     document.getElementById('board-archive'),
     document.getElementById('skills-main'),
     document.getElementById('costs-main'),
+    document.getElementById('history-main'),
     kbdPop,
     kbdShortcutsPop,
   ],
@@ -646,8 +700,8 @@ function applyEnablePi(on) {
   localStorage.setItem('swarmeye.enablePi', on ? '1' : '');
   if (!on) piStatusEl.textContent = '';
   document.getElementById('add-agent').dataset.tip = on
-    ? 'Start a Claude or Pi session in the selected workspace'
-    : 'Start a Claude session in the selected workspace';
+    ? 'Start a plain agent, a role preset or Pi in the selected workspace'
+    : 'Start a plain agent or a role preset in the selected workspace';
 }
 async function installPi() {
   piStatusEl.textContent = 'installing latest…';
@@ -768,6 +822,34 @@ const applyThemeOverlay = boolOption('theme-overlay-toggle', 'themeOverlay', tru
   document.documentElement.dataset.themeOverlay = on ? 'on' : 'off';
   applyTheme(document.documentElement.dataset.theme); // terminal palette follows the backdrop
 });
+
+/* "Task summary on completion" — on by default. The agent's closing message
+ * is pulled out of the transcript by main/hooks.js on the same read that
+ * already runs at every turn boundary, and lands on the completed card, so the
+ * board says what came of a task without opening its transcript. */
+let taskSummaries = true;
+const applyTaskSummaryOption = boolOption('task-summary-toggle', 'taskSummary', true, (on) => {
+  taskSummaries = on;
+});
+
+/* "Desktop notifications" — on by default. The taskbar flash and the bell only
+ * help while SwarmEye is on screen; this is the one that reaches you with the
+ * window minimized behind an editor. Main only raises a toast when the window
+ * isn't focused, so this never fires at something you're already looking at. */
+let desktopNotifs = true;
+const applyDesktopNotifs = boolOption('desktop-notif-toggle', 'desktopNotifs', true, (on) => {
+  desktopNotifs = on;
+});
+
+/* Flash the taskbar/dock and — when the option is on — raise an OS
+ * notification naming the agent and what it did. */
+function notifyOS(pane, text) {
+  window.swarm.notify({
+    title: `${pane.session.agentName} · ${pane.session.workspaceName}`,
+    body: text,
+    desktop: desktopNotifs,
+  });
+}
 
 /* notification sound — the picker in the ⌨ popover; persisted locally and
  * played whenever an agent's turn finishes (see onStatusChange below) */
@@ -901,6 +983,8 @@ document.getElementById('options-reset-btn').addEventListener('click', async () 
   applyAgentPadding(true);
   for (const { key } of DEFAULT_PICKERS) applyDefault[key]('default');
   applyDefaultFocus(false);
+  applyTaskSummaryOption(true);
+  applyDesktopNotifs(true);
   applyTheme('dark');
   applyThemeOverlay(true);
   notifSound = 'chime';
@@ -1154,6 +1238,23 @@ async function tryInjectPrompt(sessionId) {
   pendingTaskStarts.delete(sessionId);
 }
 
+/* The closing message of the turn that just ended, filed on the task that turn
+ * completed. It arrives a beat after the Stop that completed the task — the
+ * transcript read behind it is async — so the card is matched by pane, and only
+ * while its completion is still fresh: a pane reused by a later task must not
+ * have that task's summary land on this one. */
+const SUMMARY_GRACE_MS = 120000;
+
+function applyTaskSummary(sessionId, summary) {
+  if (!taskSummaries) return;
+  const task = state.tasks.find((t) => t.paneId === sessionId && t.status === 'completed'
+    && t.completedAt && Date.now() - t.completedAt < SUMMARY_GRACE_MS);
+  if (!task) return;
+  task.summary = summary;
+  window.swarm.updateTask(task.id, { summary });
+  renderBoard();
+}
+
 async function createTask({ text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt }) {
   if (!workspaceId) { toast('pick a workspace for this task'); return; }
   const targetResetsAt = mode === 'next-session'
@@ -1342,11 +1443,13 @@ function toggleBoard(show) {
   boardEl.hidden = !show;
   skillsEl.hidden = true;
   costsEl.hidden = true;
+  historyEl.hidden = true;
   closeSwarmView();
   gridWrapEl.hidden = show;
   document.getElementById('board-btn').classList.toggle('active', show);
   document.getElementById('skills-btn').classList.remove('active');
   document.getElementById('costs-btn').classList.remove('active');
+  document.getElementById('history-btn').classList.remove('active');
   if (show) { Board.toggleArchive(false); renderBoard(); renderArchive(); Board.showForm(true); }
   else {
     Board.stopDictation(); // closing the board must not leave the mic hot
@@ -1365,10 +1468,12 @@ function toggleSkills(show) {
   skillsEl.hidden = !show;
   boardEl.hidden = true;
   costsEl.hidden = true;
+  historyEl.hidden = true;
   closeSwarmView();
   gridWrapEl.hidden = show;
   document.getElementById('board-btn').classList.remove('active');
   document.getElementById('costs-btn').classList.remove('active');
+  document.getElementById('history-btn').classList.remove('active');
   document.getElementById('skills-btn').classList.toggle('active', show);
   if (show) Skills.refresh();
   else requestAnimationFrame(() => grid.panes.forEach((p) => p.refit()));
@@ -1382,10 +1487,12 @@ function toggleCosts(show) {
   costsEl.hidden = !show;
   boardEl.hidden = true;
   skillsEl.hidden = true;
+  historyEl.hidden = true;
   closeSwarmView();
   gridWrapEl.hidden = show;
   document.getElementById('board-btn').classList.remove('active');
   document.getElementById('skills-btn').classList.remove('active');
+  document.getElementById('history-btn').classList.remove('active');
   document.getElementById('costs-btn').classList.toggle('active', show);
   // workspace names and identity colours label the per-workspace rows; the
   // archived list keeps a removed workspace's spend attributable
@@ -1394,6 +1501,47 @@ function toggleCosts(show) {
 }
 document.getElementById('costs-btn').addEventListener('click', () => toggleCosts(costsEl.hidden));
 document.getElementById('costs-close-btn').addEventListener('click', () => toggleCosts(false));
+
+/* and a fourth: the History screen — past Claude conversations for a
+ * workspace, each resumable in a new pane. Same swap slot, same exclusivity. */
+const historyEl = document.getElementById('history-view');
+const historyHandlers = {
+  /* `claude --resume <id>` in a fresh pane. Deliberately a new session (new
+   * id, new tmux server entry) rather than anything that reuses the old one:
+   * the transcript is the only thing being brought back, the process is not. */
+  async onResume(workspaceId, sessionId) {
+    if (liveAgentCount() >= maxAgents) { toast(`limit of ${maxAgents} sessions reached`); return; }
+    const res = await window.swarm.createSession(workspaceId, 100, 30, undefined, undefined, sessionId);
+    if (!res.ok) {
+      toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not resume: ' + res.reason);
+      return;
+    }
+    toggleHistory(false);
+    if (workspaceId !== state.selectedWorkspaceId) await selectWorkspace(workspaceId);
+    const pane = mountPane(res.session);
+    pane.focus();
+    toast('resumed that conversation in ' + pane.session.agentName);
+  },
+};
+
+function toggleHistory(show) {
+  historyEl.hidden = !show;
+  boardEl.hidden = true;
+  skillsEl.hidden = true;
+  costsEl.hidden = true;
+  closeSwarmView();
+  gridWrapEl.hidden = show;
+  document.getElementById('board-btn').classList.remove('active');
+  document.getElementById('skills-btn').classList.remove('active');
+  document.getElementById('costs-btn').classList.remove('active');
+  document.getElementById('history-btn').classList.toggle('active', show);
+  // always re-read: agents write new transcripts into that folder while the
+  // app runs, so a cached list goes stale between visits
+  if (show) History.refresh(state.workspaces, state.selectedWorkspaceId, historyHandlers);
+  else requestAnimationFrame(() => grid.panes.forEach((p) => p.refit()));
+}
+document.getElementById('history-btn').addEventListener('click', () => toggleHistory(historyEl.hidden));
+document.getElementById('history-close-btn').addEventListener('click', () => toggleHistory(false));
 
 // main pushes the whole rollup after folding a turn's spend in — repaint only
 // while the view is actually up
@@ -1454,6 +1602,13 @@ const swarmViewHandlers = {
     window.swarm.writeSession(paneId, '\x1b'); // Esc: what stops a turn
     toast('interrupted ' + pane.session.agentName);
   },
+  /* the map is where you see who is idle — so the composer opens from here
+   * with that agent already addressed, rather than making you find its pane */
+  onMessage(paneId) {
+    const pane = state.panes.get(paneId);
+    if (!pane || pane.exited) return;
+    Messenger.open(pane.session.agentName);
+  },
   onClear(paneId) {
     const pane = state.panes.get(paneId);
     if (!pane || pane.exited || pane.session.kind === 'pi') return;
@@ -1474,7 +1629,6 @@ function swarmViewCtx() {
   return {
     panes: [...state.panes.values()],
     workspaces: state.workspaces,
-    notifs,
     maxAgents,
     handlers: swarmViewHandlers,
   };
@@ -1500,18 +1654,79 @@ function toggleSwarmView(show) {
   boardEl.hidden = true;
   skillsEl.hidden = true;
   costsEl.hidden = true;
+  historyEl.hidden = true;
   gridWrapEl.hidden = true;
   document.getElementById('board-btn').classList.remove('active');
   document.getElementById('skills-btn').classList.remove('active');
   document.getElementById('costs-btn').classList.remove('active');
+  document.getElementById('history-btn').classList.remove('active');
   swarmViewBtn.classList.add('active');
   SwarmView.setActive(true);
   SwarmView.render(swarmViewCtx());
 }
 
 function renderSwarmView() {
-  if (!swarmViewEl.hidden) SwarmView.render(swarmViewCtx());
+  if (swarmViewEl.hidden) return;
+  SwarmView.render(swarmViewCtx());
+  renderTimeline();
 }
+
+/* ---- swarm timeline ----
+ * One entry per agent per state change, painted as a one-hour ribbon under
+ * the map by renderer/timeline.js. Nothing is sampled on a timer: a band runs
+ * from its entry to the next one, so an agent that stays busy for ten minutes
+ * costs exactly one entry. Renderer-only and not persisted — the ribbon is
+ * "what has this swarm been doing since I sat down", not an audit log. */
+const timelineLog = new Map(); // sessionId -> [{t, status, tool}]
+const svTimelineEl = document.getElementById('sv-timeline');
+const svTimelineBtn = document.getElementById('sv-timeline-btn');
+let timelineOn = localStorage.getItem('swarmeye.svTimeline') === '1';
+
+/* The pane's own four-way status, named the way the swarm view's legend names
+ * it — a pane blocked on a permission prompt reads as 'waiting' whether or not
+ * its attention flag has already been cleared by a glance at the pane. */
+function timelineStatus(pane) {
+  if (pane.exited) return 'exited';
+  if (pane.working) return 'busy';
+  if (pane.attention || pane.awaitingPrompt) return 'waiting';
+  return 'idle';
+}
+
+function recordTimeline(pane) {
+  const id = pane.session.id;
+  const status = timelineStatus(pane);
+  const tool = pane.statusText || '';
+  const list = timelineLog.get(id) || [];
+  const last = list[list.length - 1];
+  if (last && last.status === status && last.tool === tool) return;
+  list.push({ t: Date.now(), status, tool });
+  // drop entries that fell off the left edge, but keep the last one that
+  // did — it is what the ribbon's opening band is drawn from
+  const cutoff = Date.now() - Timeline.WINDOW_MS;
+  let from = 0;
+  while (from + 1 < list.length && list[from + 1].t <= cutoff) from += 1;
+  timelineLog.set(id, from ? list.slice(from) : list);
+}
+
+function renderTimeline() {
+  if (!timelineOn || swarmViewEl.hidden) return;
+  // panes closed since the last paint stop being tracked here rather than at
+  // every one of the several call sites that can remove one
+  for (const id of timelineLog.keys()) if (!state.panes.has(id)) timelineLog.delete(id);
+  Timeline.render(svTimelineEl, [...state.panes.values()], timelineLog);
+}
+
+function applyTimeline(on) {
+  timelineOn = !!on;
+  localStorage.setItem('swarmeye.svTimeline', timelineOn ? '1' : '0');
+  svTimelineEl.hidden = !timelineOn;
+  svTimelineBtn.classList.toggle('active', timelineOn);
+  renderTimeline();
+}
+svTimelineBtn.addEventListener('click', () => applyTimeline(!timelineOn));
+applyTimeline(timelineOn);
+// the "now" edge has to keep moving even when no agent changes state
+setInterval(renderTimeline, 10000);
 
 swarmViewBtn.addEventListener('click', () => toggleSwarmView(swarmViewEl.hidden));
 document.getElementById('swarm-view-close-btn').addEventListener('click', () => toggleSwarmView(false));
@@ -1574,17 +1789,19 @@ const paneHandlers = {
   },
   onShortcut: isShortcut,
   onSplit(pane, direction) {
-    // splitting a pi pane spawns another pi agent next to it
-    addAgent({ refPane: pane, direction, kind: pane.session.kind });
+    // splitting a pi pane spawns another pi agent next to it; a role is
+    // inherited the same way, so splitting a reviewer gives you a second one
+    addAgent({ refPane: pane, direction, kind: pane.session.kind, role: pane.session.role });
   },
   onStatusChange(pane, status) {
+    recordTimeline(pane); // every state flip is a band edge on the swarm timeline
     if (status === 'done') {
       // fired on every Stop hook, watched or not — task completion must not
       // ride on the attention path, which flagAttention suppresses while the
       // user is looking at the pane (and skips when attention is already set)
       const watching = pane.el.isConnected && pane.el.classList.contains('focused') && document.hasFocus();
       if (!watching) {
-        window.swarm.notify(); // flashes the taskbar/dock; the bell below carries the detail
+        notifyOS(pane, 'finished its turn'); // taskbar flash + OS toast; the bell below carries the detail
         pushNotif(pane, 'done', 'finished its turn');
         Sounds.play(notifSound);
       }
@@ -1610,13 +1827,17 @@ const paneHandlers = {
         paneHandlers.onClose(pane); // clears its autoClosers entry
       }
     } else if (status === 'attention') {
-      window.swarm.notify(); // flashes the taskbar/dock; the bell below carries the detail
       // the pane's status text says why (hook-driven): 'done' = turn finished
       // (already handled by the dedicated 'done' status above — a later bell
-      // must not repeat it), anything else = blocked on the user; empty =
-      // bell/heuristic fallback
+      // must not repeat it, and neither must a second OS toast), anything else
+      // = blocked on the user; empty = bell/heuristic fallback
       const reason = pane.statusEl.textContent;
-      if (reason !== 'done') pushNotif(pane, 'wait', reason || 'needs attention');
+      if (reason !== 'done') {
+        notifyOS(pane, reason || 'needs attention');
+        pushNotif(pane, 'wait', reason || 'needs attention');
+      } else {
+        window.swarm.notify({}); // flash only — 'done' announces itself above
+      }
     } else if (status === 'prompt') {
       // a yes/no menu appeared or went away — the bell's ✓/✕ (and the swarm
       // view's, via renderNotifs) follow the pane's
@@ -1654,6 +1875,7 @@ const paneHandlers = {
       rows: pane.term.rows,
       resume,
       kind: s.kind,
+      role: s.role,
       autoRestart: pane.autoRestart,
     });
     if (!res.ok) {
@@ -1733,12 +1955,14 @@ function mountPane(session, { managed = false, refPane, direction } = {}) {
   const pane = new Pane(session, paneHandlers, { managed });
   pane.setGit(state.git[session.workspaceId]);
   state.panes.set(session.id, pane);
+  recordTimeline(pane); // the lane starts the moment the agent does
   if (session.workspaceId === state.selectedWorkspaceId) {
     if (refPane) grid.insertSplit(pane, refPane, direction);
     else grid.add(pane);
     requestAnimationFrame(() => pane.refit());
   }
   flushPending(pane);
+  syncRendererReclaim(); // an agent started in a workspace you're not watching
   syncChrome();
   return pane;
 }
@@ -1748,7 +1972,7 @@ function mountPane(session, { managed = false, refPane, direction } = {}) {
 // keepView: the caller is showing a full view (the map) and wants to stay
 // there, so leave the grid hidden and don't hand keyboard focus to a terminal
 // nobody can see.
-async function addAgent({ refPane, direction, kind, keepView } = {}) {
+async function addAgent({ refPane, direction, kind, role, keepView } = {}) {
   if (!state.selectedWorkspaceId) {
     toast('add and select a workspace first');
     return;
@@ -1759,10 +1983,12 @@ async function addAgent({ refPane, direction, kind, keepView } = {}) {
   }
   const pi = kind === 'pi';
   // same Options default the Task Board pre-fills, applied as a --model launch
-  // flag so it can't bleed into Claude's own saved default (see startTask)
+  // flag so it can't bleed into Claude's own saved default (see startTask).
+  // A role brings its own model (main/sessions.js ROLES) — sending the default
+  // as well would override it, so a picked role means "let the role decide".
   const defaultModel = localStorage.getItem('swarmeye.defaultModel');
-  const modelArg = !pi && defaultModel && defaultModel !== 'default' ? defaultModel : undefined;
-  const res = await window.swarm.createSession(state.selectedWorkspaceId, 100, 30, modelArg, pi ? 'pi' : undefined);
+  const modelArg = !pi && !role && defaultModel && defaultModel !== 'default' ? defaultModel : undefined;
+  const res = await window.swarm.createSession(state.selectedWorkspaceId, 100, 30, modelArg, pi ? 'pi' : undefined, undefined, role);
   if (!res.ok) {
     toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not start session: ' + res.reason);
     return;
@@ -1806,6 +2032,7 @@ window.swarm.onSessionExit(({ id, exitCode, detached }) => {
   const willAutoRestart = !!pane && pane.autoRestart && !detached && !orphanedTask;
   if (pane) {
     pane.markExited(exitCode, detached);
+    recordTimeline(pane); // an exit closes the lane's last band
     if (detached) pushNotif(pane, 'detach', 'detached — agent still running, ↻ reconnects');
     // the auto-restart path posts its own notification once the replacement
     // pane exists, so don't also announce the death here
@@ -1831,6 +2058,7 @@ window.swarm.onSessionExit(({ id, exitCode, detached }) => {
 window.swarm.onSessionState((payload) => {
   const pane = state.panes.get(payload.id);
   if (pane) pane.applyHookEvent(payload);
+  if (payload.summary) applyTaskSummary(payload.id, payload.summary);
   // the task's own turn has begun — from here a Stop is its completion. Every
   // event but Stop (and SessionStart, which precedes the prompt) says the
   // agent is live on the prompt we just sent it.
@@ -2004,6 +2232,27 @@ window.swarm.onUpdateError(({ error }) => {
   updateActionBtn.disabled = false;
 });
 
+/* ---- messages between agents ----
+ * One line, addressed with @name (several names allowed) or @all, written
+ * straight into those sessions. The two-write channel is the same one a task's
+ * prompt goes down — text, a beat, then Enter — so Claude's input box sees a
+ * real keystroke instead of a pasted chunk with a newline in it. */
+const msgPopEl = document.getElementById('msg-pop');
+
+Messenger.init({
+  listAgents: () => [...state.panes.values()]
+    .filter((p) => !p.exited)
+    .map((p) => ({ id: p.session.id, name: p.session.agentName, ws: p.session.workspaceName })),
+  async send(ids, text) {
+    for (const id of ids) {
+      window.swarm.writeSession(id, text);
+      await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
+      window.swarm.writeSession(id, '\r');
+    }
+    toast(`message sent to ${ids.length} agent${ids.length === 1 ? '' : 's'}`);
+  },
+});
+
 /* ---- global search across all agents ---- */
 
 const gsearchEl = document.getElementById('gsearch');
@@ -2104,11 +2353,16 @@ gsearchBtnEl.addEventListener('click', (e) => {
 });
 
 document.getElementById('add-workspace').addEventListener('click', addWorkspace);
-/* + Coding Agent spawns claude directly — unless Pi is enabled in ⌨ Options,
- * then a small popover under the button picks which agent the new pane runs.
- * (Ctrl/Cmd+N always spawns Claude; a pane's → / ↓ splits inherit its kind.) */
+/* + Coding Agent opens a small popover under the button: a plain Claude, then
+ * the role presets (each launches with its own system prompt and model tier —
+ * main/sessions.js owns both), then Pi when it's enabled in ⚙ Options.
+ * (Ctrl/Cmd+N always spawns a plain Claude; a pane's → / ↓ splits inherit its
+ * kind and role.) */
 const addAgentBtn = document.getElementById('add-agent');
 let agentKindMenuEl = null;
+let roles = []; // [{key, label, model}] — from main, once
+window.swarm.listRoles().then((list) => { roles = list || []; });
+
 function closeAgentKindMenu() {
   if (!agentKindMenuEl) return;
   agentKindMenuEl.remove();
@@ -2119,17 +2373,20 @@ function onAgentKindDismiss(e) {
   if (!agentKindMenuEl.contains(e.target) && e.target !== addAgentBtn) closeAgentKindMenu();
 }
 addAgentBtn.addEventListener('click', () => {
-  if (!localStorage.getItem('swarmeye.enablePi')) { addAgent(); return; }
   if (agentKindMenuEl) { closeAgentKindMenu(); return; }
   const menu = document.createElement('div');
   menu.className = 'branch-menu';
-  for (const [kind, label] of [[undefined, 'Claude'], ['pi', 'Pi']]) {
+  const entries = [{ label: 'Claude', tip: 'A plain agent — your Options default model, no role prompt' }];
+  for (const r of roles) entries.push({ label: r.label, role: r.key, tip: `${r.label} role prompt · ${r.model}` });
+  if (localStorage.getItem('swarmeye.enablePi')) entries.push({ label: 'Pi', kind: 'pi', tip: 'Pi coding agent' });
+  for (const { label, role, kind, tip } of entries) {
     const row = document.createElement('button');
     row.className = 'branch-item';
     row.textContent = label;
+    row.dataset.tip = tip;
     row.addEventListener('click', () => {
       closeAgentKindMenu();
-      addAgent({ kind });
+      addAgent({ kind, role });
     });
     menu.appendChild(row);
   }
@@ -2183,6 +2440,7 @@ document.fonts.ready.then(() => {
   autoUsageLimit = cfg.autoUsageLimit ?? 85;
   autoLimitVal.textContent = autoUsageLimit + '%';
   skipPermissionsToggle.checked = !!cfg.skipPermissions;
+  Preview.init({ getWorkspaceId: () => state.selectedWorkspaceId });
   syncChrome();
   renderBoard();
 

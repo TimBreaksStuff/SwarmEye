@@ -41,14 +41,22 @@ body::before {
 :root[data-theme-overlay="off"] body::before {
   display: none;
 }
-/* The two light-background themes write near-black text and near-white
+/* The light-background themes write near-black text and near-white
  * borders — one vanishes against the dark chassis above, the other glares.
  * They borrow the default neutral ramp and keep their own accent hue, which
  * is the part that carries the theme's identity; --accent-text is mixed
- * toward white because both themes darken it for a light page. (The matching
- * terminal-palette flip lives in pane.js — see setXtermTheme.) */
+ * toward white because every one of them darkens it for a light page. (The
+ * matching terminal-palette flip lives in pane.js — see setXtermTheme, whose
+ * LIGHT_THEMES set must list exactly the themes selected here.) */
 :root[data-theme-overlay="off"][data-theme="light"],
-:root[data-theme-overlay="off"][data-theme="sepia"] {
+:root[data-theme-overlay="off"][data-theme="sepia"],
+:root[data-theme-overlay="off"][data-theme="paper"],
+:root[data-theme-overlay="off"][data-theme="frost"],
+:root[data-theme-overlay="off"][data-theme="blossom"],
+:root[data-theme-overlay="off"][data-theme="ash"],
+:root[data-theme-overlay="off"][data-theme="slate"],
+:root[data-theme-overlay="off"][data-theme="fog"],
+:root[data-theme-overlay="off"][data-theme="zinc"] {
   --border: #1a1c20;
   --border2: #22252b;
   --border3: #2b2e34;
@@ -236,6 +244,16 @@ body::before {
   border-radius: 50%;
   border: 1px solid var(--surface);
 }
+/* pinned workspaces float to the top of the rail — the marker sits in the
+ * free top-left corner, opposite .ws-attn */
+.rail-tile .ws-pin {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  font-size: 9px;
+  line-height: 1;
+  filter: drop-shadow(0 0 3px var(--bg));
+}
 /* small corner counter (agents per workspace, archived count) */
 .rail-n {
   position: absolute;
@@ -280,6 +298,8 @@ body::before {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+#leftbar.expanded .rail-tile .ws-pin,
+#leftbar.hover-expanded .rail-tile .ws-pin,
 #leftbar.expanded .rail-tile .ws-attn,
 #leftbar.hover-expanded .rail-tile .ws-attn,
 #leftbar.expanded .rail-tile .rail-n,
@@ -287,6 +307,12 @@ body::before {
   position: static;
   flex: none;
   margin-left: auto;
+}
+#leftbar.expanded .rail-tile .ws-pin ~ .ws-attn,
+#leftbar.hover-expanded .rail-tile .ws-pin ~ .ws-attn,
+#leftbar.expanded .rail-tile .ws-pin ~ .rail-n,
+#leftbar.hover-expanded .rail-tile .ws-pin ~ .rail-n {
+  margin-left: 6px;
 }
 #leftbar.expanded .rail-tile .ws-attn ~ .rail-n,
 #leftbar.hover-expanded .rail-tile .ws-attn ~ .rail-n {
@@ -363,6 +389,7 @@ body::before {
   text-overflow: ellipsis;
   max-width: 280px;
 }
+.rail-flyout-pin,
 .rail-flyout-x {
   font-size: 12px;
   line-height: 1;
@@ -377,6 +404,11 @@ body::before {
   padding: 0;
 }
 .rail-flyout-x:hover { color: var(--err); border-color: rgba(255, 90, 90, 0.4); }
+/* pinned reads as "on" — the unpinned state is deliberately dim, so the two
+ * are distinguishable without hovering for the tooltip */
+.rail-flyout-pin { opacity: 0.35; }
+.rail-flyout-pin:hover { opacity: 0.8; border-color: var(--border-hover); }
+.rail-flyout-pin.on { opacity: 1; border-color: var(--accent); }
 /* workspace colour picker inside the flyout */
 .rail-flyout-colors {
   display: flex;
@@ -1069,7 +1101,8 @@ body::before {
   animation: none;
 }
 
-.pane-task {
+.pane-task,
+.pane-role {
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.06em;
@@ -1081,6 +1114,13 @@ body::before {
   padding: 2px 7px;
   white-space: nowrap;
   flex: none;
+}
+
+/* the role preset a pane was launched with — same chip as "task", accented so
+ * a swarm of mixed roles reads at a glance */
+.pane-role {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .pane-title {
@@ -1372,7 +1412,8 @@ body::before {
   border-radius: 10px;
   padding: 6px;
   min-width: 160px;
-  max-width: 320px;
+  /* wide enough for a `git diff --stat` line (path + bar) above the branches */
+  max-width: 460px;
   max-height: 50vh;
   overflow-y: auto;
   box-shadow: 0 30px 70px -18px rgba(0, 0, 0, 0.8);
@@ -1409,6 +1450,24 @@ body::before {
   outline: none;
 }
 .branch-menu .branch-new-input::placeholder { color: var(--muted); }
+/* what's actually changed in the workspace, above the branch list — the
+ * answer to "the chip says dirty, dirty with what?" */
+.branch-diff {
+  padding: 4px 9px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  max-height: 22vh;
+  overflow: auto;
+}
+.branch-diff-line {
+  white-space: pre;
+  color: var(--text2);
+  line-height: 1.5;
+}
+.branch-diff-line.branch-diff-untracked { color: var(--amber); }
+/* the branch rows moved into their own box under the diff — .branch-menu's
+ * column layout no longer reaches them directly */
+.branch-list { display: flex; flex-direction: column; }
 
 /* ---------- model chip ---------- */
 
@@ -1547,6 +1606,187 @@ body::before {
   color: var(--accent-text);
   border-color: var(--accent);
   box-shadow: 0 0 14px -4px var(--accent-glow);
+}
+
+/* ---------- preview dock ---------- */
+
+#preview-btn {
+  color: var(--text2);
+  background: var(--glass);
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+  padding: 0;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#preview-btn svg { width: 16px; height: 16px; }
+#preview-btn:hover,
+#preview-btn.active {
+  color: var(--accent-text);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px -4px var(--accent-glow);
+}
+
+/* a flex child of #body-wrap, like #notif-panel — the grid gives up the width */
+#preview {
+  position: relative;
+  flex: none;
+  z-index: 1;
+  width: 480px;
+  min-width: 320px;
+  min-height: 0;
+  display: flex;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+#preview[hidden] { display: none; }
+
+#preview-resizer {
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+}
+#preview-resizer:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+#preview-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#preview-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+#preview-bar button {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text2);
+  background: var(--glass);
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  cursor: pointer;
+  padding: 0;
+}
+#preview-bar button:hover { color: var(--accent-text); border-color: var(--accent); }
+#preview-url {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--term-bg);
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+}
+#preview-url:focus { border-color: var(--accent); }
+
+#preview-web {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  background: #fff; /* a page that hasn't painted yet shouldn't flash the chassis colour */
+}
+
+.preview-msg {
+  flex: none;
+  font-size: 11px;
+  color: var(--amber);
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+.preview-msg[hidden] { display: none; }
+
+/* ---------- message composer ---------- */
+
+#msg-btn {
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text2);
+  background: var(--glass);
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  flex: none;
+  padding: 0 0 1px;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#msg-btn:hover {
+  color: var(--accent-text);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px -4px var(--accent-glow);
+}
+
+#msg-pop {
+  position: fixed;
+  z-index: 30;
+  width: min(560px, 90vw);
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(18px);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
+  border-radius: 14px;
+  box-shadow: 0 30px 70px -18px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+#msg-pop[hidden] { display: none; }
+#msg-input {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--term-bg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 16px;
+  outline: none;
+}
+.msg-hint {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 8px 16px 0;
+}
+.msg-hint.warn { color: var(--amber); }
+.msg-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px 14px;
+}
+.msg-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+  background: var(--glass);
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.msg-chip:hover { color: var(--accent-text); border-color: var(--accent); }
+.msg-chip-all { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.msg-none {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 /* ---------- global search overlay ---------- */
@@ -1756,6 +1996,13 @@ body::before {
 .theme-dot[data-theme="kanagawa"] { background: linear-gradient(135deg, #1f1f28 55%, #7e9cd8 55%); }
 .theme-dot[data-theme="nord"]   { background: linear-gradient(135deg, #2e3440 55%, #88c0d0 55%); }
 .theme-dot[data-theme="one-dark"] { background: linear-gradient(135deg, #282c34 55%, #61afef 55%); }
+.theme-dot[data-theme="paper"]  { background: linear-gradient(135deg, #ffffff 55%, #1f2937 55%); }
+.theme-dot[data-theme="frost"]  { background: linear-gradient(135deg, #f7fbfc 55%, #0d7f95 55%); }
+.theme-dot[data-theme="blossom"] { background: linear-gradient(135deg, #fdf8f9 55%, #be1d51 55%); }
+.theme-dot[data-theme="ash"]    { background: linear-gradient(135deg, #dcdcde 55%, #a35a09 55%); }
+.theme-dot[data-theme="slate"]  { background: linear-gradient(135deg, #d5dae1 55%, #1d4ed8 55%); }
+.theme-dot[data-theme="fog"]    { background: linear-gradient(135deg, #d9dedb 55%, #15803d 55%); }
+.theme-dot[data-theme="zinc"]   { background: linear-gradient(135deg, #dbd9dd 55%, #6d28d9 55%); }
 .theme-dot.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-glow);
@@ -2245,8 +2492,9 @@ body::before {
   box-shadow: 0 0 14px -4px var(--accent-glow);
 }
 
-/* the board's filter bar and the archive view's copy of it */
+/* the board's filter bar, the archive view's copy of it, and the Skills one */
 .board-filters,
+.skills-filters,
 .board-archive-filters {
   display: flex;
   align-items: center;
@@ -2485,6 +2733,21 @@ body::before {
   overflow: hidden;
   margin-bottom: 8px;
 }
+/* the agent's closing message on a completed card — quoted off the task text
+ * by a left rule, clamped to three lines with the whole thing on hover */
+.board-card-summary {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  padding-left: 8px;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
 .board-card-actions {
   display: flex;
   justify-content: flex-end;
@@ -2570,7 +2833,8 @@ body::before {
 .board-archive-delall:hover { color: #ff7a7a; border-color: #ff7a7a; }
 .board-archive-delall.armed { color: #ff5a5a; border-color: #ff5a5a; }
 .board-archive-delall:disabled { opacity: 0.4; cursor: not-allowed; }
-#board-archive-search {
+#board-archive-search,
+#skills-search {
   flex: 1;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -2581,7 +2845,8 @@ body::before {
   padding: 6px 10px;
   outline: none;
 }
-#board-archive-search:focus { border-color: var(--border-hover); }
+#board-archive-search:focus,
+#skills-search:focus { border-color: var(--border-hover); }
 .board-archive-list {
   overflow-y: auto;
   min-height: 0;
@@ -3217,7 +3482,9 @@ body::before {
 /* fourth full view in the #grid-wrap slot, same chrome as the board/costs.
  * --sv-fs is the header's text-size dial: every piece of *content* type here
  * is sized off it, while the header's own controls stay put so the bar
- * doesn't jump as you press ± */
+ * doesn't jump as you press ±. The map's labels have their own dial,
+ * --sv-fsm, because the two halves are read at different distances: the dock
+ * is read like a list, the map is glanced at from across the room. */
 #swarm-view {
   position: relative;
   z-index: 1;
@@ -3227,6 +3494,7 @@ body::before {
   display: flex;
   flex-direction: column;
   --sv-fs: 1;
+  --sv-fsm: 1;
 }
 #swarm-view[hidden] { display: none; }
 
@@ -3267,6 +3535,7 @@ body::before {
 }
 .sv-seg .pill.active,
 #sv-preview-btn.active,
+#sv-timeline-btn.active,
 #sv-click-btn.active {
   color: var(--on-accent);
   background: var(--accent);
@@ -3283,6 +3552,15 @@ body::before {
   font-family: var(--font-mono);
   min-width: 26px;
   text-align: center;
+}
+/* which half the ± pair next to it drives */
+.sv-font-tag {
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 .sv-font-btn:disabled {
   opacity: 0.35;
@@ -3402,21 +3680,25 @@ body::before {
   border: 1px dashed color-mix(in srgb, currentColor 25%, transparent);
   animation: sv-spin 22s linear infinite reverse;
 }
+/* the name sits above the disc rather than inside it: inside, a workspace
+ * called anything real ran out of room and ellipsised */
 .sv-hub-label {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 5px;
   font-family: var(--font-mono);
-  font-size: calc(9px * var(--sv-fs));
+  font-size: calc(9px * var(--sv-fsm));
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: currentColor;
-  max-width: 84%;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   text-align: center;
 }
 .sv-hub-count {
   font-family: var(--font-mono);
-  font-size: calc(15px * var(--sv-fs));
+  font-size: calc(15px * var(--sv-fsm));
   font-weight: 700;
   color: var(--text);
 }
@@ -3468,13 +3750,13 @@ body::before {
 .sv-node-detached .sv-node-pulse { border-style: dashed; }
 .sv-node-name {
   font-family: var(--font-mono);
-  font-size: calc(10px * var(--sv-fs));
+  font-size: calc(10px * var(--sv-fsm));
   color: var(--text);
   white-space: nowrap;
 }
 .sv-node-state {
   font-family: var(--font-mono);
-  font-size: calc(8px * var(--sv-fs));
+  font-size: calc(8px * var(--sv-fsm));
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--sv-state);
@@ -3527,7 +3809,7 @@ body::before {
   align-items: center;
   gap: 12px;
   font-family: var(--font-mono);
-  font-size: calc(9px * var(--sv-fs));
+  font-size: calc(9px * var(--sv-fsm));
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -3706,16 +3988,6 @@ body::before {
   flex: 1;
   max-height: none;
 }
-#sv-notes {
-  flex: none;
-  max-height: 32%;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border2);
-  border-radius: 12px;
-  background: var(--glass);
-  padding: 10px 12px;
-}
 .sv-panel-head {
   flex: none;
   display: flex;
@@ -3731,14 +4003,12 @@ body::before {
   text-transform: uppercase;
   color: var(--accent-text);
 }
-.sv-panel-title-amber { color: var(--amber); }
 .sv-panel-meta {
   font-family: var(--font-mono);
   font-size: calc(11px * var(--sv-fs));
   color: var(--muted2);
 }
-#sv-agents-list,
-#sv-notes-list {
+#sv-agents-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -3827,42 +4097,6 @@ body::before {
   color: var(--faint);
 }
 
-.sv-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 6px 4px;
-  border-top: 1px solid var(--border);
-  cursor: pointer;
-}
-.sv-note:first-child { border-top: none; }
-.sv-note:hover { background: var(--hover); }
-.sv-note .notif-dot { margin-top: 4px; }
-.sv-note-main {
-  flex: 1;
-  min-width: 0;
-}
-.sv-note-who {
-  font-size: calc(13px * var(--sv-fs));
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sv-note-msg {
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--sv-fs));
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sv-note-time {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--sv-fs));
-  color: var(--muted2);
-}
 .sv-notes-empty {
   font-family: var(--font-mono);
   font-size: calc(11px * var(--sv-fs));
@@ -4011,3 +4245,182 @@ body::before {
 @media (max-width: 1100px) {
   #sv-dock { width: 340px; }
 }
+
+/* ---------- swarm timeline ---------- */
+/* A one-hour ribbon docked under the map (renderer/timeline.js). Fixed height
+ * with its own scroll, so turning it on shrinks the map by a known amount
+ * rather than letting a swarm of twenty agents push the map off screen. */
+#sv-timeline {
+  flex: none;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  max-height: 30vh;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+#sv-timeline[hidden] { display: none; }
+.tl-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+.tl-head-label {
+  flex: none;
+  width: 120px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.tl-head-scale {
+  position: relative;
+  flex: 1;
+  height: 12px;
+}
+.tl-mark {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+/* the two end labels would hang off the track otherwise */
+.tl-mark:first-child { transform: none; }
+.tl-mark:last-child { transform: translateX(-100%); }
+.tl-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tl-lane {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tl-lane-name {
+  flex: none;
+  width: 120px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl-track {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+  overflow: hidden;
+}
+.tl-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.tl-seg-busy { background: var(--accent); }
+.tl-seg-waiting { background: var(--amber); }
+.tl-seg-idle { background: var(--faint); }
+.tl-seg-exited { background: color-mix(in srgb, var(--err) 45%, transparent); }
+.tl-empty {
+  color: var(--muted);
+  padding: 6px 2px;
+}
+.tl-empty[hidden] { display: none; }
+
+/* ---------- history screen ---------- */
+/* Same full-view shell as Costs/Skills — one row per past Claude conversation
+ * in the selected workspace, each resumable in a new pane. */
+#history-view {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+}
+#history-view[hidden] { display: none; }
+#history-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border3) transparent;
+}
+#history-ws {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--term-bg);
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  padding: 5px 8px;
+  max-width: 220px;
+}
+#history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hist-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+.hist-row:hover { border-color: var(--border-hover); }
+.hist-body {
+  flex: 1;
+  min-width: 0;
+}
+.hist-preview {
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hist-meta {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hist-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hist-copy,
+.hist-resume {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.hist-copy:hover { color: var(--text); border-color: var(--border-hover); }
+.hist-resume {
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.hist-resume:hover {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.hist-resume:disabled { opacity: 0.5; cursor: not-allowed; }

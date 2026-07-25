@@ -25,6 +25,24 @@ const ANSI_RAMP = {
   brightCyan: '#93ece4',
 };
 
+/* the same idea for the light-backdrop themes added after light/sepia: one
+ * ramp darkened for a white page, which each theme re-tints only where its
+ * accent hue lives. The readability pass below still runs on top. */
+const LIGHT_RAMP = {
+  red: '#d92f2f',
+  green: '#4d7c0f',
+  yellow: '#c07c00',
+  blue: '#2563eb',
+  magenta: '#7c3aed',
+  cyan: '#0e7490',
+  brightRed: '#ef4444',
+  brightGreen: '#65a30d',
+  brightYellow: '#d97706',
+  brightBlue: '#3b82f6',
+  brightMagenta: '#8b5cf6',
+  brightCyan: '#0891b2',
+};
+
 const XTERM_THEMES = {
   dark: {
     background: '#0c0e11',
@@ -398,6 +416,103 @@ const XTERM_THEMES = {
     brightCyan: '#56b6c2',
     brightWhite: '#ffffff',
   },
+  paper: {
+    background: '#ffffff',
+    foreground: '#17181a',
+    cursor: '#111827',
+    cursorAccent: '#ffffff',
+    selectionBackground: 'rgba(31, 41, 55, 0.2)',
+    black: '#17181a',
+    white: '#e5e7eb',
+    brightBlack: '#6a6d72',
+    brightWhite: '#f9fafb',
+    ...LIGHT_RAMP,
+  },
+  frost: {
+    background: '#ffffff',
+    foreground: '#10262c',
+    cursor: '#0a6577',
+    cursorAccent: '#ffffff',
+    selectionBackground: 'rgba(13, 127, 149, 0.22)',
+    black: '#10262c',
+    white: '#e2ebee',
+    brightBlack: '#5e7880',
+    brightWhite: '#f6fafb',
+    ...LIGHT_RAMP,
+    blue: '#0369a1',
+    cyan: '#0d7f95',
+    brightBlue: '#0284c7',
+    brightCyan: '#0f97b0',
+  },
+  blossom: {
+    background: '#fffdfd',
+    foreground: '#241619',
+    cursor: '#9d1543',
+    cursorAccent: '#ffffff',
+    selectionBackground: 'rgba(190, 29, 81, 0.2)',
+    black: '#241619',
+    white: '#eee1e4',
+    brightBlack: '#766068',
+    brightWhite: '#fbf5f6',
+    ...LIGHT_RAMP,
+    magenta: '#be1d51',
+    brightMagenta: '#d94070',
+  },
+  ash: {
+    background: '#f2f2f4',
+    foreground: '#1c1c1f',
+    cursor: '#86490a',
+    cursorAccent: '#e8e8ea',
+    selectionBackground: 'rgba(163, 90, 9, 0.22)',
+    black: '#1c1c1f',
+    white: '#dcdcde',
+    brightBlack: '#63636b',
+    brightWhite: '#f6f6f8',
+    ...LIGHT_RAMP,
+    yellow: '#a35a09',
+    brightYellow: '#c06e0d',
+  },
+  slate: {
+    background: '#f0f3f7',
+    foreground: '#171c23',
+    cursor: '#1739a8',
+    cursorAccent: '#e3e7ec',
+    selectionBackground: 'rgba(29, 78, 216, 0.2)',
+    black: '#171c23',
+    white: '#d5dae1',
+    brightBlack: '#5d6675',
+    brightWhite: '#f5f7fa',
+    ...LIGHT_RAMP,
+    blue: '#1d4ed8',
+    brightBlue: '#3b6ae8',
+  },
+  fog: {
+    background: '#f2f6f3',
+    foreground: '#16201a',
+    cursor: '#116430',
+    cursorAccent: '#e6ebe7',
+    selectionBackground: 'rgba(21, 128, 61, 0.2)',
+    black: '#16201a',
+    white: '#d9dedb',
+    brightBlack: '#5c6a61',
+    brightWhite: '#f6faf7',
+    ...LIGHT_RAMP,
+    green: '#15803d',
+    brightGreen: '#1f9c4d',
+  },
+  zinc: {
+    background: '#f3f1f5',
+    foreground: '#1c1a20',
+    cursor: '#5a1eb5',
+    cursorAccent: '#e8e6ea',
+    selectionBackground: 'rgba(109, 40, 217, 0.2)',
+    black: '#1c1a20',
+    white: '#dbd9dd',
+    brightBlack: '#64606d',
+    brightWhite: '#f7f5f9',
+    ...LIGHT_RAMP,
+    magenta: '#6d28d9',
+  },
 };
 /* the canvas is transparent so the pane's glass (blur + tint, see .pane /
  * .pane-term in app.css) shows through behind the text — the per-theme
@@ -409,7 +524,7 @@ function glassTheme(palette) {
 /* ---- readability pass for the light-background themes ----
  *
  * Two problems the palettes above cannot fix on their own, both only hitting
- * the two themes whose panes are near-white:
+ * the themes whose panes are near-white:
  *
  *  - agents assume a dark terminal. Claude Code's TUI paints its text in
  *    whites and pale greys, and sends most of them as *256-colour indices*
@@ -417,18 +532,31 @@ function glassTheme(palette) {
  *    no palette entry covers, and invisible on a white pane. This is the
  *    "text sometimes unreadable in Light" report.
  *  - with "Theme background overlay" off, app.css pins every pane dark, so
- *    those same two themes would draw their near-black text on black.
+ *    those same themes would draw their near-black text on black.
  *
  * Both are one job: push a colour away from the backdrop it will actually be
  * drawn on until it clears a readable contrast ratio, and leave everything
  * that already clears it untouched. Blending keeps the hue, so a red stays
  * red — it just stops being pale.
  */
-const LIGHT_THEMES = new Set(['light', 'sepia']);
-/* What .pane-term resolves to for those two — term-bg at 45% over the pane's
+/* must match the overlay-off selector list in app.css */
+const LIGHT_THEMES = new Set([
+  'light', 'sepia', 'paper', 'frost', 'blossom', 'ash', 'slate', 'fog', 'zinc',
+]);
+/* What .pane-term resolves to for each of them — term-bg at 45% over the pane's
  * 55% surface over --bg (see app.css). The contrast maths needs the real
  * backdrop, not the palette's nominal `background`, which glassTheme drops. */
-const LIGHT_PANE_BG = { light: '#f8f9fb', sepia: '#f8f2e6' };
+const LIGHT_PANE_BG = {
+  light: '#f8f9fb',
+  sepia: '#f8f2e6',
+  paper: '#fefefe',
+  frost: '#fdfefe',
+  blossom: '#fffcfd',
+  ash: '#eaeaec',
+  slate: '#e5e9ee',
+  fog: '#e8ede9',
+  zinc: '#eae8ec',
+};
 /* and what app.css pins that same stack to while the overlay is off */
 const FLAT_PANE_BG = '#0b0d10';
 
@@ -619,6 +747,12 @@ const EFFORTS = [
 const SHIFT_TAB = '\x1b[Z';
 const MODE_STEP_MS = 300; // redraw grace between Shift+Tab presses
 const CLOSE_ARM_MS = 5000;
+// how much of the tail the pane's ⧉ button copies — enough for a finished
+// turn's summary or a stack trace, short enough to paste somewhere
+const COPY_TAIL_LINES = 200;
+// rows of `git diff --stat` the git chip's popover shows before eliding the
+// middle (git's own "N files changed" summary line is always kept)
+const DIFF_STAT_MAX_LINES = 14;
 
 // matches a menu line like "  1. Yes" or "❯ 2. No" — group 1 is the leading
 // whitespace/cursor marker (excluded from the clickable range), group 2 the digit
@@ -709,6 +843,17 @@ class Pane {
     this.taskEl.textContent = 'task';
     this.taskEl.dataset.tip = 'Started by a board task';
     this.taskEl.style.display = this.managed ? '' : 'none';
+
+    // role preset this agent was launched with (main/sessions.js ROLES) —
+    // persisted on the session, so it survives a reattach after a restart
+    this.roleEl = document.createElement('span');
+    this.roleEl.className = 'pane-role';
+    if (session.role) {
+      this.roleEl.textContent = session.role;
+      this.roleEl.dataset.tip = `Launched as a ${session.role} — its own system prompt and model`;
+    } else {
+      this.roleEl.style.display = 'none';
+    }
 
     // the model is drawn in exactly one place at a time — see syncModelChip
     this.llmEl = document.createElement('span');
@@ -827,6 +972,15 @@ class Pane {
     btnExport.textContent = '⤓';
     btnExport.addEventListener('click', () => handlers.onExport(this));
 
+    // the tail of the transcript, straight to the clipboard — the common
+    // "paste what the agent just said into a message/PR" move, without
+    // scrolling and drag-selecting a pane that redraws under the cursor
+    const btnCopy = document.createElement('button');
+    btnCopy.className = 'pane-btn copy';
+    btnCopy.dataset.tip = `Copy the last ${COPY_TAIL_LINES} lines (shift-click: the whole scrollback)`;
+    btnCopy.textContent = '⧉';
+    btnCopy.addEventListener('click', (e) => this.copyTail(e.shiftKey));
+
     const btnSearch = document.createElement('button');
     btnSearch.className = 'pane-btn search';
     btnSearch.dataset.tip = 'Search (Ctrl+Shift+F)';
@@ -889,8 +1043,8 @@ class Pane {
     });
 
     header.append(
-      this.dot, this.taskEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.badge,
-      this.btnAutoRestart, this.btnRestart, this.btnClear, btnExport, btnSearch, btnMic, btnFontDown, btnFontUp, btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
+      this.dot, this.taskEl, this.roleEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.badge,
+      this.btnAutoRestart, this.btnRestart, this.btnClear, btnExport, btnCopy, btnSearch, btnMic, btnFontDown, btnFontUp, btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
 
     // search row (hidden until toggled)
@@ -1033,6 +1187,7 @@ class Pane {
 
     // GPU renderer; falls back to the DOM renderer on failure/context loss
     this.webgl = null;
+    this.rendererDropped = false; // true while a hidden pane's context is released (see dropRenderer)
     try {
       const webgl = new WebglAddon.WebglAddon();
       webgl.onContextLoss(() => {
@@ -1527,49 +1682,96 @@ class Pane {
     this.gitEl.classList.toggle('dirty', !!info.dirty);
     this.gitEl.dataset.tip = (info.dirty
       ? `branch ${info.branch} — uncommitted changes`
-      : `branch ${info.branch} — clean`) + ' · click to switch branch';
+      : `branch ${info.branch} — clean`) + ' · click for the diff and to switch branch';
   }
 
-  /* Click on the git chip: fetch the repo's branches (local + remote, see
-   * main/git.js listBranches) and offer them in a small popover. Picking one
-   * runs `git checkout` in the workspace; the chip updates via the git:update
-   * push that follows. */
+  /* Fill the popover's top section with what the workspace has changed since
+   * HEAD. Long stats are elided in the middle — the summary line (git's own
+   * "N files changed…") is the one that must survive, so it's kept explicitly
+   * rather than trusting a plain head(). */
+  renderDiffSummary(el, d) {
+    el.textContent = '';
+    if (!d) { el.textContent = 'could not read changes'; return; }
+    const lines = d.stat ? d.stat.split('\n') : [];
+    if (!lines.length && !d.untracked) { el.textContent = 'no changes since HEAD'; return; }
+    const shown = lines.length > DIFF_STAT_MAX_LINES
+      ? [...lines.slice(0, DIFF_STAT_MAX_LINES - 2), '…', lines[lines.length - 1]]
+      : lines;
+    for (const line of shown) {
+      const row = document.createElement('div');
+      row.className = 'branch-diff-line';
+      row.textContent = line;
+      el.appendChild(row);
+    }
+    if (d.untracked) {
+      const row = document.createElement('div');
+      row.className = 'branch-diff-line branch-diff-untracked';
+      row.textContent = `${d.untracked} untracked file${d.untracked === 1 ? '' : 's'}`;
+      el.appendChild(row);
+    }
+  }
+
+  /* Click on the git chip: a summary of the working tree's changes on top,
+   * then the repo's branches (local + remote, see main/git.js listBranches).
+   * Picking one runs `git checkout` in the workspace; the chip updates via
+   * the git:update push that follows.
+   *
+   * The two reads run concurrently rather than in sequence: listing branches
+   * does a network fetch first and is much the slower of the two, so awaiting
+   * it before asking for the diff would leave the popover blank the whole time. */
   async openBranchMenu() {
     if (this.branchMenuEl) { this.closeBranchMenu(); return; }
     const menu = document.createElement('div');
     menu.className = 'branch-menu';
-    menu.textContent = 'fetching branches…';
+    const diffEl = document.createElement('div');
+    diffEl.className = 'branch-diff';
+    diffEl.textContent = 'checking changes…';
+    const listEl = document.createElement('div');
+    listEl.className = 'branch-list';
+    listEl.textContent = 'fetching branches…';
+    menu.append(diffEl, listEl);
     // fixed-position (the pane clips overflow), anchored under the chip
     const r = this.gitEl.getBoundingClientRect();
-    menu.style.left = `${Math.round(r.left)}px`;
+    menu.style.left = `${Math.round(Math.min(r.left, window.innerWidth - 470))}px`;
     menu.style.top = `${Math.round(r.bottom + 6)}px`;
     document.body.appendChild(menu);
     this.branchMenuEl = menu;
+    // now that it has been measured: a pane low in the grid would push a
+    // popover this tall (diff summary plus the branch list) off the bottom,
+    // so flip it above the chip instead
+    if (r.bottom + 6 + menu.offsetHeight > window.innerHeight - 8) {
+      menu.style.top = `${Math.round(Math.max(8, r.top - 6 - menu.offsetHeight))}px`;
+    }
     this._branchDismiss = (e) => {
       if (!menu.contains(e.target) && e.target !== this.gitEl) this.closeBranchMenu();
     };
     document.addEventListener('mousedown', this._branchDismiss, true);
 
+    window.swarm.gitDiff(this.session.workspaceId).then((d) => {
+      if (this.branchMenuEl !== menu) return; // dismissed while the read ran
+      this.renderDiffSummary(diffEl, d);
+    });
+
     const branches = await window.swarm.listBranches(this.session.workspaceId);
     if (this.branchMenuEl !== menu) return; // dismissed while the fetch ran
     if (!branches || !branches.length) {
-      menu.textContent = 'no branches found';
+      listEl.textContent = 'no branches found';
       return;
     }
     const current = this.gitInfo && this.gitInfo.branch;
-    menu.textContent = '';
+    listEl.textContent = '';
     for (const b of branches) {
       const row = document.createElement('button');
       row.className = 'branch-item' + (b === current ? ' current' : '');
       row.textContent = b;
       if (b !== current) row.addEventListener('click', () => this.pickBranch(b));
-      menu.appendChild(row);
+      listEl.appendChild(row);
     }
 
     // "+ new branch…" swaps itself for an input; Enter runs checkout -b
     const divider = document.createElement('div');
     divider.className = 'branch-menu-divider';
-    menu.appendChild(divider);
+    listEl.appendChild(divider);
     const add = document.createElement('button');
     add.className = 'branch-item new';
     add.textContent = '+ new branch…';
@@ -1590,7 +1792,7 @@ class Pane {
       add.replaceWith(input);
       input.focus();
     });
-    menu.appendChild(add);
+    listEl.appendChild(add);
   }
 
   closeBranchMenu() {
@@ -1929,12 +2131,57 @@ class Pane {
     return this.bufferTextCache;
   }
 
+  /* ⧉ in the header: the tail of the scrollback on the clipboard. Trailing
+   * blank rows come off first — the TUI leaves a screenful of them below the
+   * input box, which would otherwise be most of what gets copied. */
+  copyTail(all = false) {
+    const lines = this.getBufferText().split('\n');
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    const text = (all ? lines : lines.slice(-COPY_TAIL_LINES)).join('\n');
+    if (!text.trim()) { if (window.toast) toast('nothing to copy yet'); return; }
+    window.swarm.copyText(text);
+    if (window.toast) {
+      const n = all ? lines.length : Math.min(COPY_TAIL_LINES, lines.length);
+      toast(`copied ${n} line${n === 1 ? '' : 's'} from ${this.session.agentName}`);
+    }
+  }
+
   focus() {
     document.querySelectorAll('.pane.focused').forEach((p) => p.classList.remove('focused'));
     this.el.classList.add('focused');
     this.clearAttention();
     this.term.focus();
     this.handlers.onFocus(this);
+  }
+
+  /* Give up this pane's GPU renderer while nobody is looking at it (app.js
+   * arms this for panes in a workspace that has been off screen a while).
+   * Chromium caps a page at ~16 live WebGL contexts, and every pane in every
+   * workspace holds one — past that the oldest start getting killed under the
+   * running app. xterm falls straight back to its DOM renderer, so the buffer,
+   * the scrollback and the pty are all untouched; the only thing lost is the
+   * GPU acceleration of a terminal that isn't on screen. */
+  dropRenderer() {
+    if (!this.webgl) return;
+    try { this.webgl.dispose(); } catch { /* crashy addon */ }
+    this.webgl = null;
+    this.rendererDropped = true;
+  }
+
+  /* ... and take it back when the pane is on screen again. */
+  restoreRenderer() {
+    if (!this.rendererDropped) return;
+    this.rendererDropped = false;
+    if (this.webgl || this.exited) return;
+    try {
+      const webgl = new WebglAddon.WebglAddon();
+      webgl.onContextLoss(() => {
+        try { webgl.dispose(); } catch { /* already gone */ }
+        this.webgl = null;
+      });
+      this.term.loadAddon(webgl);
+      this.webgl = webgl;
+    } catch { /* DOM renderer it is */ }
   }
 
   dispose() {

@@ -641,6 +641,244 @@
   --entry-dot: #98c379;
 }
 
+/* ---- light-backdrop themes: three white, four light grey ----
+ * Same shape as light/sepia above — dark text, an accent darkened for a light
+ * page, and a near-white --term-bg. Each one carries a different accent hue,
+ * which is all that separates them; the neutral ramps differ only in tint.
+ * Adding one here means adding it to LIGHT_THEMES + LIGHT_PANE_BG in pane.js
+ * and to the overlay-off selector list in app.css. */
+
+:root[data-theme="paper"] {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --hover: #f0f0f1;
+  --border: #dededf;
+  --border2: #cfcfd1;
+  --border3: #bcbcbf;
+  --border-hover: #a3a3a7;
+
+  --text: #17181a;
+  --text2: #45474b;
+  --muted: #6a6d72;
+  --muted2: #7b7e83;
+  --faint: #9b9ea3;
+
+  --accent: #1f2937;
+  --accent-text: #111827;
+  --on-accent: #ffffff;
+
+  --header-bg: rgba(255, 255, 255, 0.85);
+  --accent-glow: rgba(31, 41, 55, 0.25);
+
+  --grid-line: rgba(0, 0, 0, 0.14);
+  --glass: rgba(255, 255, 255, 0.55);
+
+  --tag: #6d28d9;
+  --amber: #b45309;
+  --err: #c62828;
+  --term-bg: #ffffff;
+  --pill-hover: rgba(31, 41, 55, 0.08);
+  --entry-dot: #2563eb;
+}
+
+:root[data-theme="frost"] {
+  --bg: #f7fbfc;
+  --surface: #ffffff;
+  --hover: #ecf5f7;
+  --border: #d6e4e8;
+  --border2: #c5d7dd;
+  --border3: #aec6ce;
+  --border-hover: #93b2bc;
+
+  --text: #10262c;
+  --text2: #37525a;
+  --muted: #5e7880;
+  --muted2: #6e868e;
+  --faint: #90a6ac;
+
+  --accent: #0d7f95;
+  --accent-text: #0a6577;
+  --on-accent: #ffffff;
+
+  --header-bg: rgba(255, 255, 255, 0.85);
+  --accent-glow: rgba(13, 127, 149, 0.3);
+
+  --grid-line: rgba(0, 60, 80, 0.14);
+  --glass: rgba(255, 255, 255, 0.55);
+
+  --tag: #4f46e5;
+  --amber: #a86400;
+  --err: #c62828;
+  --term-bg: #ffffff;
+  --pill-hover: rgba(13, 127, 149, 0.1);
+  --entry-dot: #0369a1;
+}
+
+:root[data-theme="blossom"] {
+  --bg: #fdf8f9;
+  --surface: #ffffff;
+  --hover: #f8eef0;
+  --border: #eddfe2;
+  --border2: #e2ccd1;
+  --border3: #d3b3ba;
+  --border-hover: #bd939c;
+
+  --text: #241619;
+  --text2: #4e3a3e;
+  --muted: #766068;
+  --muted2: #866f76;
+  --faint: #a68f96;
+
+  --accent: #be1d51;
+  --accent-text: #9d1543;
+  --on-accent: #ffffff;
+
+  --header-bg: rgba(255, 255, 255, 0.85);
+  --accent-glow: rgba(190, 29, 81, 0.28);
+
+  --grid-line: rgba(80, 10, 30, 0.13);
+  --glass: rgba(255, 255, 255, 0.55);
+
+  --tag: #7c3aed;
+  --amber: #b45309;
+  --err: #c62828;
+  --term-bg: #fffdfd;
+  --pill-hover: rgba(190, 29, 81, 0.09);
+  --entry-dot: #2563eb;
+}
+
+:root[data-theme="ash"] {
+  --bg: #dcdcde;
+  --surface: #e8e8ea;
+  --hover: #d2d2d5;
+  --border: #c2c2c6;
+  --border2: #b3b3b8;
+  --border3: #a2a2a8;
+  --border-hover: #8c8c93;
+
+  --text: #1c1c1f;
+  --text2: #43434a;
+  --muted: #63636b;
+  --muted2: #71717a;
+  --faint: #8a8a92;
+
+  --accent: #a35a09;
+  --accent-text: #86490a;
+  --on-accent: #ffffff;
+
+  --header-bg: rgba(232, 232, 234, 0.85);
+  --accent-glow: rgba(163, 90, 9, 0.3);
+
+  --grid-line: rgba(0, 0, 0, 0.15);
+  --glass: rgba(255, 255, 255, 0.42);
+
+  --tag: #6d28d9;
+  --amber: #8a5a00;
+  --err: #bf2727;
+  --term-bg: #f2f2f4;
+  --pill-hover: rgba(163, 90, 9, 0.1);
+  --entry-dot: #1d4ed8;
+}
+
+:root[data-theme="slate"] {
+  --bg: #d5dae1;
+  --surface: #e3e7ec;
+  --hover: #cad0d9;
+  --border: #b8c0cb;
+  --border2: #a8b2bf;
+  --border3: #96a1b0;
+  --border-hover: #7f8b9c;
+
+  --text: #171c23;
+  --text2: #3d4652;
+  --muted: #5d6675;
+  --muted2: #6b7484;
+  --faint: #838d9c;
+
+  --accent: #1d4ed8;
+  --accent-text: #1739a8;
+  --on-accent: #ffffff;
+
+  --header-bg: rgba(227, 231, 236, 0.85);
+  --accent-glow: rgba(29, 78, 216, 0.3);
+
+  --grid-line: rgba(10, 25, 50, 0.15);
+  --glass: rgba(255, 255, 255, 0.42);
+
+  --tag: #7c3aed;
+  --amber: #96620a;
+  --err: #bf2727;
+  --term-bg: #f0f3f7;
+  --pill-hover: rgba(29, 78, 216, 0.1);
+  --entry-dot: #0f766e;
+}
+
+:root[data-theme="fog"] {
+  --bg: #d9dedb;
+  --surface: #e6ebe7;
+  --hover: #ced4d0;
+  --border: #bcc4bf;
+  --border2: #acb5b0;
+  --border3: #99a49e;
+  --border-hover: #828e88;
+
+  --text: #16201a;
+  --text2: #3c4a41;
+  --muted: #5c6a61;
+  --muted2: #6a786f;
+  --faint: #839087;
+
+  --accent: #15803d;
+  --accent-text: #116430;
+  --on-accent: #ffffff;
+
+  --header-bg: rgba(230, 235, 231, 0.85);
+  --accent-glow: rgba(21, 128, 61, 0.3);
+
+  --grid-line: rgba(10, 40, 20, 0.14);
+  --glass: rgba(255, 255, 255, 0.42);
+
+  --tag: #7c3aed;
+  --amber: #8a6508;
+  --err: #bf2727;
+  --term-bg: #f2f6f3;
+  --pill-hover: rgba(21, 128, 61, 0.1);
+  --entry-dot: #0369a1;
+}
+
+:root[data-theme="zinc"] {
+  --bg: #dbd9dd;
+  --surface: #e8e6ea;
+  --hover: #d1cfd4;
+  --border: #c1bec6;
+  --border2: #b2aeb9;
+  --border3: #a09ca8;
+  --border-hover: #8a8693;
+
+  --text: #1c1a20;
+  --text2: #454150;
+  --muted: #64606d;
+  --muted2: #726e7b;
+  --faint: #8b8794;
+
+  --accent: #6d28d9;
+  --accent-text: #5a1eb5;
+  --on-accent: #ffffff;
+
+  --header-bg: rgba(232, 230, 234, 0.85);
+  --accent-glow: rgba(109, 40, 217, 0.3);
+
+  --grid-line: rgba(20, 10, 40, 0.15);
+  --glass: rgba(255, 255, 255, 0.42);
+
+  --tag: #be185d;
+  --amber: #96620a;
+  --err: #bf2727;
+  --term-bg: #f3f1f5;
+  --pill-hover: rgba(109, 40, 217, 0.1);
+  --entry-dot: #1d4ed8;
+}
+
 * { box-sizing: border-box; }
 
 html, body {

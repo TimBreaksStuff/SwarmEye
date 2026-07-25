@@ -1,13 +1,14 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, crashReporter, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Notification, crashReporter, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
-const { PtyManager } = require('./sessions');
+const { PtyManager, ROLES } = require('./sessions');
 const { UsageMonitor } = require('./usage');
 const { HookMonitor } = require('./hooks');
 const { SpendStore } = require('./spend');
-const { GitMonitor, listBranches, checkoutBranch } = require('./git');
+const { GitMonitor, listBranches, checkoutBranch, diffStat } = require('./git');
 const { HealthMonitor } = require('./health');
+const { listSessions: listHistory } = require('./history');
 const { IS_WIN } = require('./platform');
 const { UpdateChecker } = require('./update');
 const { SpeechBridge } = require('./speech');
@@ -86,6 +87,18 @@ app.on('child-process-gone', (e, details) => {
   appendLog(`[child-process-gone] type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`);
 });
 
+/* http(s) on this machine and nothing else — the only thing the preview dock
+ * is allowed to load. Anything unparseable is not local. */
+function isLocalUrl(url) {
+  try {
+    const u = new URL(String(url));
+    return (u.protocol === 'http:' || u.protocol === 'https:')
+      && ['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1'].includes(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function createWindow() {
   const cfg = config.load();
   const bounds = cfg.windowBounds || { width: 1600, height: 950 };
@@ -101,6 +114,9 @@ function createWindow() {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // the preview dock's <webview> (renderer/preview.js) — locked down to
+      // local addresses by the two handlers below
+      webviewTag: true,
     },
   });
 
@@ -109,6 +125,30 @@ function createWindow() {
   // the renderer never legitimately opens windows or navigates away
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
+
+  /* The preview dock embeds a <webview>. It exists to show the dev server the
+   * agents are building, so it is confined to local addresses — at attach and
+   * at every navigation the page tries afterwards — and gets no node access
+   * and no preload of its own. */
+  win.webContents.on('will-attach-webview', (e, webPreferences, params) => {
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    if (params.src !== 'about:blank' && !isLocalUrl(params.src)) e.preventDefault();
+  });
+  win.webContents.on('did-attach-webview', (e, contents) => {
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    contents.on('will-navigate', (ev, url) => { if (!isLocalUrl(url)) ev.preventDefault(); });
+    // will-navigate only covers navigations the *page* starts — a src= set from
+    // the renderer goes through loadURL and never fires it. This catches the
+    // document request itself instead, in the preview's own session partition
+    // (see the webview tag), so nothing else in the app is filtered. Only the
+    // top-level document is pinned to localhost: a local page is still free to
+    // pull a font or a script from wherever it normally would.
+    contents.session.webRequest.onBeforeRequest((details, callback) => {
+      callback({ cancel: details.resourceType === 'mainFrame' && !isLocalUrl(details.url) });
+    });
+  });
   win.webContents.session.setPermissionRequestHandler((wc, permission, cb) => cb(permission === 'media'));
 
   if (process.env.SWARMEYE_DEBUG) {
@@ -267,6 +307,12 @@ function registerIpc() {
     return ws ? listBranches(ws) : null;
   });
 
+  // diff summary shown above the branch list in that same popover
+  ipcMain.handle('git:diff', (e, workspaceId) => {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    return ws ? diffStat(ws) : null;
+  });
+
   ipcMain.handle('git:checkout', async (e, { workspaceId, branch, create }) => {
     const ws = config.load().workspaces.find((w) => w.id === workspaceId);
     if (!ws) return { ok: false, error: 'unknown workspace' };
@@ -308,6 +354,16 @@ function registerIpc() {
     return { workspaces: cfg.workspaces };
   });
 
+  // pinned workspaces sort to the top of the rail (the renderer does the
+  // sorting; this only remembers the flag)
+  ipcMain.handle('workspace:set-pinned', (e, { id, pinned }) => {
+    const cfg = config.load();
+    const ws = cfg.workspaces.find((w) => w.id === id);
+    if (ws) ws.pinned = !!pinned;
+    config.save(cfg);
+    return { workspaces: cfg.workspaces };
+  });
+
   ipcMain.handle('workspace:select', (e, id) => {
     config.patch({ selectedWorkspaceId: id });
     return { ok: true };
@@ -331,7 +387,7 @@ function registerIpc() {
 
   // task board: queued todos for agents, started now or auto-scheduled by
   // the renderer once an agent slot and usage headroom are both available
-  const TASK_PATCH_KEYS = ['status', 'paneId', 'startedAt', 'completedAt', 'targetResetsAt', 'stopped', 'sessionLog', 'priority', 'category'];
+  const TASK_PATCH_KEYS = ['status', 'paneId', 'startedAt', 'completedAt', 'targetResetsAt', 'stopped', 'sessionLog', 'summary', 'priority', 'category'];
 
   ipcMain.handle('task:create', (e, { text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt, targetResetsAt }) => {
     const cfg = config.load();
@@ -391,6 +447,9 @@ function registerIpc() {
     // scrollback is already capped per-pane (8000 lines), but keep only the
     // tail here too so one huge completed task can't bloat config.json
     if (typeof safe.sessionLog === 'string') safe.sessionLog = safe.sessionLog.slice(-300000);
+    // the agent's closing message (main/hooks.js caps it too — this is the
+    // second gate, since a renderer bug must not bloat every task record)
+    if (typeof safe.summary === 'string') safe.summary = safe.summary.slice(0, 600);
     // same validation the create path applies — these two are user-editable
     // from the card badges, so they arrive here as well as at creation
     if ('priority' in safe && !['low', 'medium', 'high', 'critical'].includes(safe.priority)) delete safe.priority;
@@ -445,14 +504,32 @@ function registerIpc() {
     };
   });
 
-  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, kind }) => {
+  // past conversations for one workspace, for the History screen
+  ipcMain.handle('history:list', (e, workspaceId) => {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    return ws ? listHistory(ws) : null;
+  });
+
+  // role presets for the + Coding Agent picker — main owns the prompts and the
+  // model each role is worth (sessions.js ROLES); the renderer only draws the
+  // labels, so the two can never disagree about what a role means
+  ipcMain.handle('roles:list', () => Object.entries(ROLES).map(([key, r]) => ({ key, label: r.label, model: r.model })));
+
+  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, kind, resumeId, role }) => {
     await ptysReady;
     const cfg = config.load();
     const ws = cfg.workspaces.find((w) => w.id === workspaceId);
     if (!ws) { debugLog('[session:create] no-workspace ' + workspaceId); return { ok: false, reason: 'no-workspace' }; }
     try {
-      // kind lands in a shell command line — whitelist, don't pass through
-      const session = ptys.spawn(ws, cols || 80, rows || 24, { model, kind: kind === 'pi' ? 'pi' : undefined });
+      // kind lands in a shell command line — whitelist, don't pass through.
+      // resumeId is re-validated again in claudeBase, for the same reason.
+      // role is only ever a key into main's own table, never free text.
+      const session = ptys.spawn(ws, cols || 80, rows || 24, {
+        model,
+        kind: kind === 'pi' ? 'pi' : undefined,
+        role: Object.hasOwn(ROLES, String(role || '')) ? role : undefined,
+        resume: /^[A-Za-z0-9-]{8,64}$/.test(String(resumeId || '')) ? resumeId : undefined,
+      });
       debugLog('[session:create] ok ' + session.id + ' "' + session.agentName + '" in ' + ws.path);
       return { ok: true, session };
     } catch (err) {
@@ -476,6 +553,7 @@ function registerIpc() {
         rows: payload.rows,
         resume: !!payload.resume,
         kind: payload.kind === 'pi' ? 'pi' : undefined,
+        role: Object.hasOwn(ROLES, String(payload.role || '')) ? payload.role : undefined,
         autoRestart: !!payload.autoRestart,
       });
       debugLog('[session:restart] ok ' + session.id + ' "' + session.agentName + '" wanted-resume=' + !!payload.resume + ' resumed=' + resumed);
@@ -540,11 +618,29 @@ function registerIpc() {
     return { ok: true };
   });
 
-  // taskbar flash / dock bounce only when the window isn't focused — the in-app
-  // notification bell is the event history now, no OS popup needed
-  ipcMain.on('notify', () => {
+  /* Taskbar flash / dock bounce whenever the window isn't focused, plus — if
+   * the renderer says the option is on — a real OS notification carrying which
+   * agent it was and what happened. The bell is still the history; this is
+   * what reaches you with SwarmEye minimized behind an editor.
+   *
+   * `silent`: the renderer already plays the notification sound the user
+   * picked in Options, so letting the OS play its own would double it up. */
+  ipcMain.on('notify', (e, payload = {}) => {
     if (!win || win.isDestroyed() || win.isFocused()) return;
     win.flashFrame(true);
+    if (!payload || !payload.desktop || !Notification.isSupported()) return;
+    const n = new Notification({
+      title: String(payload.title || 'SwarmEye').slice(0, 120),
+      body: String(payload.body || '').slice(0, 300),
+      silent: true,
+    });
+    n.on('click', () => {
+      if (!win || win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    });
+    n.show();
   });
 
   ipcMain.on('open-external', (e, url) => {
@@ -631,6 +727,11 @@ app.whenReady().then(() => {
   // macOS: a menu bar always exists, so keep the minimum that makes Cmd+Q
   // and Cmd+C/V/X work and drop the View/Window menus whose hidden zoom
   // (Cmd+±/0) and close accelerators would conflict the same way.
+  // Windows sources a toast's app name and icon from the AppUserModelID, and
+  // a portable build has none registered — without this every desktop
+  // notification would show up as "electron.app.Electron"
+  if (IS_WIN) app.setAppUserModelId('dev.swarmeye.app');
+
   Menu.setApplicationMenu(IS_WIN ? null : Menu.buildFromTemplate([
     { role: 'appMenu' },
     { role: 'editMenu' },

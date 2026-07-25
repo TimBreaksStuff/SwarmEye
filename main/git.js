@@ -58,6 +58,28 @@ async function listBranches(ws) {
   return [...names].sort();
 }
 
+/* What the workspace has changed since HEAD, for the pane git chip's popover:
+ * `git diff --stat` (staged and unstaged together, which is what "dirty" on
+ * the chip actually means) plus a count of untracked files, which no diff
+ * ever reports. The two answers are separated by a record separator rather
+ * than a newline, since the stat itself is multi-line.
+ *
+ * A repo with no commits yet has no HEAD to diff against — git prints
+ * nothing and the caller shows "no changes", which is close enough. */
+async function diffStat(ws) {
+  const script = wsPrelude(ws) +
+    'command -v timeout >/dev/null && T="timeout 10" || T=""; ' +
+    '$T git -C "$p" diff HEAD --stat=110,70 2>/dev/null; ' +
+    "printf '\\036'; " +
+    '$T git -C "$p" ls-files --others --exclude-standard 2>/dev/null | wc -l';
+  const out = await exec(script, 25000);
+  if (out == null) return null;
+  const sep = out.indexOf('\x1e');
+  const stat = (sep === -1 ? out : out.slice(0, sep)).trim();
+  const untracked = sep === -1 ? 0 : parseInt(out.slice(sep + 1).trim(), 10) || 0;
+  return { stat, untracked };
+}
+
 /* git's own DWIM handles the remote case: checking out a name that only
  * exists as origin/<name> creates the local tracking branch. With create,
  * `checkout -b` starts a brand-new branch off the current HEAD instead. */
@@ -117,4 +139,4 @@ class GitMonitor {
   }
 }
 
-module.exports = { GitMonitor, listBranches, checkoutBranch };
+module.exports = { GitMonitor, listBranches, checkoutBranch, diffStat };

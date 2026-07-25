@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('swarm', {
   reorderWorkspaces: (ids) => ipcRenderer.invoke('workspace:reorder', ids),
   renameWorkspace: (id, name) => ipcRenderer.invoke('workspace:rename', { id, name }),
   setWorkspaceColor: (id, color) => ipcRenderer.invoke('workspace:set-color', { id, color }),
+  setWorkspacePinned: (id, pinned) => ipcRenderer.invoke('workspace:set-pinned', { id, pinned }),
   selectWorkspace: (id) => ipcRenderer.invoke('workspace:select', id),
   addWorkspaceCategory: (id, name) => ipcRenderer.invoke('workspace:add-category', { id, name }),
   removeWorkspaceCategory: (id, name) => ipcRenderer.invoke('workspace:remove-category', { id, name }),
@@ -26,8 +27,10 @@ contextBridge.exposeInMainWorld('swarm', {
   purgeAllTasks: () => ipcRenderer.invoke('task:purge-all'),
 
   listSessions: () => ipcRenderer.invoke('session:list'),
-  createSession: (workspaceId, cols, rows, model, kind) =>
-    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, kind }),
+  createSession: (workspaceId, cols, rows, model, kind, resumeId, role) =>
+    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, kind, resumeId, role }),
+  listRoles: () => ipcRenderer.invoke('roles:list'),
+  listHistory: (workspaceId) => ipcRenderer.invoke('history:list', workspaceId),
   restartSession: (payload) => ipcRenderer.invoke('session:restart', payload),
   reattachSession: (id, cols, rows) => ipcRenderer.invoke('session:reattach', { id, cols, rows }),
   renameSession: (id, name) => ipcRenderer.invoke('session:rename', { id, name }),
@@ -38,7 +41,7 @@ contextBridge.exposeInMainWorld('swarm', {
   resizeSession: (id, cols, rows) => ipcRenderer.send('session:resize', { id, cols, rows }),
   killSession: (id) => ipcRenderer.invoke('session:kill', { id }),
 
-  notify: () => ipcRenderer.send('notify'),
+  notify: (payload) => ipcRenderer.send('notify', payload),
   openExternal: (url) => ipcRenderer.send('open-external', url),
   // File objects carry no path in the renderer — resolve it here
   pathForFile: (file) => webUtils.getPathForFile(file),
@@ -53,6 +56,7 @@ contextBridge.exposeInMainWorld('swarm', {
   ensurePi: () => ipcRenderer.invoke('pi:ensure'),
 
   listBranches: (workspaceId) => ipcRenderer.invoke('git:branches', workspaceId),
+  gitDiff: (workspaceId) => ipcRenderer.invoke('git:diff', workspaceId),
   checkoutBranch: (workspaceId, branch, create) => ipcRenderer.invoke('git:checkout', { workspaceId, branch, create }),
 
   listSkills: () => ipcRenderer.invoke('skills:list'),
