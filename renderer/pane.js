@@ -27,7 +27,7 @@ const ANSI_RAMP = {
 
 /* the same idea for the light-backdrop themes added after light/sepia: one
  * ramp darkened for a white page, which each theme re-tints only where its
- * accent hue lives. The readability pass below still runs on top. */
+ * accent hue lives. xterm's per-cell contrast pass still runs on top. */
 const LIGHT_RAMP = {
   red: '#d92f2f',
   green: '#4d7c0f',
@@ -516,9 +516,14 @@ const XTERM_THEMES = {
 };
 /* the canvas is transparent so the pane's glass (blur + tint, see .pane /
  * .pane-term in app.css) shows through behind the text — the per-theme
- * terminal tint comes from the CSS var(--term-bg) mix, not the palette */
-function glassTheme(palette) {
-  return { ...palette, background: 'rgba(0, 0, 0, 0)' };
+ * terminal tint comes from the CSS var(--term-bg) mix, not the palette.
+ * The RGB channels still carry the backdrop the pane will actually show:
+ * nothing is painted with them at zero alpha, but xterm measures their
+ * luminance for the contrast pass below, and rgba(0,0,0,0) would have every
+ * light theme's terminal believe it is drawing onto black. */
+function glassTheme(palette, bgHex = palette.background) {
+  const [r, g, b] = hexRgb(bgHex);
+  return { ...palette, background: `rgba(${r}, ${g}, ${b}, 0)` };
 }
 
 /* ---- readability pass for the light-background themes ----
@@ -529,23 +534,24 @@ function glassTheme(palette) {
  *  - agents assume a dark terminal. Claude Code's TUI paints its text in
  *    whites and pale greys, and sends most of them as *256-colour indices*
  *    (TERM=xterm-256color, so chalk drops to the fixed 16–255 table) — colours
- *    no palette entry covers, and invisible on a white pane. This is the
- *    "text sometimes unreadable in Light" report.
+ *    no palette entry covers, and invisible on a white pane.
  *  - with "Theme background overlay" off, app.css pins every pane dark, so
  *    those same themes would draw their near-black text on black.
  *
- * Both are one job: push a colour away from the backdrop it will actually be
- * drawn on until it clears a readable contrast ratio, and leave everything
- * that already clears it untouched. Blending keeps the hue, so a red stays
- * red — it just stops being pale.
- */
+ * xterm's own `minimumContrastRatio` does exactly this job, and does it per
+ * *cell*: it lightens or darkens the foreground until it reads against the
+ * background that cell is really drawn on. Rewriting the palette instead
+ * cannot, because the same entry serves as text one moment and as a filled
+ * backdrop the next — darkening it for a white pane turned every grey/black
+ * block the TUI paints (input box, selected row, diff gutter) into near-black
+ * *with near-black text on it*. Hence the option, not a palette rewrite. */
 /* must match the overlay-off selector list in app.css */
 const LIGHT_THEMES = new Set([
   'light', 'sepia', 'paper', 'frost', 'blossom', 'ash', 'slate', 'fog', 'zinc',
 ]);
 /* What .pane-term resolves to for each of them — term-bg at 45% over the pane's
- * 55% surface over --bg (see app.css). The contrast maths needs the real
- * backdrop, not the palette's nominal `background`, which glassTheme drops. */
+ * 55% surface over --bg (see app.css). xterm needs the real backdrop to measure
+ * against, not the palette's nominal `background`, which the CSS covers up. */
 const LIGHT_PANE_BG = {
   light: '#f8f9fb',
   sepia: '#f8f2e6',
@@ -564,64 +570,27 @@ function hexRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
-function rgbHex(rgb) {
-  return '#' + rgb.map((c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0')).join('');
-}
-function luminance([r, g, b]) {
-  const lin = (c) => (c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4);
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
-function contrast(a, b) {
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-}
-/* walk `hex` toward black (light backdrop) or white (dark one) until it reads
- * at `min`:1 against it */
-function readable(hex, bgLum, min) {
-  const rgb = hexRgb(hex);
-  if (contrast(luminance(rgb), bgLum) >= min) return hex;
-  const toward = bgLum > 0.4 ? 0 : 255;
-  for (let t = 0.05; t < 1; t += 0.05) {
-    const step = rgb.map((c) => c + (toward - c) * t);
-    if (contrast(luminance(step), bgLum) >= min) return rgbHex(step);
-  }
-  return toward ? '#ffffff' : '#000000';
-}
 
-// palette keys painted *behind* text rather than as text: forcing contrast on
-// them would fight the very thing it is trying to fix
-const BACKDROP_KEYS = new Set(['background', 'cursorAccent', 'selectionBackground']);
-// body text earns AAA; the rest of the ramp is decoration, AA is enough
-const BODY_KEYS = new Set(['foreground', 'white', 'brightWhite']);
-
-function readablePalette(palette, bgHex) {
-  const bgLum = luminance(hexRgb(bgHex));
-  const out = {};
-  for (const [key, value] of Object.entries(palette)) {
-    out[key] = BACKDROP_KEYS.has(key) ? value : readable(value, bgLum, BODY_KEYS.has(key) ? 7 : 4.5);
-  }
-  return out;
-}
-
-/* xterm's fixed 16–255 colours: a 6×6×6 cube, then a 24-step grey ramp. They
- * are what an app reaches for when it wants "grey" or "white" without asking
- * the theme — exactly the ones that disappear on a light pane. */
-const CUBE_LEVELS = [0, 95, 135, 175, 215, 255];
-function extendedAnsiFor(bgHex) {
-  const bgLum = luminance(hexRgb(bgHex));
-  const out = [];
-  for (let n = 0; n < 216; n++) {
-    out.push(readable(rgbHex([CUBE_LEVELS[Math.floor(n / 36)], CUBE_LEVELS[Math.floor(n / 6) % 6], CUBE_LEVELS[n % 6]]), bgLum, 4.5));
-  }
-  for (let i = 0; i < 24; i++) out.push(readable(rgbHex([8 + i * 10, 8 + i * 10, 8 + i * 10]), bgLum, 4.5));
-  return out;
-}
+// WCAG AA for text. Left at 1 (xterm's "off") for the dark themes, whose
+// panes are the backdrop agents already assume.
+const MIN_CONTRAST = 4.5;
 
 let activeXtermTheme = glassTheme(XTERM_THEMES.dark);
+let activeMinContrast = 1;
 
 const DEFAULT_FONT_SIZE = 13;
 // last font size the user picked (MOD+/- or the pane buttons) — persists
 // across restarts so reopened agent panes come back at the same text size
 let activeFontSize = Number(localStorage.getItem('swarmeye.paneFontSize')) || DEFAULT_FONT_SIZE;
+
+const DEFAULT_FONT_WEIGHT = 400;
+// "Agent pane text weight" option in ⌨ Options — the light themes draw dark
+// text on a near-white pane, which reads thinner than the dark themes'
+// light-on-dark, so the weight is a knob rather than a constant. Capped at 600
+// (JetBrains Mono is a 300–700 variable font) so bold, which tracks 300 above,
+// stays heavier than body text at every step — 400 gives xterm's own 700.
+let activeFontWeight = Number(localStorage.getItem('swarmeye.paneFontWeight')) || DEFAULT_FONT_WEIGHT;
+const boldFor = (weight) => Math.min(700, weight + 300);
 
 // "Show last command in pane header" option in ⌨ Options — off by default;
 // app.js owns persistence, this just gates whether syncInitialCommandHeader
@@ -632,6 +601,12 @@ let showInitialCommand = false;
 // the → / ↓ split buttons are how the user places new agents themselves, so
 // they only make sense to show while auto-organize is off
 let autoOrganize = true;
+
+// "Default agent permissions: auto" option in ⌨ Options — mirrored here by
+// app.js, which owns it, rather than read back over IPC: autoAcceptDialogs is
+// the only consumer and it used to pull the whole config across the boundary
+// to answer one boolean
+let skipPermissions = false;
 
 /* ---- cost & context panel ---- */
 
@@ -747,9 +722,6 @@ const EFFORTS = [
 const SHIFT_TAB = '\x1b[Z';
 const MODE_STEP_MS = 300; // redraw grace between Shift+Tab presses
 const CLOSE_ARM_MS = 5000;
-// how much of the tail the pane's ⧉ button copies — enough for a finished
-// turn's summary or a stack trace, short enough to paste somewhere
-const COPY_TAIL_LINES = 200;
 // rows of `git diff --stat` the git chip's popover shows before eliding the
 // middle (git's own "N files changed" summary line is always kept)
 const DIFF_STAT_MAX_LINES = 14;
@@ -792,7 +764,7 @@ class Pane {
   /**
    * @param {object} session {id, num, agentName, workspaceName, cwd, persistent, lastCommand}
    * @param {object} handlers {onClose, onMaximize, onResize, onRename,
-   *                           onRestart, onToggleAutoRestart, onFocus, onStatusChange,
+   *                           onRestart, onFocus, onStatusChange,
    *                           onShortcut, onSplit, setLastCommand}
    * @param {object} [opts] {managed} — managed is true when a board task
    *                         started this agent; false for a manually-added one
@@ -855,12 +827,19 @@ class Pane {
       this.roleEl.style.display = 'none';
     }
 
-    // the model is drawn in exactly one place at a time — see syncModelChip
+    // model and effort are drawn in exactly one place at a time — see syncModelChip
+    this.effortEl = document.createElement('span');
+    this.effortEl.className = 'pane-effort';
+    this.effortEl.style.display = 'none';
+    this.effortLabel = '';
+    this.effortTip = 'Claude reasoning effort for this agent';
+
     this.llmEl = document.createElement('span');
     this.llmEl.className = 'pane-llm';
     this.llmEl.style.display = 'none';
     this.modelLabel = '';
     this.modelTip = 'Claude model for this agent';
+    this.transcriptId = null; // Claude conversation id, from the hook payload
 
     this.gitEl = document.createElement('span');
     this.gitEl.className = 'pane-git';
@@ -887,13 +866,6 @@ class Pane {
     this.modeSel.addEventListener('keydown', (e) => e.stopPropagation());
     this.modeSel.addEventListener('change', () => this.setMode(this.modeSel.value));
 
-    // pi panes: a static agent chip in the model slot (no hook events ever
-    // fill it) and no mode selector — Shift+Tab mode cycling is Claude-only
-    if (session.kind === 'pi') {
-      this.modelLabel = 'pi';
-      this.modelTip = 'Pi coding agent';
-      this.modeSel.style.display = 'none';
-    }
     this.modeBusy = false;
     this.modeTimer = null;
 
@@ -945,24 +917,15 @@ class Pane {
     this.btnRestart.style.display = 'none';
     this.btnRestart.addEventListener('click', (e) => handlers.onRestart(this, { resume: !e.shiftKey }));
 
-    // armed = app.js respawns this agent (continuing its conversation) if its
-    // session really dies; a mere tmux detach is not a death and is left alone
-    this.autoRestart = !!session.autoRestart;
-    this.autoRestartTries = 0; // consecutive auto-restarts, reset once one sticks
-    this.btnAutoRestart = document.createElement('button');
-    this.btnAutoRestart.className = 'pane-btn auto-restart';
-    this.btnAutoRestart.addEventListener('click', () => this.setAutoRestart(!this.autoRestart));
-    this.syncAutoRestartButton();
-
     // /clear — only shown once the agent is idle (finished a turn); wipes its
-    // conversation context without restarting the process. Pi has no /clear.
+    // conversation context without restarting the process.
     this.btnClear = document.createElement('button');
     this.btnClear.className = 'pane-btn clear';
     this.btnClear.dataset.tip = "Clear this agent's context (/clear)";
     this.btnClear.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20H8.5L3.6 15a1.4 1.4 0 0 1 0-2L12.8 3.8a1.4 1.4 0 0 1 2 0l5.2 5.2a1.4 1.4 0 0 1 0 2L11.5 20"/><path d="M6.5 10.5l7 7"/></svg>';
     this.btnClear.style.display = 'none';
     this.btnClear.addEventListener('click', () => {
-      if (this.exited || this.session.kind === 'pi') return;
+      if (this.exited) return;
       window.swarm.writeSession(this.session.id, '/clear\r');
     });
 
@@ -971,15 +934,6 @@ class Pane {
     btnExport.dataset.tip = 'Save transcript to a file';
     btnExport.textContent = '⤓';
     btnExport.addEventListener('click', () => handlers.onExport(this));
-
-    // the tail of the transcript, straight to the clipboard — the common
-    // "paste what the agent just said into a message/PR" move, without
-    // scrolling and drag-selecting a pane that redraws under the cursor
-    const btnCopy = document.createElement('button');
-    btnCopy.className = 'pane-btn copy';
-    btnCopy.dataset.tip = `Copy the last ${COPY_TAIL_LINES} lines (shift-click: the whole scrollback)`;
-    btnCopy.textContent = '⧉';
-    btnCopy.addEventListener('click', (e) => this.copyTail(e.shiftKey));
 
     const btnSearch = document.createElement('button');
     btnSearch.className = 'pane-btn search';
@@ -1043,8 +997,8 @@ class Pane {
     });
 
     header.append(
-      this.dot, this.taskEl, this.roleEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.badge,
-      this.btnAutoRestart, this.btnRestart, this.btnClear, btnExport, btnCopy, btnSearch, btnMic, btnFontDown, btnFontUp, btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
+      this.dot, this.taskEl, this.roleEl, this.effortEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.badge,
+      this.btnRestart, this.btnClear, btnExport, btnSearch, btnMic, btnFontDown, btnFontUp, btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
 
     // search row (hidden until toggled)
@@ -1103,11 +1057,19 @@ class Pane {
     this.usageCostEl.className = 'pane-usage-cost';
     this.usageCacheEl = document.createElement('span');
     this.usageCacheEl.className = 'pane-usage-cache';
+    this.usageEffortEl = document.createElement('span');
+    this.usageEffortEl.className = 'pane-usage-effort';
     this.usageModelEl = document.createElement('span');
     this.usageModelEl.className = 'pane-usage-model';
+    // effort sits left of the model, and the pair rides to the right edge
+    // together — one wrapper instead of an auto margin that would move
+    // whenever the effort label is hidden
+    const usageRight = document.createElement('span');
+    usageRight.className = 'pane-usage-right';
+    usageRight.append(this.usageEffortEl, this.usageModelEl);
     const usageTop = document.createElement('div');
     usageTop.className = 'pane-usage-row';
-    usageTop.append(this.usageBarEl, this.usageCtxEl, this.usageCostEl, this.usageCacheEl, this.usageModelEl);
+    usageTop.append(this.usageBarEl, this.usageCtxEl, this.usageCostEl, this.usageCacheEl, usageRight);
 
     this.usageSparkEl = document.createElement('span');
     this.usageSparkEl.className = 'pane-usage-spark';
@@ -1127,9 +1089,13 @@ class Pane {
 
     this.term = new Terminal({
       theme: activeXtermTheme,
+      // per-cell readability on the light themes — see the pass above
+      minimumContrastRatio: activeMinContrast,
       allowTransparency: true, // glass panes: the canvas bg is transparent, CSS tints it
       fontFamily: "'JetBrains Mono', monospace",
       fontSize: activeFontSize,
+      fontWeight: activeFontWeight,
+      fontWeightBold: boldFor(activeFontWeight),
       lineHeight: 1.15,
       cursorBlink: true,
       // a completed task's transcript popup reads straight from this buffer
@@ -1137,11 +1103,11 @@ class Pane {
       // start of a long session before it ever gets captured
       scrollback: 20000,
       allowProposedApi: true,
-      // native OSC 8 hyperlinks (pi re-opens a full link span on every row a
-      // long URL wraps across, e.g. its login link) — without this, xterm's
-      // built-in fallback is a confirm() dialog plus window.open, which does
-      // nothing useful in Electron. WebLinksAddon below covers plain-text
-      // URLs; this covers OSC 8 ones the same way.
+      // native OSC 8 hyperlinks (an agent can re-open a full link span on
+      // every row a long URL wraps across) — without this, xterm's built-in
+      // fallback is a confirm() dialog plus window.open, which does nothing
+      // useful in Electron. WebLinksAddon below covers plain-text URLs; this
+      // covers OSC 8 ones the same way.
       linkHandler: {
         activate: (_event, uri) => window.swarm.openExternal(uri),
       },
@@ -1171,12 +1137,12 @@ class Pane {
       },
     });
 
-    // pi's TUI switches on terminal mouse reporting (DECSET 1000/1002/1006…),
+    // a TUI can switch on terminal mouse reporting (DECSET 1000/1002/1006…),
     // which would make xterm hand every click to the app — breaking text
-    // selection, copy, and both link providers above. No pane has a consumer
-    // for raw mouse (same reasoning as `mouse off` in the tmux conf: wheel
-    // scrolling and clicks are all handled client-side), so swallow the
-    // requests and keep the mouse local.
+    // selection, copy, and both link providers above. Nothing here wants raw
+    // mouse reporting — clicks are handled client-side, and the one event tmux
+    // does act on (the wheel) is synthesized by the wheel listener below — so
+    // swallow the requests and keep the mouse local.
     const MOUSE_DECSET = new Set([9, 1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016]);
     for (const final of ['h', 'l']) {
       this.term.parser.registerCsiHandler({ prefix: '?', final }, (params) =>
@@ -1188,15 +1154,7 @@ class Pane {
     // GPU renderer; falls back to the DOM renderer on failure/context loss
     this.webgl = null;
     this.rendererDropped = false; // true while a hidden pane's context is released (see dropRenderer)
-    try {
-      const webgl = new WebglAddon.WebglAddon();
-      webgl.onContextLoss(() => {
-        try { webgl.dispose(); } catch { /* already gone */ }
-        this.webgl = null;
-      });
-      this.term.loadAddon(webgl);
-      this.webgl = webgl;
-    } catch { /* DOM renderer it is */ }
+    this.attachWebgl();
 
     // attention: terminal bell, plus OSC 9 / OSC 777 desktop-notification sequences
     this.term.onBell(() => this.flagAttention());
@@ -1227,6 +1185,30 @@ class Pane {
       this.captureInitialCommand(data);
       window.swarm.writeSession(session.id, data);
     });
+
+    // Wheel over the output scrolls the agent's history; over the input box
+    // at the bottom it stays Up/Down, which is what cycles previous prompts.
+    //
+    // xterm's own scrollback is empty here — the tmux attach client paints on
+    // the alternate buffer — and its alternate-scroll fallback turns every
+    // notch anywhere into an Up/Down keypress, which is why scrolling used to
+    // walk the prompt history instead of the transcript. tmux holds the real
+    // scrollback, so forward the notch to it as an SGR mouse event (see
+    // WHEEL_LINES in sessions.js). Without tmux there is no alternate buffer
+    // and xterm's native scrollback works — leave that case alone.
+    this.termEl.addEventListener('wheel', (e) => {
+      if (this.exited || this.term.buffer.active.type !== 'alternate') return;
+      e.preventDefault();
+      e.stopPropagation(); // capture phase: keep xterm from also alt-scrolling
+      this.lastInputAt = Date.now(); // tmux repaints on scroll — not agent activity
+      const up = e.deltaY < 0;
+      const row = this.rowAtY(e.clientY);
+      if (row >= this.inputBoxTop()) {
+        window.swarm.writeSession(session.id, up ? '\x1b[A' : '\x1b[B');
+        return;
+      }
+      window.swarm.writeSession(session.id, `\x1b[<${up ? 64 : 65};1;${row + 1}M`);
+    }, { capture: true, passive: false });
 
     const sGo = (forward) => {
       const q = this.searchInput.value;
@@ -1285,6 +1267,51 @@ class Pane {
     this.observer.observe(this.termEl);
   }
 
+  /* Take xterm's GPU renderer, or leave the DOM one in place if the context
+   * can't be had. A lost context detaches it exactly the way dropRenderer
+   * does, so restoreRenderer can come back for it later. */
+  attachWebgl() {
+    if (this.webgl) return;
+    try {
+      const webgl = new WebglAddon.WebglAddon();
+      webgl.onContextLoss(() => {
+        try { webgl.dispose(); } catch { /* already gone */ }
+        this.webgl = null;
+      });
+      this.term.loadAddon(webgl);
+      this.webgl = webgl;
+    } catch { /* DOM renderer it is */ }
+  }
+
+  /* ---- wheel scrolling (see the wheel listener above) ---- */
+
+  /* 0-based terminal row under a viewport y coordinate */
+  rowAtY(y) {
+    const screen = this.termEl.querySelector('.xterm-screen');
+    if (!screen) return 0;
+    const r = screen.getBoundingClientRect();
+    const row = Math.floor((y - r.top) / (r.height / this.term.rows));
+    return Math.min(this.term.rows - 1, Math.max(0, row));
+  }
+
+  /* First row of Claude's input box. The prompt marker is the only reliable
+   * sign of it from the outside: the box is drawn as two plain `─` rules,
+   * indistinguishable from a separator in the transcript, but `❯` sits on the
+   * box's first text row and the input box is always the last thing on the
+   * screen — so the lowest `❯` is the live prompt (the ones above it are
+   * echoed messages), and the rule above it is where the box starts. No
+   * prompt (a plain shell, an overlay like `/help`, a permission dialog)
+   * means no input area, so the whole pane scrolls. */
+  inputBoxTop() {
+    const buf = this.term.buffer.active;
+    for (let i = this.term.rows - 1; i >= 0; i--) {
+      const line = buf.getLine(buf.viewportY + i);
+      const text = line && line.translateToString(true).trim();
+      if (text && text.startsWith('❯')) return Math.max(0, i - 1);
+    }
+    return this.term.rows;
+  }
+
   /* ---- status: exited > attention > working/idle ---- */
 
   get status() {
@@ -1300,8 +1327,8 @@ class Pane {
     this.el.classList.toggle('attn', status === 'attention');
     this.busyEl.style.display = status === 'working' ? '' : 'none';
     // /clear appears once the agent is done working and free (not mid-turn, not
-    // blocked on a permission prompt, not exited); Pi has no /clear command
-    const canClear = !this.exited && !this.working && !this.awaitingPrompt && this.session.kind !== 'pi';
+    // blocked on a permission prompt, not exited)
+    const canClear = !this.exited && !this.working && !this.awaitingPrompt;
     this.btnClear.style.display = canClear ? '' : 'none';
   }
 
@@ -1432,8 +1459,11 @@ class Pane {
     return true;
   }
 
-  applyHookEvent({ event, tool, message, model, usage }) {
+  applyHookEvent({ event, tool, message, model, usage, transcript }) {
     if (this.exited) return;
+    // /clear and --resume both move the agent onto another transcript file,
+    // so the newest one the hooks reported wins
+    if (transcript) this.transcriptId = transcript;
     // per-turn totals from the transcript — a bookkeeping event, not a state
     // change, so it returns before any of the working/waiting handling below
     if (event === 'UsageUpdate') {
@@ -1513,19 +1543,18 @@ class Pane {
   /* Show or hide the panel, and keep the terminal's row count honest — two
    * rows of panel are two rows the terminal no longer has. */
   syncUsagePanel() {
-    const show = showUsagePanel && this.session.kind !== 'pi'; // pi panes report no usage
     const was = this.usageEl.style.display !== 'none';
-    this.usageEl.style.display = show ? '' : 'none';
+    this.usageEl.style.display = showUsagePanel ? '' : 'none';
     clearInterval(this.usageTimer);
     this.usageTimer = null;
-    if (show) {
+    if (showUsagePanel) {
       this.renderUsagePanel();
       // the turn timer and the 5h share both move on their own
       this.usageTimer = setInterval(() => this.renderUsagePanel(), 1000);
     }
     this.syncModelChip(); // the panel takes the model over from the header
 
-    if (show !== was && this.fit) this.refit();
+    if (showUsagePanel !== was && this.fit) this.refit();
   }
 
   /* Tokens this agent burned inside the current 5-hour usage window. Also the
@@ -1615,9 +1644,15 @@ class Pane {
     this.syncModelChip();
   }
 
+  setEffort(label) {
+    if (!label) return;
+    this.effortLabel = label;
+    this.syncModelChip();
+  }
+
   /* One model, one place: the cost & context panel owns it whenever that
-   * panel is on, and the header chip only fills in when it is off (which is
-   * always the case for pi panes, whose panel never shows). */
+   * panel is on, and the header chip only fills in when it is off. The
+   * effort label rides along in both spots, left of the model. */
   syncModelChip() {
     const inPanel = this.usageEl.style.display !== 'none';
     this.llmEl.textContent = this.modelLabel;
@@ -1625,6 +1660,12 @@ class Pane {
     this.llmEl.style.display = this.modelLabel && !inPanel ? '' : 'none';
     this.usageModelEl.textContent = this.modelLabel;
     this.usageModelEl.style.display = this.modelLabel ? '' : 'none';
+    this.effortEl.textContent = this.effortLabel;
+    this.effortEl.dataset.tip = this.effortTip;
+    this.effortEl.style.display = this.effortLabel && !inPanel ? '' : 'none';
+    this.usageEffortEl.textContent = this.effortLabel;
+    this.usageEffortEl.dataset.tip = this.effortTip;
+    this.usageEffortEl.style.display = this.effortLabel ? '' : 'none';
   }
 
   /* Last `n` buffer lines as plain text. Shared by every settle-time scan
@@ -1653,18 +1694,31 @@ class Pane {
     }
   }
 
+  /* `/effort <level>` prints "Set effort level to high (this session only): …"
+   * ("Effort level set to auto …" when cleared, "Current effort level: high"
+   * from a bare `/effort current`) — read off the buffer exactly like the
+   * model, so a manual switch updates the chip with no extra plumbing. */
+  syncEffortFromBuffer(lines = this.tailLines(30)) {
+    if (this.exited) return;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      // the level itself is spelled out, so the failure lines ("Failed to set
+      // effort level: …") can't be mistaken for a level
+      const m = /(?:Set effort level to|Effort level(?: set to)?:?)\s+(low|medium|high|xhigh|max|ultracode|auto)\b/i.exec(lines[i]);
+      if (m) { this.setEffort(m[1].toLowerCase()); return; }
+    }
+  }
+
   /* Accept the blocking dialogs auto mode can't get past on its own (see
    * AUTO_ACCEPT_DIALOGS): each pre-highlights its accepting option, so
    * accepting is just pressing Enter — the same mechanism tryInjectPrompt
    * (app.js) uses to submit an initial task. Each fires at most once per
    * pane, and only when the user actually opted into auto mode. */
-  async autoAcceptDialogs(lines = this.tailLines(30)) {
+  autoAcceptDialogs(lines = this.tailLines(30)) {
     const text = lines.join('\n');
     for (const [flag, re] of AUTO_ACCEPT_DIALOGS) {
       if (this.exited || this[flag] || !re.test(text)) continue;
       this[flag] = true;
-      const cfg = await window.swarm.getConfig();
-      if (cfg.skipPermissions) window.swarm.writeSession(this.session.id, '\r');
+      if (skipPermissions) window.swarm.writeSession(this.session.id, '\r');
     }
   }
 
@@ -1824,9 +1878,11 @@ class Pane {
 
   /* Step Shift+Tab until the footer shows the target. One full lap is at
    * most 4 presses; if the target never appears (bypass not enabled, or a
-   * dialog is eating keys) walk on back to where we started. */
-  async setMode(target) {
-    if (this.exited || this.modeBusy) return;
+   * dialog is eating keys) walk on back to where we started. Returns whether
+   * the target was reached, so a caller applying a saved default can lap
+   * again; `quiet` suppresses the toast on those non-final attempts. */
+  async setMode(target, { quiet = false } = {}) {
+    if (this.exited || this.modeBusy) return false;
     this.modeBusy = true;
     // only refocus the terminal if this pane had focus to begin with (the
     // user-picked dropdown case) — a scheduler-started task's setMode must
@@ -1846,13 +1902,14 @@ class Pane {
           await new Promise((r) => setTimeout(r, MODE_STEP_MS));
           mode = this.detectMode();
         }
-        if (window.toast) {
+        if (!quiet && window.toast) {
           toast(target === 'bypass'
             ? 'auto mode is off in this agent — enable it in ⌨ Options, then restart the agent'
             : 'could not switch mode — is claude showing a dialog?');
         }
       }
       this.modeSel.value = mode;
+      return mode === target;
     } finally {
       this.modeBusy = false;
       if (hadFocus) this.term.focus();
@@ -1932,27 +1989,6 @@ class Pane {
   syncSplitButtons() {
     this.btnSplitRight.style.display = autoOrganize ? 'none' : '';
     this.btnSplitDown.style.display = autoOrganize ? 'none' : '';
-  }
-
-  /* ---- auto-restart ---- */
-
-  /* `silent` is for the pane that inherits the flag from an auto-restarted
-   * predecessor: the new session's metadata already carries it (see
-   * PtyManager.restart), so re-persisting it would be a pointless round trip. */
-  setAutoRestart(on, { silent = false } = {}) {
-    this.autoRestart = !!on;
-    this.session.autoRestart = this.autoRestart;
-    if (!this.autoRestart) this.autoRestartTries = 0;
-    this.syncAutoRestartButton();
-    if (!silent) this.handlers.onToggleAutoRestart(this, this.autoRestart);
-  }
-
-  syncAutoRestartButton() {
-    this.btnAutoRestart.textContent = this.autoRestart ? '◉' : '◎';
-    this.btnAutoRestart.classList.toggle('armed', this.autoRestart);
-    this.btnAutoRestart.dataset.tip = this.autoRestart
-      ? 'Auto-restart is on — respawns this agent (continuing its conversation) if it exits'
-      : 'Auto-restart is off — click to respawn this agent automatically if it exits';
   }
 
   /* ---- rename ---- */
@@ -2045,6 +2081,13 @@ class Pane {
     this.refit();
   }
 
+  setFontWeight(weight) {
+    if (weight === this.term.options.fontWeight) return;
+    this.term.options.fontWeight = weight;
+    this.term.options.fontWeightBold = boldFor(weight);
+    this.refit(); // a heavier face can measure a hair wider
+  }
+
   refit() {
     if (!this.el.isConnected) return;
     this.bufferTextCache = null; // a resize reflows/rewraps the buffer
@@ -2067,6 +2110,7 @@ class Pane {
       const lines = this.tailLines(30);
       this.syncMode(lines);
       this.syncModelFromBuffer(lines);
+      this.syncEffortFromBuffer(lines);
       this.autoAcceptDialogs(lines);
       this.refreshPromptOptions(lines);
     }, 500);
@@ -2131,21 +2175,6 @@ class Pane {
     return this.bufferTextCache;
   }
 
-  /* ⧉ in the header: the tail of the scrollback on the clipboard. Trailing
-   * blank rows come off first — the TUI leaves a screenful of them below the
-   * input box, which would otherwise be most of what gets copied. */
-  copyTail(all = false) {
-    const lines = this.getBufferText().split('\n');
-    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
-    const text = (all ? lines : lines.slice(-COPY_TAIL_LINES)).join('\n');
-    if (!text.trim()) { if (window.toast) toast('nothing to copy yet'); return; }
-    window.swarm.copyText(text);
-    if (window.toast) {
-      const n = all ? lines.length : Math.min(COPY_TAIL_LINES, lines.length);
-      toast(`copied ${n} line${n === 1 ? '' : 's'} from ${this.session.agentName}`);
-    }
-  }
-
   focus() {
     document.querySelectorAll('.pane.focused').forEach((p) => p.classList.remove('focused'));
     this.el.classList.add('focused');
@@ -2172,16 +2201,8 @@ class Pane {
   restoreRenderer() {
     if (!this.rendererDropped) return;
     this.rendererDropped = false;
-    if (this.webgl || this.exited) return;
-    try {
-      const webgl = new WebglAddon.WebglAddon();
-      webgl.onContextLoss(() => {
-        try { webgl.dispose(); } catch { /* already gone */ }
-        this.webgl = null;
-      });
-      this.term.loadAddon(webgl);
-      this.webgl = webgl;
-    } catch { /* DOM renderer it is */ }
+    if (this.exited) return;
+    this.attachWebgl();
   }
 
   dispose() {
@@ -2211,13 +2232,15 @@ Pane.setXtermTheme = (name, overlayOn = true) => {
   const base = XTERM_THEMES[name] || XTERM_THEMES.dark;
   if (!LIGHT_THEMES.has(name)) {
     activeXtermTheme = glassTheme(base);
+    activeMinContrast = 1;
     return activeXtermTheme;
   }
-  const bg = overlayOn ? LIGHT_PANE_BG[name] : FLAT_PANE_BG;
-  activeXtermTheme = glassTheme(readablePalette(base, bg));
-  activeXtermTheme.extendedAnsi = extendedAnsiFor(bg);
+  activeXtermTheme = glassTheme(base, overlayOn ? LIGHT_PANE_BG[name] : FLAT_PANE_BG);
+  activeMinContrast = MIN_CONTRAST;
   return activeXtermTheme;
 };
+/* the caller pushes this to already-open panes alongside the palette */
+Pane.getMinContrast = () => activeMinContrast;
 
 /* app.js's Options-panel "Agent pane text size" control reads/writes the same
  * default new panes start at (and that MOD+/- / the pane buttons update);
@@ -2231,6 +2254,17 @@ Pane.setDefaultFontSize = (px) => {
   return size;
 };
 
+/* and the same for "Agent pane text weight" — no keyboard path, so the option
+ * is the only writer; the caller pushes the result to already-open panes */
+Pane.DEFAULT_FONT_WEIGHT = DEFAULT_FONT_WEIGHT;
+Pane.getDefaultFontWeight = () => activeFontWeight;
+Pane.setDefaultFontWeight = (weight) => {
+  const w = Math.max(300, Math.min(600, Math.round(weight / 100) * 100));
+  activeFontWeight = w;
+  localStorage.setItem('swarmeye.paneFontWeight', String(w));
+  return w;
+};
+
 /* app.js's Options-panel "Show last command in pane header" checkbox owns
  * persistence; this just flips the flag every pane's syncInitialCommandHeader
  * reads — the caller is responsible for re-syncing already-open panes */
@@ -2238,6 +2272,11 @@ Pane.setShowInitialCommand = (on) => { showInitialCommand = !!on; };
 
 /* same pattern as setShowInitialCommand, for the → / ↓ split buttons */
 Pane.setAutoOrganize = (on) => { autoOrganize = !!on; };
+
+/* and again for "Default agent permissions: auto" — the only thing that reads
+ * it here is autoAcceptDialogs, which must not stall on an IPC round trip in
+ * the middle of a buffer scan */
+Pane.setSkipPermissions = (on) => { skipPermissions = !!on; };
 
 /* same pattern again, for the bottom cost & context panel — the caller
  * re-syncs already-open panes (which also refits their terminals) */

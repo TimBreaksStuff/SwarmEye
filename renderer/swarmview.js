@@ -1,6 +1,6 @@
 /* Swarm View: a bird's-eye map of every agent across every workspace.
  *
- * Fourth full view in the same slot as the Task Board, Skills and Costs.
+ * Fourth full view in the same slot as the Task Board, Skills and History.
  * Left is the map — each agent a node whose fill is its workspace's identity
  * colour and whose ring animation is its status; right is the dock: a live
  * terminal preview of every running agent on top (optional), then the activity
@@ -37,7 +37,6 @@ const SwarmView = (() => {
   const layoutSegEl = document.getElementById('sv-layout');
   const previewBtn = document.getElementById('sv-preview-btn');
   const clickBtn = document.getElementById('sv-click-btn');
-  const newBtn = document.getElementById('sv-new-btn');
   const termsEl = document.getElementById('sv-terms');
   const menuEl = document.getElementById('sv-menu');
   const agentsListEl = document.getElementById('sv-agents-list');
@@ -837,7 +836,7 @@ const SwarmView = (() => {
     item('Message it', () => call('onMessage', id), { disabled: pane.exited });
     sep();
     item('Interrupt (Esc)', () => call('onInterrupt', id), { disabled: pane.exited });
-    item('Clear context (/clear)', () => call('onClear', id), { disabled: pane.exited || pane.session.kind === 'pi' });
+    item('Clear context (/clear)', () => call('onClear', id), { disabled: pane.exited });
     item(status === 'detached' ? 'Reattach' : 'Restart', () => call('onRestart', id));
     sep();
     item('End agent', () => call('onEnd', id), { danger: true, confirmKey: 'sv:end' });
@@ -1143,7 +1142,7 @@ const SwarmView = (() => {
     emptyEl.hidden = panes.length > 0;
     setText(emptyEl, filtered
       ? 'no ' + [...filter].join(' or ') + ' agents right now — the filter is in the header'
-      : 'no agents running — start one with + Agent');
+      : 'no agents running — right-click the map to start one');
     setText(rowsEmptyEl, filtered ? 'nothing matches the filter' : 'no agents yet — every workspace is quiet');
 
     const geo = geometry();
@@ -1188,7 +1187,6 @@ const SwarmView = (() => {
     localStorage.setItem('swarmeye.svClick', clickMode);
     render(ctx);
   });
-  newBtn.addEventListener('click', () => ctx && ctx.handlers.onNewAgent());
 
   fontMinusEl.addEventListener('click', () => stepFont(-1));
   fontPlusEl.addEventListener('click', () => stepFont(1));

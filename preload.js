@@ -27,15 +27,16 @@ contextBridge.exposeInMainWorld('swarm', {
   purgeAllTasks: () => ipcRenderer.invoke('task:purge-all'),
 
   listSessions: () => ipcRenderer.invoke('session:list'),
-  createSession: (workspaceId, cols, rows, model, kind, resumeId, role) =>
-    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, kind, resumeId, role }),
+  createSession: (workspaceId, cols, rows, model, resumeId, role) =>
+    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, resumeId, role }),
   listRoles: () => ipcRenderer.invoke('roles:list'),
   listHistory: (workspaceId) => ipcRenderer.invoke('history:list', workspaceId),
+  readHistory: (workspaceId, id) => ipcRenderer.invoke('history:read', { workspaceId, id }),
+  deleteHistory: (workspaceId, ids) => ipcRenderer.invoke('history:delete', { workspaceId, ids }),
   restartSession: (payload) => ipcRenderer.invoke('session:restart', payload),
   reattachSession: (id, cols, rows) => ipcRenderer.invoke('session:reattach', { id, cols, rows }),
   renameSession: (id, name) => ipcRenderer.invoke('session:rename', { id, name }),
   setLastCommand: (id, cmd) => ipcRenderer.invoke('session:set-last-command', { id, cmd }),
-  setAutoRestart: (id, on) => ipcRenderer.invoke('session:set-auto-restart', { id, on }),
   exportSession: (name, text) => ipcRenderer.invoke('session:export', { name, text }),
   writeSession: (id, data) => ipcRenderer.send('session:write', { id, data }),
   resizeSession: (id, cols, rows) => ipcRenderer.send('session:resize', { id, cols, rows }),
@@ -47,13 +48,6 @@ contextBridge.exposeInMainWorld('swarm', {
   pathForFile: (file) => webUtils.getPathForFile(file),
 
   refreshUsage: () => ipcRenderer.invoke('usage:refresh'),
-
-  getSpend: () => ipcRenderer.invoke('spend:get'),
-  clearSpend: () => ipcRenderer.invoke('spend:clear'),
-  onSpendUpdate: (cb) => ipcRenderer.on('spend:update', (e, p) => cb(p)),
-
-  piStatus: () => ipcRenderer.invoke('pi:status'),
-  ensurePi: () => ipcRenderer.invoke('pi:ensure'),
 
   listBranches: (workspaceId) => ipcRenderer.invoke('git:branches', workspaceId),
   gitDiff: (workspaceId) => ipcRenderer.invoke('git:diff', workspaceId),

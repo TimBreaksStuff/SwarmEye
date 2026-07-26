@@ -6,7 +6,6 @@
 const Board = (() => {
   const { armOrFire, restoreArmed } = Confirm; // click-twice-to-confirm ✕ buttons
   const newBtn = document.getElementById('board-new-btn');
-  const closeBtn = document.getElementById('board-close-btn');
   const formEl = document.getElementById('board-form');
   const textEl = document.getElementById('board-form-text');
   const wsSel = document.getElementById('board-form-ws');

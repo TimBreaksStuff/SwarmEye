@@ -93,11 +93,6 @@
         <span class="rail-tile-glyph">🗃</span><span class="rail-tile-name">Archived</span>
       </button>
 
-      <button id="costs-btn" class="rail-tile" aria-label="Costs — what the swarm has spent">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V5M16 20v-7M22 20H2"/></svg>
-        <span class="rail-tile-name">Costs</span>
-      </button>
-
       <button id="history-btn" class="rail-tile" aria-label="History — past conversations, resumable in a new pane">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V10H9"/><path d="M12 7.8V12l3 1.8"/></svg>
         <span class="rail-tile-name">History</span>
@@ -270,10 +265,15 @@
           <div class="board-head-actions">
             <select id="history-ws" data-tip="Which workspace's past conversations to list"></select>
             <button id="history-refresh-btn" class="pill" data-tip="Re-read the transcript folder">⟳ Refresh</button>
+            <button id="history-archive-btn" class="pill" data-tip="Conversations older than the 15 most recent">🗄 Archive</button>
             <button id="history-close-btn" class="pill" data-tip="Close history (Esc)">✕ Close</button>
           </div>
         </div>
         <div id="history-main">
+          <div id="history-list-head" class="board-archive-head">
+            <span class="board-archive-title"><span id="history-list-title">Recent </span><span id="history-list-count" class="board-col-n"></span></span>
+            <button id="history-delete-all" class="board-archive-delall">🗑 Delete All</button>
+          </div>
           <div class="skills-filters">
             <input id="history-search" type="search" placeholder="filter past conversations…" spellcheck="false" />
           </div>
@@ -281,23 +281,22 @@
           <div id="history-list"></div>
         </div>
       </div>
+
     </div>
 
-    <div id="costs-view" hidden>
-      <div class="board-box">
-        <div class="board-head">
-          <div class="kbd-title">Costs</div>
+    <!-- outside #history-view on purpose: the notification centre opens the
+         same modal for a running agent, with the History screen closed -->
+    <div id="hist-modal" hidden>
+      <div id="hist-modal-box">
+        <div id="hist-modal-head">
+          <div id="hist-modal-title" class="kbd-title">Conversation</div>
           <div class="board-head-actions">
-            <span id="costs-range" class="costs-range" data-tip="Which period the breakdowns below cover"></span>
-            <button id="costs-clear-btn" class="pill" data-tip="Forget all recorded spend (click twice)">🗑 Clear History</button>
-            <button id="costs-close-btn" class="pill" data-tip="Close costs (Esc)">✕ Close</button>
+            <button id="hist-modal-download" class="pill" data-tip="Save this conversation as a text file">⭳ Download</button>
+            <button id="hist-modal-close" class="pill" data-tip="Close (Esc)">✕ Close</button>
           </div>
         </div>
-        <div id="costs-main">
-          <div id="costs-stats"></div>
-          <div id="costs-summary"></div>
-          <div id="costs-sections"></div>
-        </div>
+        <div id="hist-modal-meta"></div>
+        <div id="hist-modal-body"></div>
       </div>
     </div>
 
@@ -323,7 +322,6 @@
             <button id="sv-preview-btn" class="pill" data-tip="Show a live terminal preview of every running agent above the activity list">▤ Previews</button>
             <button id="sv-click-btn" class="pill" data-tip="Whether a single click on an agent selects it here or jumps straight to its pane">⤳ Click</button>
             <button id="sv-timeline-btn" class="pill" data-tip="Show the last hour as a ribbon under the map — one lane per agent, coloured by what it was doing">▦ Timeline</button>
-            <button id="sv-new-btn" class="pill">+ Agent</button>
             <button id="swarm-view-close-btn" class="pill" data-tip="Close swarm view (Esc)">✕ Close</button>
           </div>
         </div>
@@ -335,7 +333,7 @@
               <div id="sv-nodes"></div>
             </div>
             <button id="sv-zoom" data-tip="Reset zoom to 100%" hidden>100%</button>
-            <div id="sv-empty" class="skills-empty" hidden>no agents running — start one with + Agent</div>
+            <div id="sv-empty" class="skills-empty" hidden>no agents running — right-click the map to start one</div>
             <div id="sv-legend">
               <span class="sv-legend-item sv-legend-busy">busy</span>
               <span class="sv-legend-item sv-legend-waiting">waiting</span>
@@ -364,14 +362,17 @@
     </div>
 
     <aside id="notif-panel" hidden>
-      <div class="board-head">
-        <div class="kbd-title">Notifications</div>
-        <div class="board-head-actions">
-          <button id="notif-panel-clear" class="pill" data-tip="Remove all notifications">🗑 Clear All</button>
-          <button id="notif-panel-close" class="pill" data-tip="Close notifications">✕ Close</button>
+      <div id="notif-panel-resizer" data-tip="Drag to resize the notification panel"></div>
+      <div id="notif-panel-body">
+        <div class="board-head">
+          <div class="kbd-title">Notifications</div>
+          <div class="board-head-actions">
+            <button id="notif-panel-clear" class="pill" data-tip="Remove all notifications">🗑 Clear All</button>
+            <button id="notif-panel-close" class="pill" data-tip="Close notifications">✕ Close</button>
+          </div>
         </div>
+        <div id="notif-panel-list"></div>
       </div>
-      <div id="notif-panel-list"></div>
     </aside>
 
     <aside id="preview" hidden>
@@ -470,6 +471,13 @@
         <button id="agent-font-up" data-tip="Larger text">+</button>
       </span>
     </div>
+    <div class="kbd-row kbd-opt"><span>Agent pane text weight</span>
+      <span class="opt-ctl">
+        <button id="agent-weight-down" data-tip="Thinner agent text">−</button>
+        <span id="agent-weight-val">Normal</span>
+        <button id="agent-weight-up" data-tip="Thicker agent text — the light themes draw dark on light, which reads thinner">+</button>
+      </span>
+    </div>
     <div class="kbd-row kbd-opt"><span>Max simultaneous agents</span>
       <span class="opt-ctl">
         <button id="max-agents-down" data-tip="Allow fewer agents">−</button>
@@ -489,12 +497,6 @@
         <input type="checkbox" id="skip-permissions-toggle" data-tip="Launches new and restarted agents with --allow-dangerously-skip-permissions so claude's Shift+Tab mode cycle includes auto mode without activating it. Existing running agents need a restart to pick this up.">
       </span>
     </div>
-    <div class="kbd-row kbd-opt"><span>Enable Pi coding agent</span>
-      <span class="opt-ctl">
-        <span id="pi-status" class="stt-status"></span>
-        <input type="checkbox" id="enable-pi-toggle" data-tip="Adds an agent picker to + Coding Agent so each new session can be Claude or Pi (github.com/earendil-works/pi). Enabling downloads the latest Pi release from GitHub automatically — into WSL on Windows. A Pi you installed yourself is used as-is.">
-      </span>
-    </div>
     <div class="kbd-row kbd-opt"><span>Show last command in pane header</span>
       <span class="opt-ctl">
         <input type="checkbox" id="show-initial-cmd-toggle" data-tip="Shows a second header row under every pane's title with the most recently submitted command — a task's launch prompt until you type a new line, which then takes over.">
@@ -503,11 +505,6 @@
     <div class="kbd-row kbd-opt"><span>Show cost &amp; context panel</span>
       <span class="opt-ctl">
         <input type="checkbox" id="usage-panel-toggle" data-tip="Adds a panel to the bottom of every Claude pane: how full its context window is, what it has spent, cache hit rate, tokens per turn, how long the current turn has run, its share of the 5-hour limit and the last tools it used. Costs two rows of terminal height per pane.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Show Costs screen</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="costs-screen-toggle" data-tip="Shows the Costs tile in the left rail — spend per day, per workspace and per model. Off hides the tile and closes the screen; spend keeps being recorded either way, so turning it back on loses nothing.">
       </span>
     </div>
     <div class="kbd-row kbd-opt"><span>Auto-organize agent windows</span>
@@ -637,7 +634,6 @@
   <script src="topbar.js"></script>
   <script src="board.js"></script>
   <script src="skills.js"></script>
-  <script src="costs.js"></script>
   <script src="history.js"></script>
   <script src="swarmview.js"></script>
   <script src="timeline.js"></script>

@@ -5,8 +5,8 @@
  * IPC to a Whisper (faster-whisper) recognizer in WSL (install:
  * scripts/setup-stt.sh). Fully
  * offline — audio never leaves the machine. Exposes window.Speech:
- * { supported, start(opts), stop() }. Only one dictation session
- * runs app-wide at a time. */
+ * { wire(button, opts) }, which is how every mic button in the app is hooked
+ * up. Only one dictation session runs app-wide at a time. */
 const Speech = (() => {
   const supported = !!(window.swarm && window.swarm.speechStart && navigator.mediaDevices);
   let active = null; // { id, opts, stream, ctx }
@@ -148,6 +148,6 @@ const Speech = (() => {
     return { toggle, stop: () => { if (dictating) stop(); } };
   }
 
-  return { supported, start, stop, wire };
+  return { wire };
 })();
 window.Speech = Speech;

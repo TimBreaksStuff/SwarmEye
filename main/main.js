@@ -5,22 +5,19 @@ const config = require('./config');
 const { PtyManager, ROLES } = require('./sessions');
 const { UsageMonitor } = require('./usage');
 const { HookMonitor } = require('./hooks');
-const { SpendStore } = require('./spend');
 const { GitMonitor, listBranches, checkoutBranch, diffStat } = require('./git');
 const { HealthMonitor } = require('./health');
-const { listSessions: listHistory } = require('./history');
+const { listSessions: listHistory, readSession: readHistory, deleteSessions: deleteHistory } = require('./history');
 const { IS_WIN } = require('./platform');
 const { UpdateChecker } = require('./update');
 const { SpeechBridge } = require('./speech');
 const { SkillsManager } = require('./skills');
-const pi = require('./pi');
 
 let win = null;
 let ptys = null;
 let usage = null;
 let ptysReady = null;
 let hooks = null;
-let spend = null;
 let git = null;
 let health = null;
 let updates = null;
@@ -196,10 +193,30 @@ function createWindow() {
 }
 
 function registerIpc() {
-  // the palette rides along so the renderer's swatch picker doesn't keep a
-  // hand-synced copy of it — main owns the list (it assigns each new
-  // workspace's default and validates every pick against it)
-  ipcMain.handle('config:get', () => ({ ...config.load(), workspaceColors: config.WORKSPACE_COLORS }));
+  /* Only the fields the renderer actually reads. The rest of config.json is
+   * main's own bookkeeping — every session's persisted usage totals, the tmux
+   * session metadata, the installed-skills list, the last usage snapshot — and
+   * this file runs well into six figures of bytes once tasks start archiving
+   * their transcripts, so returning it whole was a boot payload nobody
+   * consumed.
+   *
+   * The colour palette rides along so the renderer's swatch picker doesn't
+   * keep a hand-synced copy of it — main owns the list (it assigns each new
+   * workspace's default and validates every pick against it). */
+  ipcMain.handle('config:get', () => {
+    const cfg = config.load();
+    return {
+      workspaces: cfg.workspaces,
+      archivedWorkspaces: cfg.archivedWorkspaces,
+      selectedWorkspaceId: cfg.selectedWorkspaceId,
+      maxAgents: cfg.maxAgents,
+      tasks: cfg.tasks,
+      archivedTasks: cfg.archivedTasks,
+      autoUsageLimit: cfg.autoUsageLimit,
+      skipPermissions: cfg.skipPermissions,
+      workspaceColors: config.WORKSPACE_COLORS,
+    };
+  });
 
   ipcMain.handle('config:set-max-agents', (e, n) => {
     const raw = Math.round(Number(n));
@@ -510,23 +527,46 @@ function registerIpc() {
     return ws ? listHistory(ws) : null;
   });
 
+  // one whole past conversation, for the History screen's transcript modal.
+  // The id lands in a shell command line — re-validate it here, the same
+  // shape session:create checks before passing one to `claude --resume`.
+  ipcMain.handle('history:read', (e, { workspaceId, id }) => {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    if (!ws || !/^[A-Za-z0-9-]{8,64}$/.test(String(id || ''))) return null;
+    return readHistory(ws, id);
+  });
+
+  /* the History screen's 🗑 Delete All: the conversations it listed, by id.
+   * Any transcript a running agent is still writing is kept back — unlinking
+   * one freezes that pane's cost panel, breaks its ☰ Transcript link, and
+   * leaves a later restart-with-resume `--continue`ing somebody else's thread,
+   * none of which the click asked for. The renderer is told how many it kept. */
+  ipcMain.handle('history:delete', async (e, { workspaceId, ids }) => {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    if (!ws || !Array.isArray(ids)) return { ok: false, deleted: 0, kept: 0 };
+    const live = new Set(hooks.transcriptIds(ptys.sessionIds()));
+    const wanted = ids.filter((id) => typeof id === 'string');
+    const doomed = wanted.filter((id) => !live.has(id));
+    const deleted = await deleteHistory(ws, doomed);
+    return { ok: deleted === doomed.length, deleted, kept: wanted.length - doomed.length };
+  });
+
   // role presets for the + Coding Agent picker — main owns the prompts and the
   // model each role is worth (sessions.js ROLES); the renderer only draws the
   // labels, so the two can never disagree about what a role means
   ipcMain.handle('roles:list', () => Object.entries(ROLES).map(([key, r]) => ({ key, label: r.label, model: r.model })));
 
-  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, kind, resumeId, role }) => {
+  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, resumeId, role }) => {
     await ptysReady;
     const cfg = config.load();
     const ws = cfg.workspaces.find((w) => w.id === workspaceId);
     if (!ws) { debugLog('[session:create] no-workspace ' + workspaceId); return { ok: false, reason: 'no-workspace' }; }
     try {
-      // kind lands in a shell command line — whitelist, don't pass through.
-      // resumeId is re-validated again in claudeBase, for the same reason.
-      // role is only ever a key into main's own table, never free text.
+      // resumeId is re-validated again in claudeBase, since it lands in a
+      // shell command line. role is only ever a key into main's own table,
+      // never free text.
       const session = ptys.spawn(ws, cols || 80, rows || 24, {
         model,
-        kind: kind === 'pi' ? 'pi' : undefined,
         role: Object.hasOwn(ROLES, String(role || '')) ? role : undefined,
         resume: /^[A-Za-z0-9-]{8,64}$/.test(String(resumeId || '')) ? resumeId : undefined,
       });
@@ -552,9 +592,7 @@ function registerIpc() {
         cols: payload.cols,
         rows: payload.rows,
         resume: !!payload.resume,
-        kind: payload.kind === 'pi' ? 'pi' : undefined,
         role: Object.hasOwn(ROLES, String(payload.role || '')) ? payload.role : undefined,
-        autoRestart: !!payload.autoRestart,
       });
       debugLog('[session:restart] ok ' + session.id + ' "' + session.agentName + '" wanted-resume=' + !!payload.resume + ' resumed=' + resumed);
       return { ok: true, session, resumed };
@@ -571,11 +609,6 @@ function registerIpc() {
 
   ipcMain.handle('session:set-last-command', (e, { id, cmd }) => {
     ptys.setLastCommand(id, cmd);
-    return { ok: true };
-  });
-
-  ipcMain.handle('session:set-auto-restart', (e, { id, on }) => {
-    ptys.setAutoRestart(id, on);
     return { ok: true };
   });
 
@@ -649,19 +682,7 @@ function registerIpc() {
 
   ipcMain.handle('usage:refresh', () => usage.refreshNow());
 
-  // cost rollup: the whole day/workspace/model tree, and the reset button
-  ipcMain.handle('spend:get', () => spend.all());
-  ipcMain.handle('spend:clear', () => spend.clear());
-
   ipcMain.handle('app:version', () => app.getVersion());
-  // Pi coding agent: presence check + install/update of the managed copy
-  // (the ⌨ Options toggle calls ensure when flipped on — see main/pi.js)
-  ipcMain.handle('pi:status', () => pi.status());
-  ipcMain.handle('pi:ensure', async () => {
-    const res = await pi.ensure();
-    debugLog('[pi] ensure ' + JSON.stringify(res));
-    return res;
-  });
 
   ipcMain.handle('update:download', () => updates.download());
   ipcMain.handle('update:install', () => updates.install());
@@ -738,8 +759,6 @@ app.whenReady().then(() => {
   ]));
   createWindow();
 
-  spend = new SpendStore({ debugLog, onChange: (data) => sendToWin('spend:update', data) });
-
   hooks = new HookMonitor({
     debugLog,
     // a Stop hook fires the instant the agent's turn ends, via fs.watch — that
@@ -749,12 +768,6 @@ app.whenReady().then(() => {
     onEvent: (id, payload) => {
       flushPtyBuffers();
       sendToWin('session:state', { id, ...payload });
-    },
-    // hooks knows the session, not the folder — resolve the workspace here (the
-    // pty manager owns that mapping) before the turn's spend is filed away
-    onSpend: (id, delta) => {
-      const s = ptys && ptys.sessions.get(id);
-      spend.add(s ? s.session.workspaceId : null, delta);
     },
   });
   hooks.init();
@@ -846,7 +859,6 @@ app.on('before-quit', (e) => {
   if (health) health.stop();
   if (updates) updates.stop();
   if (hooks) hooks.stop();
-  if (spend) spend.flush(); // the last few turns are still inside the write debounce
   if (ptys) ptys.shutdown();
 });
 

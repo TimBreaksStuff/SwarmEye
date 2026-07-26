@@ -7,7 +7,7 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
 ## Contents
 
 - [Key features](#key-features)
-  - [Cost & context panel](#cost--context-panel) · [Costs screen](#costs-screen) · [Swarm view](#swarm-view) · [Swarm timeline](#swarm-timeline) · [History](#history) · [Messages between agents](#messages-between-agents) · [Preview dock](#preview-dock)
+  - [Cost & context panel](#cost--context-panel) · [Swarm view](#swarm-view) · [Swarm timeline](#swarm-timeline) · [History](#history) · [Messages between agents](#messages-between-agents) · [Preview dock](#preview-dock)
 - [The task board](#the-task-board)
 - [Skills](#skills)
 - [Voice dictation](#voice-dictation)
@@ -29,7 +29,7 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
 
 ### Workspaces and the icon rail
 
-A vertical rail runs down the left side: the usage widget at the top, then each workspace as a tile, a dashed `+` tile that opens a folder picker, and the `Task Board` tile — pinned to the bottom are the swarm map status grid, `Swarm View`, the `🗃` archive, `Costs`, `Skills`, and `⚙` Options tiles.
+A vertical rail runs down the left side: the usage widget at the top, then each workspace as a tile, a dashed `+` tile that opens a folder picker, and the `Task Board` tile — pinned to the bottom are the swarm map status grid, `Swarm View`, the `🗃` archive, `History`, `Skills`, and `⚙` Options tiles.
 
 The selected tile decides which folder new agents start in. A tile whose agents need attention turns amber with a pulsing dot, and a corner badge shows its agent count. Hover a tile for a flyout with the full name and path — double-click the name there to rename, `📌` to pin it, or `✕` to archive it (running agents are killed after a confirm click). The `🗃` archive restores or permanently forgets archived workspaces; the folder on disk is never touched. Drag tiles to reorder them.
 
@@ -50,7 +50,7 @@ The rail comes **Expanded** (full workspace names, tile labels, radial usage gau
 | **Scout** | Haiku | Locate things and report where they are: paths with line numbers, call sites. Read only, keep it short. |
 | **Planner** | Opus | Turn the request into an ordered plan: files touched, steps, risks. Read only, don't write the code. |
 
-A role is launched as `--append-system-prompt`, so it costs no turn and never lands in the conversation as a message; its model tier is a default that the role picks *instead of* the Options default. The pane header wears the role as a chip, `→`/`↓` splits inherit it, and `↻` restart re-applies it (the system prompt belongs to the process, not to the resumed conversation). `Ctrl+N` always spawns a plain agent. Roles are Claude-only — a Pi pane never gets one. The table lives in `main/sessions.js`; the renderer only ever sees the labels.
+A role is launched as `--append-system-prompt`, so it costs no turn and never lands in the conversation as a message; its model tier is a default that the role picks *instead of* the Options default. The pane header wears the role as a chip, `→`/`↓` splits inherit it, and `↻` restart re-applies it (the system prompt belongs to the process, not to the resumed conversation). `Ctrl+N` always spawns a plain agent. The table lives in `main/sessions.js`; the renderer only ever sees the labels.
 
 Each pane header carries:
 
@@ -58,7 +58,7 @@ Each pane header carries:
 - **Mode dropdown** — `manual` (Claude asks before edits), `accept edits`, `plan`, `auto` (bypass permissions). Claude has no set-mode command for a running session, so SwarmEye reads the mode from Claude's own footer and taps `Shift+Tab` through the cycle until yours is active; it stays in sync if you switch modes by hand. `auto` requires the Options toggle below.
 - **Model chip** — which model the agent is actually replying with (`Sonnet 5`, `Opus 4.8`, …), read from the session transcript after each turn. A `/model` switch you run yourself shows up instantly.
 - **Git chip** — the folder's branch (`⎇ main`), amber with a dot when there are uncommitted changes. Refreshed every 15s. Click it and the popover opens with a **`git diff --stat` summary of the working tree** — staged and unstaged together, which is what "dirty" on the chip actually means — followed by a count of untracked files, which no diff reports. Under that is the branch list (local + remote, fetched fresh from the workspace's git remote): pick one to check it out, or `+ new branch…` to create one off the current HEAD; checkout errors (e.g. uncommitted changes in the way) show as a toast. The diff is read in parallel with the branch fetch, so it is up long before the network call finishes, and a long stat is elided in the middle with git's own "N files changed" line always kept.
-- **Buttons** — `↻` restart · `⤓` export transcript · `⧉` copy the last 200 lines (shift-click: the whole scrollback) · `⌕` in-pane search · mic (dictation) · `−`/`+` text size · `⛶` maximize · `→`/`↓` place a new agent beside/below (only with auto-organize off) · `✕` close (click twice while running).
+- **Buttons** — `↻` restart · `⤓` export transcript · `⌕` in-pane search · mic (dictation) · `−`/`+` text size · `⛶` maximize · `→`/`↓` place a new agent beside/below (only with auto-organize off) · `✕` close (click twice while running).
 - **Quick-respond** — while a pane is waiting on a numbered permission prompt (Claude's `1. Yes` / `2. No` style), it grows `✓` approve and `✕` deny buttons right next to the status text — no need to click into the terminal. Shift-click `✓` prefers a "don't ask again" / "allow all" option over a plain yes, if the prompt offers one. The same two buttons show up on `waiting` entries in the notification bell and its docked panel, and on the swarm view's nodes, rows and preview cards. They appear only while a yes/no menu is genuinely on screen: an agent that is merely waiting for you to type something — the commonest kind of `waiting`, and the only kind there is in bypass-permissions mode — says so without offering buttons that have nothing to answer. If the prompt is answered elsewhere between the buttons being drawn and clicked, nothing is sent and a toast says so instead of guessing.
 **The grid** auto-arranges (1 → 2×1 → 2×2 → 3×2 → 3×3 → 4×3) and refits terminals on resize. Turn **Auto-organize agent windows** off in Options to place agents yourself instead: each pane grows `→` and `↓` buttons that open the new agent beside or below it, and the column count stays where you put it. Panes are translucent glass; the focused pane wears a glowing accent border. Drag the gaps between panes to resize rows and columns, and drag a pane by its header onto another to swap them — your arrangement is remembered per workspace while the app runs. Terminals render on the GPU (WebGL, DOM fallback) and URLs in output are clickable. A pane in a workspace you haven't looked at for a minute **gives its GPU context back** — a browser page can only hold about sixteen at once, and every pane in every workspace holds one — and takes it again the moment you switch back. Nothing else changes: the agent, its output and its scrollback are untouched, since only the renderer is swapped for xterm's DOM one while nobody is watching.
 
@@ -87,21 +87,9 @@ Top row:
 
 Bottom row: a **burn sparkline** (tokens per turn, newest on the right), the **turn count**, a live **`working 2m14s` / `waiting 6m` / `idle` timer**, this agent's **estimated share of the 5-hour limit** — its slice of everything the swarm burned this window, applied to the window's own percentage, so it answers "which pane is eating my quota" — and the **last three tools** it ran.
 
-Everything comes from the session transcript Claude Code already writes; SwarmEye reads only the bytes appended since the previous turn, so this costs one small file read per turn and no API calls. A `≈` in front of the cost means the session was already long when SwarmEye started counting and the total is a floor. Pi panes don't get the panel — they report no usage.
+Everything comes from the session transcript Claude Code already writes; SwarmEye reads only the bytes appended since the previous turn, so this costs one small file read per turn and no API calls. A `≈` in front of the cost means the session was already long when SwarmEye started counting and the total is a floor.
 
 The panel costs two rows of terminal height in every pane, which is why it's opt-in.
-
-### Costs screen
-
-The `Costs` rail tile (in the bottom cluster, just above `Skills` — hide it with **Show Costs screen** in `⚙` Options) swaps the grid for the rollup the per-pane panel can't give you: that panel dies with its pane, so nothing accumulated — close an agent and its spend was gone. This screen keeps it, across agents, workspaces and days.
-
-Four cards at the top give **today**, **last 7 days**, **last 30 days** and **all time**. Below them a range picker (`Today` · `7 days` · `30 days` · `All time`) drives one headline line — spend, tokens and cache hit rate for that range — and three breakdowns, each row with a share bar so the shape is readable even when the numbers are small:
-
-- **By workspace**, in that workspace's identity colour. An archived workspace still shows what it spent, marked `(archived)`; spend whose agent was already gone when the turn was filed lands under `unattributed`.
-- **By model** — the one that matters most, since price per token differs by an order of magnitude across tiers. This is where you find out whether putting mechanical panes on Haiku actually saved anything.
-- **By day**, newest first, with `today` / `yesterday` spelled out.
-
-The numbers come from the same transcript reads as the pane panel — no extra API calls — and are list-price **estimates**, not a bill. Every turn's tokens are filed under the day and model of the transcript entry itself, so a session running past midnight splits across both days and an agent reattached from a previous run doesn't dump its backlog onto today. History is kept for 90 days; `🗑 Clear History` (click twice) forgets all of it.
 
 ### Swarm view
 
@@ -128,7 +116,7 @@ The **right dock** carries the detail. On top, the **activity list**: one row pe
 
 **Right-click empty map to start an agent there.** The map is laid out by workspace, so the spot you point at already says which project you mean: the form opens with the nearest workspace pre-selected (measured as things currently sit on screen, zoom and pan included) — override it in the picker if the guess is wrong. Type the first prompt in the box, or click the **mic** beside it and dictate it (see [Voice dictation](#voice-dictation)); leave it empty for a bare agent. Tick **auto-close once completed** and the agent is ended as soon as it finishes that turn — the map's equivalent of a task's *close on complete*, for the one-off agents you don't want to remember to close. `Launch agent`, or `Ctrl+Enter`; `Esc` dismisses the form and releases the mic. The view stays on the map, and the new agent simply appears as a node in its workspace's cluster.
 
-An agent blocked on a permission prompt gets `✓` and `✕` buttons on both its node and its row — shift-click `✓` to approve and stop it asking — so a swarm can be unblocked from the map without opening a single pane. Clicking an agent selects it (the dock follows); double-click jumps to its pane. `⤳ Click` in the header flips that: one click jumps straight there, like the rail's swarm-map slots. `+ Agent` starts a new one in the selected workspace, `Esc` or the tile closes the view, and — like the Task Board, Skills and Costs — it takes over the grid's slot rather than floating above it.
+An agent blocked on a permission prompt gets `✓` and `✕` buttons on both its node and its row — shift-click `✓` to approve and stop it asking — so a swarm can be unblocked from the map without opening a single pane. Clicking an agent selects it (the dock follows); double-click jumps to its pane. `⤳ Click` in the header flips that: one click jumps straight there, like the rail's swarm-map slots. `+ Agent` starts a new one in the selected workspace, `Esc` or the tile closes the view, and — like the Task Board, Skills and History — it takes over the grid's slot rather than floating above it.
 
 All motion respects `prefers-reduced-motion`.
 
@@ -307,7 +295,6 @@ The `⚙` tile at the bottom of the icon rail opens the Options panel. `↺ Rese
 | **Auto-start usage limit** | 85% | The ceiling an **auto** task waits for, on the 5-hour session usage window. 1–100%. |
 | **Allow auto mode (bypass permissions)** | off | Launches agents with `--allow-dangerously-skip-permissions` so `auto` becomes selectable in the mode cycle — *without* starting them in bypass mode. Also auto-accepts the one-time "Do you trust the files in this folder?" and "Running in Bypass Permissions mode" dialogs, since neither is covered by the flag itself. Picking `auto` as the default permission below turns this on automatically, as it's a hard prerequisite. |
 | **Show cost & context panel** | off | Adds a two-row footer to every Claude pane — context fullness, spend, cache hit rate, tokens per turn, turn timer, share of the 5-hour limit and the last tools run. See [Cost & context panel](#cost--context-panel). Costs two rows of terminal height per pane. |
-| **Show Costs screen** | on | Whether the `Costs` tile appears in the rail — see [Costs screen](#costs-screen). Off hides the tile and closes the screen if it's open; spend keeps being recorded either way, so turning it back on loses nothing. |
 | **Show initial command in pane header** | off | Adds a permanent second header row to every pane: the task prompt for a task-started agent, or the first line you typed for a manual one (best-effort — reconstructed from your keystrokes). |
 | **Auto-organize agent windows** | on | On: new agents are laid out into the automatic square-ish grid. Off: every pane grows `→` / `↓` buttons that place the next agent beside or below it, and the layout keeps the shape you built. |
 | **Default agent permissions** | manual | Presets the new-task form's mode picker, *and* is applied directly to agents started with `+ Coding Agent` / `Ctrl+N`. |
@@ -359,7 +346,7 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 | Past conversations (read-only, Claude Code's) | `~/.claude/projects/` (inside WSL) | `~/.claude/projects/` |
 | tmux config | `~/.config/swarmeye/tmux.conf` (inside WSL) | `~/.config/swarmeye/tmux.conf` |
 
-Workspaces, sessions, tasks, skills and every option live in a single `config.json`, written atomically. The cost rollup behind the Costs screen has its own `spend.json` beside it — it takes a write on every agent turn, so it stays out of the file that carries archived task transcripts.
+Workspaces, sessions, tasks, skills and every option live in a single `config.json`, written atomically.
 
 ---
 

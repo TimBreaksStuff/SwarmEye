@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { IS_WIN, exec, shQuote, toShellPath } = require('./platform');
+const { IS_WIN, exec, toShellPath } = require('./platform');
 
 /* macOS: node-pty's darwin prebuild execs a separate `spawn-helper` binary
  * to set up the pty before exec'ing the real command. Some zip
@@ -44,22 +44,51 @@ const SHELL = resolveShell();
 const TMUX_CONF = '~/.config/swarmeye/tmux.conf';
 const TMUX = `tmux -f ${TMUX_CONF} -L swarmeye`;
 
+/* Wheel-scroll. Mouse reporting is on, but the only mouse tmux ever sees is
+ * the wheel: pane.js still swallows xterm's own mouse-reporting requests, so
+ * clicks stay client-side (selection, the menu-option link provider) and
+ * never bounce click bytes into the pty, while wheel notches over a pane's
+ * output are synthesized as SGR mouse bytes for tmux.
+ *
+ * Where the notch then goes depends on what the pane is running. Claude Code
+ * paints on the alternate screen and turns SGR mouse reporting on, so tmux
+ * keeps no history for that pane at all (`alternate_on 1`, `history_size 0`)
+ * and copy mode would have nothing to scroll — the agent owns its transcript
+ * and scrolls it itself, so the notch is forwarded to it. Only a pane that
+ * never asked for the mouse (a plain shell) gets the copy-mode treatment,
+ * where tmux's history is the scrollback. */
+const WHEEL_LINES = [
+  'set -g mouse on',
+  // stock tmux burns the first notch entering copy mode; scroll on it too
+  'bind -n WheelUpPane if -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send -M" "copy-mode -e ; send -X -N 5 scroll-up"',
+  // the root table has no WheelDownPane at all by default, so scrolling back
+  // down did nothing: forward it, to the agent or to copy mode as above
+  'bind -n WheelDownPane send -M',
+  // typing must drop the pane back to the live view: the first write after a
+  // wheel notch is prefixed with M-q (see PtyManager.write). An agent that
+  // scrolled itself is told to jump to the bottom, a pane in copy mode has
+  // that cancelled by the copy-mode bindings below, and anything else gets a
+  // silent no-op so a stray M-q never reaches the agent.
+  'bind -n M-q if -F "#{mouse_any_flag}" "send-keys C-End" "set -g @swarmeye-noop 1"',
+  'bind -T copy-mode M-q send -X cancel',
+  'bind -T copy-mode-vi M-q send -X cancel',
+];
+
+/* an SGR wheel report (button 64 up / 65 down) — the only mouse tmux sees */
+const WHEEL_SGR_RE = /^\x1b\[<6[45];/;
+
 const CONF_LINES = [
   'set -s default-terminal tmux-256color',
   'set -s escape-time 0',
   'set -g status off',
-  // off: wheel-scroll and menu-option clicks are both handled client-side by
-  // xterm (scrollback below, the link provider in pane.js) — raw mouse
-  // reporting has no consumer here, it only bounces click bytes into the pty
-  // and echoes back as noise that fools the busy-heuristic on hookless panes
-  'set -g mouse off',
+  ...WHEEL_LINES,
   'set -g history-limit 20000', // keep in step with xterm's own scrollback cap in pane.js
   'set -g bell-action any',
   'set -g visual-bell off',
 ];
 
-/* tmux drops OSC 8 hyperlinks (pi's login URL) unless the attached client's
- * terminal is listed as hyperlinks-capable — xterm.js is (pane.js's
+/* tmux drops OSC 8 hyperlinks (an agent's login URL, say) unless the attached
+ * client's terminal is listed as hyperlinks-capable — xterm.js is (pane.js's
  * linkHandler), tmux just can't know that. Only meaningful on tmux >= 3.4
  * (where hyperlink forwarding exists), and kept out of CONF_LINES because
  * tmux < 3.2 errors on the option, which at server start surfaces as a
@@ -141,26 +170,6 @@ function claudeBase({ model, resume, role } = {}) {
   return cmd;
 }
 
-/* kind 'pi' runs the Pi coding agent (github.com/earendil-works/pi) instead
- * of claude. It gets no decoration: the model flag, permission flags and the
- * hook --settings wrapper are all Claude Code concepts, so pi panes fall back
- * to the output-timing status heuristics (same path as hookless claude). */
-function isPi(kind) {
-  return kind === 'pi';
-}
-
-/* PATH first (a pi the user installed themselves, or the managed symlink on
- * Linux/WSL where ~/.local/bin is on login-shell PATH), then the managed
- * install by explicit path — stock macOS has no user-writable directory on
- * PATH at all, so the copy main/pi.js lays down would otherwise be
- * unreachable. Same order pi.js status() reports, so what the Options row
- * says is what a pane runs. Each branch execs itself, so the no-tmux
- * fallback needs no `exec` prefix; no single quotes, so it survives the
- * tmux new-session '<cmd>' wrapping. */
-function piCmd(args = '') {
-  return `command -v pi >/dev/null 2>&1 && exec pi${args} || exec ~/.swarmeye/pi-agent/pi${args}`;
-}
-
 class PtyManager {
   constructor({ maxSessions, onData, onExit, debugLog, decorateCmd }) {
     this.maxSessions = maxSessions;
@@ -174,21 +183,30 @@ class PtyManager {
     this.shuttingDown = false;
   }
 
+  /* Every exec here is a shell spawn — a `wsl.exe` one on Windows, which costs
+   * a few hundred ms each — and this runs on the boot path before any agent
+   * can be reattached, so both halves are one round trip rather than seven:
+   * presence and version together, then the whole config in a single script. */
   async init() {
-    const found = await exec('command -v tmux');
-    this.tmuxOk = !!(found && found.trim());
+    const ver = await exec('command -v tmux >/dev/null && tmux -V');
+    this.tmuxOk = !!(ver && ver.trim());
     if (this.tmuxOk) {
-      const ver = /(\d+)\.(\d+)/.exec(await exec('tmux -V') || '');
-      const hyperlinksOk = !!ver && (+ver[1] > 3 || (+ver[1] === 3 && +ver[2] >= 4));
+      const m = /(\d+)\.(\d+)/.exec(ver);
+      const hyperlinksOk = !!m && (+m[1] > 3 || (+m[1] === 3 && +m[2] >= 4));
       const lines = hyperlinksOk ? CONF_LINES.concat(HYPERLINKS_LINE) : CONF_LINES;
       const conf = lines.map((l) => `'${l}'`).join(' ');
-      await exec(`mkdir -p ~/.config/swarmeye && printf '%s\\n' ${conf} > ${TMUX_CONF}`);
       // the conf only applies at server start, and the server outlives the
-      // app (that's the point) — apply to an already-running one too, once
+      // app (that's the point) — apply to an already-running one too, once.
+      // The wheel lines are plain sets and binds, so re-applying is a no-op.
+      const script = [
+        `mkdir -p ~/.config/swarmeye && printf '%s\\n' ${conf} > ${TMUX_CONF}`,
+        ...WHEEL_LINES.map((line) => `${TMUX} ${line} 2>/dev/null; true`),
+      ];
       if (hyperlinksOk) {
-        await exec(`${TMUX} show -s terminal-features 2>/dev/null | grep -q hyperlinks`
+        script.push(`${TMUX} show -s terminal-features 2>/dev/null | grep -q hyperlinks`
           + ` || ${TMUX} set -as terminal-features "*:hyperlinks" 2>/dev/null; true`);
       }
+      await exec(script.join('; '));
     }
     this.debugLog('[ptys] tmux ' + (this.tmuxOk ? 'available' : 'MISSING — sessions will not survive restarts'));
     return this.tmuxOk;
@@ -252,11 +270,10 @@ class PtyManager {
       tmuxName: 'swarmeye_' + id,
       createdAt: Date.now(),
     };
-    if (isPi(opts.kind)) meta.kind = 'pi';
     // persisted so a pane rebuilt from tmux after a restart still shows its
     // role chip — the flag itself is long gone by then, it lives in the process
-    if (!isPi(opts.kind) && ROLES[opts.role]) meta.role = opts.role;
-    return this._launch(meta, cols, rows, isPi(opts.kind) ? piCmd() : this.decorateCmd(id, claudeBase(opts)));
+    if (ROLES[opts.role]) meta.role = opts.role;
+    return this._launch(meta, cols, rows, this.decorateCmd(id, claudeBase(opts)));
   }
 
   /* Does this folder have a previous Claude conversation to continue?
@@ -268,25 +285,12 @@ class PtyManager {
     return !!(out && out.includes('yes'));
   }
 
-  /* Pi's equivalent: sessions live in ~/.pi/agent/sessions/--<cwd>--/, where
-   * <cwd> is the working directory with '/' replaced by '-' (other characters,
-   * including spaces, survive as-is — unlike Claude's munge). Globbed on both
-   * ends rather than reproducing the exact wrapping, and quoted because of
-   * those surviving spaces. */
-  async hasPiHistory(cwd) {
-    const munged = (toShellPath(cwd) || cwd).replace(/\//g, '-');
-    const out = await exec(`ls ~/.pi/agent/sessions/*${shQuote(munged)}*/*.jsonl >/dev/null 2>&1 && echo yes; true`);
-    return !!(out && out.includes('yes'));
-  }
-
   /* Respawn an exited agent in the same folder under the same name.
    * resume=true continues the last conversation in that directory —
-   * silently downgraded to a fresh session when there is none.
-   * autoRestart carries the pane's "restart me if I die" opt-in onto the new
-   * session, which is a new id with fresh metadata. */
-  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, kind, role, autoRestart }) {
+   * silently downgraded to a fresh session when there is none. */
+  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, role }) {
     if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
-    const resumed = resume ? await (isPi(kind) ? this.hasPiHistory(cwd) : this.hasHistory(cwd)) : false;
+    const resumed = resume ? await this.hasHistory(cwd) : false;
     // Checked here, right before the synchronous launch below, rather than
     // before the `await` above — two restarts racing the single remaining
     // slot would otherwise both pass the check while it awaited.
@@ -303,14 +307,10 @@ class PtyManager {
       tmuxName: 'swarmeye_' + id,
       createdAt: Date.now(),
     };
-    if (isPi(kind)) meta.kind = 'pi';
     // a restarted agent keeps the role it was launched with — the system
     // prompt has to be re-appended, it is not part of the resumed conversation
-    if (!isPi(kind) && ROLES[role]) meta.role = role;
-    if (autoRestart) meta.autoRestart = true;
-    const cmd = isPi(kind)
-      ? piCmd(resumed ? ' --continue' : '')
-      : this.decorateCmd(id, resumed ? claudeBase({ role }) + ' --continue' : claudeBase({ role }));
+    if (ROLES[role]) meta.role = role;
+    const cmd = this.decorateCmd(id, resumed ? claudeBase({ role }) + ' --continue' : claudeBase({ role }));
     const session = this._launch(meta, cols, rows, cmd);
     return { session, resumed };
   }
@@ -337,9 +337,7 @@ class PtyManager {
     rows = toDim(rows, 30, 300);
     const script = this.tmuxOk
       ? `exec ${TMUX} new-session -A -s ${meta.tmuxName} -x ${cols} -y ${rows} '${cmd || 'claude'}'`
-      : meta.kind === 'pi'
-        ? (cmd || piCmd()) // piCmd() is a self-exec'ing chain — an `exec` prefix would break it
-        : `exec ${cmd || 'claude'}`;
+      : `exec ${cmd || 'claude'}`;
     // Windows reaches the agent through WSL, which takes the working
     // directory as a flag rather than a spawn option; macOS spawns the login
     // shell directly. A login shell either way, so ~/.local/bin is on PATH
@@ -417,20 +415,25 @@ class PtyManager {
     if (meta) this._saveMeta({ ...meta, lastCommand: cmd });
   }
 
-  /* Per-pane "respawn me if I die" opt-in. Persisted on the session metadata
-   * like lastCommand, so it survives an app restart (the pane is rebuilt from
-   * this meta when the tmux session is reattached). */
-  setAutoRestart(id, on) {
-    const s = this.sessions.get(id);
-    if (s) s.session.autoRestart = !!on;
-    const cfg = config.load();
-    const meta = (cfg.sessions || {})[id];
-    if (meta) this._saveMeta({ ...meta, autoRestart: !!on });
-  }
-
+  /* Wheel notches reach a session as SGR mouse bytes (pane.js synthesizes
+   * them, see WHEEL_LINES) and can put tmux into copy mode, where anything
+   * typed next would be swallowed — so the first write that is not a wheel
+   * event leaves copy mode first. Every path that types at an agent goes
+   * through here, dispatched tasks included. M-q cancels copy mode and is
+   * bound to a no-op outside it, so the prefix is harmless when the pane
+   * never entered copy mode (an agent scrolling its own transcript) or
+   * already dropped out of it. Only with tmux, though: without it the prefix
+   * would reach the agent as a literal Alt+Q. */
   write(id, data) {
     const s = this.sessions.get(id);
-    if (s) s.proc.write(data);
+    if (!s) return;
+    if (this.tmuxOk && WHEEL_SGR_RE.test(data)) {
+      s.scrolledBack = true;
+    } else if (s.scrolledBack) {
+      s.scrolledBack = false;
+      data = '\x1bq' + data;
+    }
+    s.proc.write(data);
   }
 
   resize(id, cols, rows) {
@@ -471,6 +474,12 @@ class PtyManager {
 
   runningCount() {
     return this.sessions.size;
+  }
+
+  // the agents alive right now, for callers that need to leave what they are
+  // using alone (history:delete keeps their transcripts)
+  sessionIds() {
+    return [...this.sessions.keys()];
   }
 }
 

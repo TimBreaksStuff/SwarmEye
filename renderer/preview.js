@@ -16,7 +16,6 @@ const Preview = (() => {
   const MIN_WIDTH = 320;
   const urlKey = (wsId) => 'swarmeye.previewUrl.' + (wsId || 'none');
 
-  let handlers = null; // {getWorkspaceId}
   let workspaceId = null;
   let loaded = false; // the webview only loads a real page once the dock is opened
   let ready = false; // the guest is attached and can take a loadURL
@@ -116,9 +115,8 @@ const Preview = (() => {
     });
   }
 
-  function init(h) {
-    handlers = h;
-    workspaceId = handlers.getWorkspaceId();
+  function init({ getWorkspaceId }) {
+    workspaceId = getWorkspaceId();
     urlEl.value = storedUrl();
     wireResizer();
 
@@ -157,7 +155,7 @@ const Preview = (() => {
     webEl.addEventListener('did-finish-load', () => setMessage(''));
   }
 
-  return { init, toggle, setWorkspace, isOpen: () => !el.hidden };
+  return { init, setWorkspace };
 })();
 
 window.Preview = Preview;

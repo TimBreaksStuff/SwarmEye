@@ -67,17 +67,6 @@ function priceFor(model) {
   return FALLBACK_PRICE;
 }
 
-/* Local YYYY-MM-DD for a transcript entry's own ISO timestamp — the bucket key
- * the cost rollup (main/spend.js) accumulates into. Deliberately the entry's
- * time rather than now: a session reattached from a previous run has its whole
- * backlog read in one go, and a long session crosses midnight, so "when we read
- * it" would file both under the wrong day. */
-function dayKey(ts) {
-  let d = ts ? new Date(ts) : null;
-  if (!d || !Number.isFinite(d.getTime())) d = new Date();
-  return d.toLocaleDateString('en-CA'); // en-CA is ISO YYYY-MM-DD, in local time
-}
-
 /* The transcript bytes appended since `offset`, plus the file's current size.
  *
  * Windows reads it through the shell: the transcript belongs to the copy of
@@ -124,17 +113,18 @@ function readNew(filePath, offset, maxBytes) {
 }
 
 class HookMonitor {
-  constructor({ onEvent, onSpend, debugLog }) {
+  constructor({ onEvent, debugLog }) {
     this.onEvent = onEvent;
-    // per-turn spend, bucketed by day and model, for the cross-session rollup
-    // (main/spend.js). Optional: the per-pane panel works without it.
-    this.onSpend = onSpend || (() => {});
     this.debugLog = debugLog;
     this.stateDir = path.join(app.getPath('userData'), 'hook-state');
     this.settingsFile = path.join(app.getPath('userData'), 'hook-settings.json');
     this.seen = new Map(); // filename -> mtimeMs already processed
     this.models = new Map(); // sessionId -> last known model id (from the transcript)
     this.usage = new Map(); // sessionId -> accumulated transcript usage (see usageState)
+    // sessionId -> the conversation it is writing right now. Set from every
+    // hook event, so it is known from SessionStart onwards rather than only
+    // once a turn has ended (which is when `usage` first gets a path).
+    this.transcripts = new Map();
     this.watcher = null;
     this.sweepTimer = null;
     this.persistTimer = null; // coalesces the usage writes (see persistUsage)
@@ -217,11 +207,19 @@ class HookMonitor {
         this.usageState(sessionId, payload.transcript_path).turns++;
         this.refreshFromTranscript(sessionId, payload.transcript_path);
       }
+      // which Claude conversation this agent is writing — the History screen
+      // takes the same id, so a notification can open the full transcript, and
+      // history:delete can refuse to unlink it
+      const transcript = typeof payload.transcript_path === 'string'
+        ? path.basename(payload.transcript_path, '.jsonl')
+        : null;
+      if (transcript) this.transcripts.set(sessionId, transcript);
       this.onEvent(sessionId, {
         event,
         tool: typeof payload.tool_name === 'string' ? payload.tool_name.slice(0, 40) : null,
         message: typeof payload.message === 'string' ? payload.message.slice(0, 200) : null,
         model: this.models.get(sessionId) || null,
+        transcript,
       });
     }
   }
@@ -339,9 +337,17 @@ class HookMonitor {
       if (live.has(id)) continue;
       this.usage.delete(id);
       this.models.delete(id);
+      this.transcripts.delete(id);
       dropped = true;
     }
     if (dropped) this.persistUsage();
+  }
+
+  /* The conversation each of these sessions is writing right now. history:delete
+   * asks before removing transcripts, so a running agent never loses the file
+   * it is appending to. */
+  transcriptIds(sessionIds) {
+    return sessionIds.map((id) => this.transcripts.get(id)).filter(Boolean);
   }
 
   /* Read whatever the transcript gained since the last turn, and fold it into
@@ -367,9 +373,6 @@ class HookMonitor {
       let model = null;
       let turnTokens = 0;
       let summary = ''; // the newest assistant text block — what the agent said last
-      // what these bytes added, split by the day and model they belong to —
-      // handed to onSpend below so the rollup can accumulate across sessions
-      const delta = {};
       for (const line of res.text.split('\n')) {
         if (!line || line.charCodeAt(0) !== 123 /* { */) continue;
         let entry;
@@ -419,15 +422,6 @@ class HookMonitor {
         st.cost += cost;
         turnTokens += input + output + cacheRead + cacheWrite;
 
-        const day = dayKey(entry.timestamp);
-        const byModel = delta[day] || (delta[day] = {});
-        const id = msg.model || 'unknown';
-        const bucket = byModel[id] || (byModel[id] = { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
-        bucket.cost += cost;
-        bucket.input += input;
-        bucket.output += output;
-        bucket.cacheRead += cacheRead;
-        bucket.cacheWrite += cacheWrite;
         if (msg.model) model = msg.model;
         // the newest main-chain prompt IS the live context size; sub-agent
         // (sidechain) turns run in their own window and must not stomp it
@@ -437,7 +431,6 @@ class HookMonitor {
       if (turnTokens > 0) {
         st.series.push({ t: Date.now(), tokens: turnTokens });
         if (st.series.length > USAGE_SERIES_MAX) st.series.shift();
-        this.onSpend(sessionId, delta);
       }
       if (model && this.models.get(sessionId) !== model) {
         this.models.set(sessionId, model);

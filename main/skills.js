@@ -32,6 +32,17 @@ function pathQ(p) {
   return sp === null ? null : shQuote(sp);
 }
 
+/* A clone's branch and short commit in one shell round trip — two execs is two
+ * `wsl.exe` spawns for two lines of output. Command substitution strips the
+ * trailing newlines, so printf always yields exactly two lines even when a
+ * rev-parse fails and its half comes back empty. */
+async function headInfo(dirQ) {
+  const out = await exec(`printf '%s\\n%s\\n' "$(git -C ${dirQ} rev-parse --abbrev-ref HEAD 2>/dev/null)"`
+    + ` "$(git -C ${dirQ} rev-parse --short HEAD 2>/dev/null)"`);
+  const [branch = '', commit = ''] = String(out || '').split('\n');
+  return { branch: branch.trim(), commit: commit.trim() };
+}
+
 function slug(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9-]/g, '-');
 }
@@ -203,9 +214,9 @@ class SkillsManager {
       return { ok: false, reason: 'clone-failed' };
     }
 
-    const dirQ = destQ;
-    const branch = (await exec(`git -C ${dirQ} rev-parse --abbrev-ref HEAD`) || '').trim() || 'main';
-    const commit = (await exec(`git -C ${dirQ} rev-parse --short HEAD`) || '').trim();
+    const head = await headInfo(destQ);
+    const branch = head.branch || 'main';
+    const commit = head.commit;
 
     const relPaths = await this._findSkillDirs(toShellPath(dest));
     if (!relPaths.length) {
@@ -338,8 +349,9 @@ class SkillsManager {
     const out = await exec(`git -C ${dirQ} pull --ff-only 2>&1; echo EXIT:$?`, 30000);
     if (out == null || !/EXIT:0/.test(out)) return { ok: false, reason: 'pull-failed' };
 
-    const branch = (await exec(`git -C ${dirQ} rev-parse --abbrev-ref HEAD`) || '').trim() || skill.branch;
-    const commit = (await exec(`git -C ${dirQ} rev-parse --short HEAD`) || '').trim() || skill.commit;
+    const head = await headInfo(dirQ);
+    const branch = head.branch || skill.branch;
+    const commit = head.commit || skill.commit;
     for (const s of cfg.skills || []) {
       if (s.repoId !== skill.repoId) continue;
       const meta = readSkillMeta(this._skillDir(s), s.name);

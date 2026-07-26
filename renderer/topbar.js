@@ -31,6 +31,10 @@ const Topbar = (() => {
   // flyout-open (openWorkspaceFlyout, used after "add workspace") can rebuild it
   let railCtx = { workspaces: [], counts: {}, handlers: null };
   const tileById = new Map();
+  // what the rail and the archive popover last drew — see the guards in
+  // renderWorkspaces / renderArchive
+  let railSig = null;
+  let archiveSig = null;
   flyout.addEventListener('mouseenter', () => clearTimeout(flyoutHideTimer));
   flyout.addEventListener('mouseleave', scheduleHideFlyout);
 
@@ -115,6 +119,18 @@ const Topbar = (() => {
     if (flyout.querySelector('[contenteditable]')) return;
     if (flyoutWsId && !workspaces.some((w) => w.id === flyoutWsId)) hideFlyout();
     railCtx = { workspaces, counts, handlers };
+    /* The rail is rebuilt from scratch here — a tile, its badges and eight
+     * listeners per workspace — and app.js re-syncs the chrome on every agent
+     * status flip, which with a busy swarm is several times a second, while
+     * the rail itself changes almost never. Redraw only when something it
+     * actually paints has moved. (railCtx is refreshed above regardless, so
+     * openWorkspaceFlyout keeps working off the live objects.) */
+    const sig = JSON.stringify([selectedId, workspaces.map((w) => {
+      const c = counts[w.id] || { n: 0, attn: false };
+      return [w.id, w.name, w.color, !!w.pinned, c.n, !!c.attn];
+    })]);
+    if (sig === railSig) return;
+    railSig = sig;
     tileById.clear();
     workspacesEl.innerHTML = '';
     workspaces.forEach((ws) => {
@@ -287,6 +303,39 @@ const Topbar = (() => {
     return wrap;
   }
 
+  /* the two per-notification actions: jump to the pane, or read the whole
+   * conversation in the History modal. The transcript id comes from the hook
+   * payload, so a pane whose hooks never reported one (an old reattached
+   * session) gets a disabled button rather than a missing one. */
+  function notifActionButtons(n, handlers) {
+    const wrap = document.createElement('div');
+    wrap.className = 'notif-acts';
+
+    const go = document.createElement('button');
+    go.className = 'notif-act';
+    go.textContent = '↗ Agent';
+    go.dataset.tip = 'Jump to this agent';
+    go.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handlers.onOpen(n.paneId);
+    });
+
+    const script = document.createElement('button');
+    script.className = 'notif-act';
+    script.textContent = '☰ Transcript';
+    script.disabled = !n.transcriptId;
+    script.dataset.tip = n.transcriptId
+      ? 'Read the whole conversation'
+      : 'No transcript recorded for this agent';
+    script.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handlers.onTranscript(n);
+    });
+
+    wrap.append(go, script);
+    return wrap;
+  }
+
   function renderNotifications(notifs, unread, handlers) {
     notifBtn.classList.toggle('unread', unread > 0); // amber bell = something new
     notifBadge.hidden = unread === 0;
@@ -359,6 +408,7 @@ const Topbar = (() => {
         cmd.append(bar, cmdText);
         body.appendChild(cmd);
       }
+      body.appendChild(notifActionButtons(n, handlers));
 
       const time = document.createElement('span');
       time.className = 'notif-time';
@@ -447,6 +497,7 @@ const Topbar = (() => {
       time.className = 'notif-panel-time';
       time.textContent = fmtFull(n.time);
       body.appendChild(time);
+      body.appendChild(notifActionButtons(n, handlers));
 
       row.append(dot, body);
       if (n.kind === 'wait' && n.canRespond) row.append(notifRespondButtons(n, handlers));
@@ -458,6 +509,11 @@ const Topbar = (() => {
    * The ✕ is click-twice-to-confirm via Confirm, whose arm state outlives the
    * rebuild this popover gets on every agent status flip. */
   function renderArchive(archived, handlers) {
+    // rebuilt on the same beat as the rail above, and just as static — skip it
+    // unless the archived list itself changed
+    const sig = archived.map((ws) => ws.id + ' ' + ws.name + ' ' + ws.path).join('');
+    if (sig === archiveSig) return;
+    archiveSig = sig;
     archiveBtn.style.display = archived.length ? '' : 'none';
     archiveBtn.querySelectorAll('.rail-n').forEach((el) => el.remove());
     if (archived.length) {

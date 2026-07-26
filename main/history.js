@@ -17,6 +17,9 @@ const { claudeProjectDirName } = require('./sessions');
 // newest first, and only this many — a long-lived project accumulates
 // hundreds of transcripts and nobody scrolls past the recent ones
 const MAX_SESSIONS = 60;
+// how many of those the History screen itself shows; everything older is
+// flagged archived, so the screen's archive section can hold it instead
+const RECENT_MAX = 15;
 // how much of a user line is pulled out for the preview; a transcript line
 // can be megabytes, so this is a hard cut before it crosses back into the
 // main process
@@ -93,6 +96,68 @@ function previewOf(raw) {
   return fallback.slice(0, 300);
 }
 
+/* ---- reading one transcript back out ---- */
+
+// hard cap on how much of a transcript is pulled back; a long session's
+// .jsonl runs to tens of megabytes and the modal only has to be readable
+const READ_MAX = 16 * 1024 * 1024;
+// per-turn cut, so one pasted build log can't dominate the whole view
+const TURN_CHARS = 8000;
+// and a tool's arguments/output are summarised harder still
+const TOOL_CHARS = 2000;
+
+function cut(s, n) {
+  return s.length > n ? s.slice(0, n) + `\n… (${s.length - n} more characters)` : s;
+}
+
+/* One content block as a line of transcript. Thinking blocks are dropped —
+ * they're mostly signature blobs and carry no readable text in the file. */
+function blockText(b) {
+  if (typeof b === 'string') return b;
+  if (!b || typeof b !== 'object') return '';
+  if (b.type === 'text') return String(b.text || '');
+  if (b.type === 'tool_use') {
+    const input = b.input == null ? '' : (typeof b.input === 'string' ? b.input : JSON.stringify(b.input));
+    return `⚙ ${b.name || 'tool'}  ${cut(input, TOOL_CHARS)}`;
+  }
+  if (b.type === 'tool_result') {
+    const c = b.content;
+    const text = typeof c === 'string' ? c
+      : Array.isArray(c) ? c.map(blockText).filter(Boolean).join('\n')
+      : c == null ? '' : JSON.stringify(c);
+    return '⤷ ' + cut(text, TOOL_CHARS);
+  }
+  return '';
+}
+
+/* The whole conversation, as turns the History modal can paint. Same shell
+ * read as listSessions — on Windows the file lives inside WSL. */
+async function readSession(ws, id) {
+  const f = '~/.claude/projects/' + shQuote(claudeProjectDirName(ws.path)) + '/' + shQuote(id + '.jsonl');
+  const out = await exec(`head -c ${READ_MAX} ${f} 2>/dev/null`, 30000, { maxBuffer: READ_MAX + 1024 * 1024 });
+  if (out == null) return null; // shell unreachable, or no such transcript
+  const turns = [];
+  for (const line of out.split('\n')) {
+    if (!line.trim()) continue;
+    let o;
+    try { o = JSON.parse(line); } catch { continue; } // the last line may be cut by READ_MAX
+    if (o.isMeta) continue;
+    if (o.type !== 'user' && o.type !== 'assistant') continue;
+    const content = o.message && o.message.content;
+    const text = (typeof content === 'string' ? content
+      : Array.isArray(content) ? content.map(blockText).filter(Boolean).join('\n\n')
+      : '').trim();
+    if (!text) continue;
+    turns.push({
+      role: o.type,
+      text: cut(text, TURN_CHARS),
+      at: Date.parse(o.timestamp) || 0,
+      sub: !!o.isSidechain, // a subagent's turn, not the main thread's
+    });
+  }
+  return turns;
+}
+
 async function listSessions(ws) {
   const out = await exec(listScript(claudeProjectDirName(ws.path)), 25000, { maxBuffer: 4 * 1024 * 1024 });
   if (out == null) return null; // shell unreachable — the caller says so rather than "none"
@@ -107,9 +172,27 @@ async function listSessions(ws) {
       modifiedAt: (parseInt(mtime, 10) || 0) * 1000,
       size: parseInt(size, 10) || 0,
       preview: previewOf(rest.join('\t')),
+      // ls -1t is newest first, so position is age
+      archived: sessions.length >= RECENT_MAX,
     });
   }
   return sessions;
 }
 
-module.exports = { listSessions };
+/* Permanently delete these conversations. The ids are the rows the History
+ * screen listed — deleting exactly those, rather than re-deriving a set from
+ * `ls -1t` at this point, is what keeps the deletion to what the user was
+ * looking at: the folder can have gained a transcript since the list was read.
+ * Each id still goes through the same shape check history:read applies, since
+ * it lands on a shell command line. This is final: the .jsonl is the file
+ * `claude --resume` reads, so the conversation is gone with it. */
+async function deleteSessions(ws, ids) {
+  const safe = ids.filter((id) => /^[A-Za-z0-9-]{8,64}$/.test(String(id || '')));
+  if (!safe.length) return 0;
+  const d = '~/.claude/projects/' + shQuote(claudeProjectDirName(ws.path));
+  const files = safe.map((id) => `${d}/${shQuote(id + '.jsonl')}`).join(' ');
+  const out = await exec(`rm -f ${files} && echo ok`, 30000);
+  return out != null && out.trim().endsWith('ok') ? safe.length : 0;
+}
+
+module.exports = { listSessions, readSession, deleteSessions };
