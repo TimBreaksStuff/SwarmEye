@@ -16,7 +16,6 @@ const swarmViewBtn = document.getElementById('swarm-view-btn');
 
 const state = {
   workspaces: [],
-  archived: [], // removed workspaces, restorable from the 🗃 popover
   selectedWorkspaceId: null,
   panes: new Map(), // sessionId -> Pane (all workspaces)
   lastFocused: null,
@@ -84,7 +83,6 @@ function syncChromeNow() {
     onSetColor: setWorkspaceColor,
     onSetPinned: setWorkspacePinned,
   });
-  Topbar.renderArchive(state.archived, archiveHandlers);
   const wsColor = {};
   for (const ws of state.workspaces) wsColor[ws.id] = ws.color;
   Topbar.renderSwarmMap([...state.panes.values()], maxAgents, notifHandlers.onOpen, wsColor);
@@ -170,11 +168,10 @@ async function removeWorkspace(id) {
 
   const res = await window.swarm.removeWorkspace(id);
   state.workspaces = res.workspaces;
-  state.archived = res.archivedWorkspaces || state.archived;
   state.selectedWorkspaceId = res.selectedWorkspaceId;
   syncGrid();
   syncChrome();
-  toast('workspace archived — bring it back via 🗃');
+  toast('workspace removed');
 }
 
 async function renameWorkspace(id, name) {
@@ -218,22 +215,6 @@ function reorderWorkspaces(dragId, targetId, before) {
   syncChrome();
   window.swarm.reorderWorkspaces(list.map((w) => w.id));
 }
-
-const archiveHandlers = {
-  async onRestore(id) {
-    const res = await window.swarm.restoreWorkspace(id);
-    state.workspaces = res.workspaces;
-    state.archived = res.archivedWorkspaces || [];
-    if (res.selectedWorkspaceId) state.selectedWorkspaceId = res.selectedWorkspaceId;
-    syncGrid();
-    syncChrome();
-  },
-  async onPurge(id) {
-    const res = await window.swarm.purgeWorkspace(id);
-    state.archived = res.archivedWorkspaces || [];
-    syncChrome();
-  },
-};
 
 async function addWorkspace() {
   const res = await window.swarm.addWorkspace();
@@ -371,7 +352,6 @@ const ESCAPABLE = [
   [() => msgPopEl, () => Messenger.close()],
   [() => kbdShortcutsPop, () => { kbdShortcutsPop.hidden = true; }],
   [() => kbdPop, () => { kbdPop.hidden = true; }],
-  [() => archivePopEl, () => { archivePopEl.hidden = true; }],
   // above the notification entries: the transcript modal is opened from them,
   // so it has to be the innermost thing Escape closes
   [() => document.getElementById('hist-modal'), () => History.closeModal()],
@@ -400,13 +380,13 @@ kbdHelpBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   if (kbdPop.hidden) {
     closeNotifPop(); // popovers are mutually exclusive
-    // anchor the popover to the right of the gear tile — it sits at the
-    // bottom of the icon rail, so it opens beside the rail, bottom-aligned
+    // anchor the popover below the gear button — it sits in the top bar's
+    // icon group, so it drops down right-aligned with the button
     const r = kbdHelpBtn.getBoundingClientRect();
-    kbdPop.style.top = '';
-    kbdPop.style.right = '';
-    kbdPop.style.left = Math.round(r.right + 12) + 'px';
-    kbdPop.style.bottom = Math.max(8, Math.round(window.innerHeight - r.bottom)) + 'px';
+    kbdPop.style.bottom = '';
+    kbdPop.style.left = '';
+    kbdPop.style.top = Math.round(r.bottom + 8) + 'px';
+    kbdPop.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
   }
   kbdPop.hidden = !kbdPop.hidden;
   if (kbdPop.hidden) kbdShortcutsPop.hidden = true;
@@ -418,9 +398,9 @@ document.addEventListener('click', (e) => {
 
 /* keyboard-shortcuts submenu — a nested popover launched from a button inside
  * the Options popover. It anchors beside kbd-pop itself rather than below the
- * button: the button sits near the bottom of kbd-pop's content and kbd-pop is
- * itself bottom-anchored near the edge of the viewport, so opening downward
- * would risk running off-screen the same way the Archived popover once did. */
+ * button: the button sits near the bottom of kbd-pop's content, so opening
+ * downward would risk running off-screen the way the Archived popover once
+ * did. kbd-pop hangs off the right edge now, so this one opens to its left. */
 const kbdShortcutsPop = document.getElementById('kbd-shortcuts-pop');
 const kbdShortcutsBtn = document.getElementById('kbd-shortcuts-btn');
 kbdShortcutsBtn.addEventListener('click', (e) => {
@@ -428,31 +408,14 @@ kbdShortcutsBtn.addEventListener('click', (e) => {
   if (kbdShortcutsPop.hidden) {
     const popRect = kbdPop.getBoundingClientRect();
     const btnRect = kbdShortcutsBtn.getBoundingClientRect();
-    kbdShortcutsPop.style.left = Math.round(popRect.right + 12) + 'px';
+    kbdShortcutsPop.style.left = '';
+    kbdShortcutsPop.style.right = Math.min(
+      Math.round(window.innerWidth - popRect.left + 12),
+      Math.max(8, window.innerWidth - 408)
+    ) + 'px';
     kbdShortcutsPop.style.bottom = Math.max(8, Math.round(window.innerHeight - btnRect.bottom)) + 'px';
   }
   kbdShortcutsPop.hidden = !kbdShortcutsPop.hidden;
-});
-
-/* archive popover */
-const archivePopEl = document.getElementById('archive-pop');
-const archiveBtnEl = document.getElementById('archive-btn');
-archiveBtnEl.addEventListener('click', (e) => {
-  e.stopPropagation();
-  if (archivePopEl.hidden) {
-    // anchor above the button, bottom-aligned — archive-btn sits in the
-    // rail's bottom cluster (above Skills/Options), so opening downward
-    // from r.bottom can push the popover below the viewport (same fix as
-    // the #kbd-help popover just below it)
-    const r = archiveBtnEl.getBoundingClientRect();
-    archivePopEl.style.top = '';
-    archivePopEl.style.bottom = Math.max(8, Math.round(window.innerHeight - r.top + 8)) + 'px';
-    archivePopEl.style.left = Math.max(8, Math.round(r.left)) + 'px';
-  }
-  archivePopEl.hidden = !archivePopEl.hidden;
-});
-document.addEventListener('click', (e) => {
-  if (!archivePopEl.hidden && !archivePopEl.contains(e.target)) archivePopEl.hidden = true;
 });
 
 /* notification center: history of agent events (finished / waiting / exited) */
@@ -613,7 +576,7 @@ function makeZoomControl({ storageKey, elements, valueEl, downId, upId }) {
 }
 
 /* menu-bar (top bar + icon rail) scale, plus the sub-menus anchored to it
- * (search, notifications, archive). The options popover is excluded: its text
+ * (search, notifications). The options popover is excluded: its text
  * size is owned by "Task board, Skills & Options text size" instead. */
 const applyTopbarZoom = makeZoomControl({
   storageKey: 'swarmeye.topbarZoom',
@@ -623,7 +586,6 @@ const applyTopbarZoom = makeZoomControl({
     document.getElementById('gsearch'),
     document.getElementById('msg-pop'),
     notifPopEl,
-    archivePopEl,
   ],
   valueEl: document.getElementById('ui-font-val'),
   downId: 'ui-font-down',
@@ -2377,7 +2339,6 @@ document.fonts.ready.then(() => {
   const cfg = await window.swarm.getConfig();
   Topbar.setWorkspaceColors(cfg.workspaceColors); // before the first renderWorkspaces
   state.workspaces = cfg.workspaces || [];
-  state.archived = cfg.archivedWorkspaces || [];
   state.selectedWorkspaceId = cfg.selectedWorkspaceId || null;
   maxAgents = cfg.maxAgents || 10;
   maxAgentsVal.textContent = maxAgents;

@@ -1,0 +1,409 @@
+/* SwarmEye — clean top bar + left bar
+ * Drop-in override sheet. Load AFTER styles/app.css:
+ *   <link rel="stylesheet" href="styles/chrome-clean.css" />
+ * Uses only tokens from styles/tokens.css, so every theme still works.
+ * The left-bar reordering is done with flex `order`, so index.html needs
+ * only ONE markup change: move #kbd-help (Options) into #topbar.
+ */
+
+/* ============================ TOP BAR ============================ */
+
+#topbar {
+  height: 52px;
+  padding: 0 16px;
+  gap: 14px;
+  background: var(--surface);
+  backdrop-filter: none;                 /* flat, no glass */
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+#logo { margin-right: 0; font-size: 13px; }
+#logo .logo-icon { width: 24px; height: 24px; }
+
+/* status counter, grouped and held to one line */
+#session-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* hairline between the counter and the icon group */
+#session-count::after {
+  content: '';
+  display: inline-block;
+  width: 1px;
+  height: 20px;
+  margin-left: 14px;
+  vertical-align: -6px;
+  background: var(--border2);
+}
+
+/* square-ish icon buttons instead of round glass pills */
+#topbar > #gsearch-btn,
+#topbar > #msg-btn,
+#topbar > #preview-btn,
+#topbar > #notif-btn,
+#topbar > #kbd-help {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: transparent;
+  backdrop-filter: none;
+  color: var(--text2);
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+#topbar > #gsearch-btn:hover,
+#topbar > #msg-btn:hover,
+#topbar > #preview-btn:hover,
+#topbar > #notif-btn:hover,
+#topbar > #kbd-help:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+  background: var(--hover);
+}
+#topbar > #gsearch-btn svg,
+#topbar > #msg-btn svg,
+#topbar > #preview-btn svg,
+#topbar > #notif-btn svg,
+#topbar > #kbd-help svg { width: 15px; height: 15px; display: block; }
+
+/* Options lives in the top bar now — no name, no rail tile look */
+#topbar > #kbd-help { border-radius: 8px; width: 30px; height: 30px; }
+#topbar > #kbd-help .rail-tile-name { display: none !important; }
+
+/* notifications keep the amber attention state, minus the glow */
+#topbar > #notif-btn {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+  box-shadow: none;
+}
+#notif-n {
+  top: -5px; right: -5px;
+  min-width: 15px; height: 15px;
+  border-radius: 8px;
+  font-size: 9px; line-height: 15px;
+}
+
+/* one primary action, rectangular */
+#add-agent {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: none;
+}
+#add-agent:hover:not(:disabled) { transform: none; box-shadow: none; filter: brightness(1.08); }
+
+/* ============================ LEFT BAR ============================ */
+
+#leftbar.expanded { width: 232px; }
+#leftbar.expanded #leftbar-surface,
+#leftbar.hover-expanded #leftbar-surface {
+  width: 232px;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;                       /* the workspace list scrolls, not the rail */
+  background: var(--surface);
+  box-shadow: none;
+  border-color: var(--border);
+}
+
+/* --- order: usage → workspaces → swarm → destinations (bottom) --- */
+#leftbar.expanded #usage,
+#leftbar.hover-expanded #usage { order: 1; }
+#leftbar.expanded #usage-gauges,
+#leftbar.hover-expanded #usage-gauges { order: 1; }
+/* the section head replaces the hairline that used to split usage off */
+#leftbar.expanded .rail-div,
+#leftbar.hover-expanded .rail-div { display: none; }
+#leftbar.expanded .ws-head,
+#leftbar.hover-expanded .ws-head {
+  order: 2;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 12px 14px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* the list is only as tall as its workspaces — it shrinks and scrolls when
+ * they outgrow the rail, and the spacer below takes whatever is left, so
+ * "+ Add workspace" always sits directly under the last folder */
+#leftbar.expanded #workspaces,
+#leftbar.hover-expanded #workspaces {
+  order: 3;
+  flex: 0 1 auto;
+  min-height: 44px;
+  padding: 0 10px;
+  gap: 2px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+#leftbar.expanded #add-workspace,
+#leftbar.hover-expanded #add-workspace { order: 4; margin: 2px 10px 10px; }
+#leftbar.expanded .leftbar-spacer,
+#leftbar.hover-expanded .leftbar-spacer { order: 5; flex: 1 1 auto; }
+#leftbar.expanded #swarm-map,
+#leftbar.hover-expanded #swarm-map {
+  order: 6;
+  /* auto, not the 100% app.css sets: with 100% the side margins were added on
+   * top of the full rail width, so the strip hung ~24px past the rail's edge
+   * and its right-hand counts were cut off by it */
+  width: auto;
+  margin: 0 12px 10px;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+#leftbar.expanded #board-btn,       #leftbar.hover-expanded #board-btn       { order: 7; }
+#leftbar.expanded #swarm-view-btn,  #leftbar.hover-expanded #swarm-view-btn  { order: 8; }
+#leftbar.expanded #history-btn,     #leftbar.hover-expanded #history-btn     { order: 9; }
+#leftbar.expanded #skills-btn,      #leftbar.hover-expanded #skills-btn      { order: 10; }
+#leftbar.expanded #board-btn,
+#leftbar.expanded #swarm-view-btn,
+#leftbar.expanded #history-btn,
+#leftbar.expanded #skills-btn,
+#leftbar.hover-expanded #board-btn,
+#leftbar.hover-expanded #swarm-view-btn,
+#leftbar.hover-expanded #history-btn,
+#leftbar.hover-expanded #skills-btn { margin: 0 10px 2px; }
+#leftbar.expanded #skills-btn,
+#leftbar.hover-expanded #skills-btn { margin-bottom: 12px; }
+/* Options moved to the top bar */
+#leftbar #kbd-help { display: none; }
+
+/* --- usage: two labelled bars at the top --- */
+/* the collapsed rail wants the tracks as its own flex children (two 6px
+ * columns), so the row wrapper disappears there and its head with it */
+.u-row { display: contents; }
+.u-head { display: none; }
+/* the 66px rail has no room for a section head either */
+.ws-head { display: none; }
+
+#leftbar.expanded #usage,
+#leftbar.hover-expanded #usage {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;          /* the rail's flex-end would collapse the bars */
+  gap: 14px;
+  width: auto;
+  height: auto;
+  padding: 16px 14px 4px;
+  cursor: pointer;
+}
+#leftbar.expanded .u-row,
+#leftbar.hover-expanded .u-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+#leftbar.expanded .u-head,
+#leftbar.hover-expanded .u-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+#leftbar.expanded .u-label,
+#leftbar.hover-expanded .u-label {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#leftbar.expanded .u-pct,
+#leftbar.hover-expanded .u-pct {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+#leftbar.expanded #u-7d .u-pct,
+#leftbar.hover-expanded #u-7d .u-pct { color: var(--amber); }
+#leftbar.expanded .u-in,
+#leftbar.hover-expanded .u-in {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+#leftbar.expanded #usage .u-track,
+#leftbar.hover-expanded #usage .u-track {
+  width: auto;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--border2);
+  overflow: hidden;
+}
+/* the rail's bars run bottom-up on a 6px column; here they run left-to-right,
+ * so the level (--u, set by renderRow) drives the width instead */
+#leftbar.expanded #usage .u-fill,
+#leftbar.hover-expanded #usage .u-fill {
+  top: 0;
+  right: auto;
+  width: var(--u, 0%);
+  height: 100%;
+  box-shadow: none;
+  transition: width .4s ease;
+}
+/* the radial gauges are replaced by the bars above */
+#leftbar.expanded #usage-gauges,
+#leftbar.hover-expanded #usage-gauges { display: none; }
+
+/* --- rows: workspaces and destinations share one 36px row --- */
+#leftbar.expanded .rail-tile,
+#leftbar.hover-expanded .rail-tile {
+  width: auto;
+  height: 36px;
+  padding: 0 10px;
+  gap: 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  backdrop-filter: none;
+  color: var(--text2);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;          /* names read as typed, not shouted */
+  box-shadow: none;
+}
+#leftbar.expanded .rail-tile:hover,
+#leftbar.hover-expanded .rail-tile:hover { background: var(--hover); color: var(--text); }
+#leftbar.expanded .rail-tile.selected,
+#leftbar.hover-expanded .rail-tile.selected {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+  border: none;
+  box-shadow: none;
+}
+#leftbar.expanded .rail-tile.attn,
+#leftbar.hover-expanded .rail-tile.attn { animation: none; box-shadow: none; }
+#leftbar.expanded .rail-tile svg,
+#leftbar.hover-expanded .rail-tile svg { width: 16px; height: 16px; }
+#leftbar.expanded .rail-tile-name,
+#leftbar.hover-expanded .rail-tile-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  letter-spacing: 0;
+  text-align: left;              /* the rail centres its tiles; rows read left */
+  text-transform: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* workspace identity colour reads as a vertical bar, not a dot — appended
+ * after the name in the DOM, so `order` pulls it back to the leading edge */
+#leftbar.expanded .rail-tile .ws-color-dot,
+#leftbar.hover-expanded .rail-tile .ws-color-dot {
+  position: static;
+  order: -1;
+  width: 3px; height: 16px;
+  flex: none;
+  border: none;
+  border-radius: 2px;
+  box-shadow: none;
+}
+#leftbar.expanded .rail-tile .rail-n,
+#leftbar.hover-expanded .rail-tile .rail-n {
+  position: static;
+  flex: none;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+/* the empty-workspace placeholder only makes sense beside a name */
+.rail-n-zero { display: none; }
+#leftbar.expanded .rail-tile .rail-n-zero,
+#leftbar.hover-expanded .rail-tile .rail-n-zero { display: block; color: var(--muted); }
+#leftbar.expanded .rail-tile .ws-attn,
+#leftbar.hover-expanded .rail-tile .ws-attn {
+  position: static;
+  width: 6px; height: 6px;
+  flex: none;
+  border: none;
+  box-shadow: none;
+}
+#leftbar.expanded #add-workspace.rail-tile,
+#leftbar.hover-expanded #add-workspace.rail-tile { height: 34px; color: var(--muted); }
+/* the row has no icon of its own — keep the rail's "+" as one, so the label
+ * lines up with the workspace names above it */
+#leftbar.expanded #add-workspace .rail-tile-glyph,
+#leftbar.hover-expanded #add-workspace .rail-tile-glyph {
+  display: block;
+  width: 14px;
+  font-size: 15px;
+  line-height: 1;
+  text-align: center;
+}
+
+/* --- swarm overview: one strip, no card --- */
+.swarm-map-title,
+#leftbar.expanded .swarm-map-title,
+#leftbar.hover-expanded .swarm-map-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  color: color-mix(in srgb, var(--accent) 45%, var(--muted));
+  text-align: left;
+}
+/* --swarm-cols is set per render from the slot count, so the slots fill one
+ * row while they fit and wrap onto a second instead of being cut off */
+#leftbar.expanded .swarm-map-grid,
+#leftbar.hover-expanded .swarm-map-grid {
+  grid-template-columns: repeat(var(--swarm-cols, 10), 1fr);
+  gap: 3px;
+  margin-top: 6px;
+}
+#leftbar.expanded .swarm-map-slot,
+#leftbar.hover-expanded .swarm-map-slot {
+  width: auto;
+  height: 14px;
+  border: none;
+  border-radius: 3px;
+  box-shadow: none;
+}
+#leftbar.expanded .swarm-map-footer,
+#leftbar.hover-expanded .swarm-map-footer {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

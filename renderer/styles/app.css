@@ -339,18 +339,6 @@ body::before {
   border-color: var(--accent);
   box-shadow: 0 0 18px -4px var(--accent-glow);
 }
-#leftbar.expanded #add-workspace.rail-tile .rail-tile-name,
-#leftbar.hover-expanded #add-workspace.rail-tile .rail-tile-name {
-  font-size: 11px;
-  font-weight: 400;
-}
-
-#archive-btn.rail-tile { font-size: 15px; font-weight: 400; }
-#leftbar.expanded #archive-btn.rail-tile .rail-tile-name,
-#leftbar.hover-expanded #archive-btn.rail-tile .rail-tile-name {
-  font-size: 11px;
-  font-weight: 400;
-}
 
 /* drag a workspace tile up/down to reorder */
 .rail-tile.dragging { opacity: 0.35; }
@@ -698,7 +686,9 @@ body::before {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 0%;
+  /* renderRow sets --u; the collapsed rail's bars fill upward, the expanded
+   * rail's flip the same value to a width (styles/chrome-clean.css) */
+  height: var(--u, 0%);
   background: var(--accent);
   box-shadow: 0 0 6px var(--accent-glow);
   transition: height 0.4s ease;
@@ -781,6 +771,19 @@ body::before {
   align-items: center;
   gap: 6px;
   cursor: default;
+}
+/* title + counts share one row; both hide with the collapsed rail, so the
+ * wrapper goes with them rather than leaving an empty flex child behind */
+.swarm-map-head {
+  display: none;
+}
+#leftbar.expanded .swarm-map-head,
+#leftbar.hover-expanded .swarm-map-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%; /* #swarm-map centres its children — the head has to span to push the counts right */
 }
 .swarm-map-title {
   display: none;
@@ -1887,31 +1890,8 @@ body::before {
 }
 .gs-none { padding: 14px 16px; }
 
-/* ---------- archived workspaces ---------- */
+/* ---------- list row with a delete button (board category popover) ---------- */
 
-#archive-pop {
-  position: fixed;
-  z-index: 20;
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  backdrop-filter: blur(18px);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
-  border-radius: 14px;
-  padding: 12px 14px;
-  min-width: 340px;
-  max-width: 480px;
-  max-height: 60vh;
-  overflow-y: auto;
-  box-shadow: 0 30px 70px -18px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-#archive-pop .kbd-title {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--accent-text);
-  margin-bottom: 10px;
-}
 .arch-row {
   display: flex;
   align-items: center;
@@ -1925,29 +1905,6 @@ body::before {
   font-family: var(--font-ui);
   font-size: 13px;
   color: var(--text);
-}
-.arch-path {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.arch-restore {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--accent-text);
-  background: var(--glass, transparent);
-  border: 1px solid var(--border3);
-  border-radius: 100px;
-  padding: 4px 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.arch-restore:hover {
-  border-color: var(--accent);
-  box-shadow: 0 0 10px -2px var(--accent-glow);
 }
 .arch-del {
   font-size: 12px;

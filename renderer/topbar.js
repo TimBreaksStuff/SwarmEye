@@ -1,5 +1,5 @@
 /* Icon rail + top bar rendering: workspace tiles (drag to reorder, hover
- * flyout for rename/remove), archive popover, session counter, usage mini
+ * flyout for rename/remove), session counter, usage mini
  * bars. Exposes window.Topbar. */
 
 const Topbar = (() => {
@@ -7,8 +7,7 @@ const Topbar = (() => {
   const countEl = document.getElementById('session-count');
   const addAgentBtn = document.getElementById('add-agent');
   const usageEl = document.getElementById('usage');
-  const archiveBtn = document.getElementById('archive-btn');
-  const archivePop = document.getElementById('archive-pop');
+  const wsCountEl = document.getElementById('ws-count');
 
   let lastUsage = null;
   const WS_DRAG = 'text/swarmeye-ws';
@@ -31,10 +30,8 @@ const Topbar = (() => {
   // flyout-open (openWorkspaceFlyout, used after "add workspace") can rebuild it
   let railCtx = { workspaces: [], counts: {}, handlers: null };
   const tileById = new Map();
-  // what the rail and the archive popover last drew — see the guards in
-  // renderWorkspaces / renderArchive
+  // what the rail last drew — see the guard in renderWorkspaces
   let railSig = null;
-  let archiveSig = null;
   flyout.addEventListener('mouseenter', () => clearTimeout(flyoutHideTimer));
   flyout.addEventListener('mouseleave', scheduleHideFlyout);
 
@@ -131,6 +128,7 @@ const Topbar = (() => {
     })]);
     if (sig === railSig) return;
     railSig = sig;
+    wsCountEl.textContent = workspaces.length || '';
     tileById.clear();
     workspacesEl.innerHTML = '';
     workspaces.forEach((ws) => {
@@ -206,13 +204,13 @@ const Topbar = (() => {
         tile.appendChild(attn);
       }
 
-      if (info.n > 0) {
-        const badge = document.createElement('span');
-        badge.className = 'rail-n';
-        badge.textContent = info.n;
-        badge.dataset.tip = `${info.n} agent${info.n > 1 ? 's' : ''} in this workspace`;
-        tile.appendChild(badge);
-      }
+      // the expanded rail keeps the count column aligned by showing an em dash
+      // for an empty workspace; the collapsed rail hides that placeholder
+      const badge = document.createElement('span');
+      badge.className = info.n > 0 ? 'rail-n' : 'rail-n rail-n-zero';
+      badge.textContent = info.n > 0 ? info.n : '–';
+      if (info.n > 0) badge.dataset.tip = `${info.n} agent${info.n > 1 ? 's' : ''} in this workspace`;
+      tile.appendChild(badge);
 
       tile.addEventListener('click', () => handlers.onSelect(ws.id));
       tile.addEventListener('mouseenter', () => showFlyout(tile, ws, info, handlers));
@@ -505,64 +503,6 @@ const Topbar = (() => {
     }
   }
 
-  /* archived workspaces: 🗃 pill (hidden when empty) + restore/delete popover.
-   * The ✕ is click-twice-to-confirm via Confirm, whose arm state outlives the
-   * rebuild this popover gets on every agent status flip. */
-  function renderArchive(archived, handlers) {
-    // rebuilt on the same beat as the rail above, and just as static — skip it
-    // unless the archived list itself changed
-    const sig = archived.map((ws) => ws.id + ' ' + ws.name + ' ' + ws.path).join('');
-    if (sig === archiveSig) return;
-    archiveSig = sig;
-    archiveBtn.style.display = archived.length ? '' : 'none';
-    archiveBtn.querySelectorAll('.rail-n').forEach((el) => el.remove());
-    if (archived.length) {
-      const n = document.createElement('span');
-      n.className = 'rail-n';
-      n.textContent = archived.length;
-      archiveBtn.appendChild(n);
-    }
-    if (!archived.length) archivePop.hidden = true;
-
-    archivePop.innerHTML = '';
-    const title = document.createElement('div');
-    title.className = 'kbd-title';
-    title.textContent = 'Archived workspaces';
-    archivePop.appendChild(title);
-
-    for (const ws of archived) {
-      const row = document.createElement('div');
-      row.className = 'arch-row';
-
-      const info = document.createElement('div');
-      info.className = 'arch-info';
-      const name = document.createElement('div');
-      name.className = 'arch-name';
-      name.textContent = ws.name;
-      const p = document.createElement('div');
-      p.className = 'arch-path';
-      p.textContent = ws.path;
-      p.dataset.tip = ws.path;
-      info.append(name, p);
-
-      const restore = document.createElement('button');
-      restore.className = 'arch-restore';
-      restore.textContent = 'restore';
-      restore.dataset.tip = 'Bring this workspace back';
-      restore.addEventListener('click', () => handlers.onRestore(ws.id));
-
-      const del = document.createElement('button');
-      del.className = 'arch-del';
-      del.textContent = '✕';
-      del.dataset.tip = 'Remove from archive (click twice)';
-      del.addEventListener('click', () => Confirm.armOrFire(del, 'arch:' + ws.id, () => handlers.onPurge(ws.id)));
-      Confirm.restoreArmed(del, 'arch:' + ws.id);
-
-      row.append(info, restore, del);
-      archivePop.appendChild(row);
-    }
-  }
-
   /* swarm map: one slot per agent-capacity slot, across all workspaces —
    * lime = working, amber pulsing = needs attention, gray = idle, dark = free.
    * Exited panes free their slot (mirrors liveAgentCount() in app.js), and if
@@ -573,10 +513,18 @@ const Topbar = (() => {
 
   function renderSwarmMap(panes, totalSlots, onOpen, wsColor = {}) {
     const live = panes.filter((p) => !p.exited);
-    const liveCount = live.filter((p) => p.status === 'working' || p.status === 'attention').length;
-    const waitingCount = live.filter((p) => p.status === 'idle').length;
-    const freeCount = Math.max(totalSlots - live.length, 0);
+    const busyCount = live.filter((p) => p.status === 'working').length;
+    const attnCount = live.filter((p) => p.status === 'attention').length;
+    const idleCount = live.filter((p) => p.status === 'idle').length;
     const slotCount = Math.max(totalSlots, live.length);
+
+    // one row while the slots fit the rail's width at a readable size, two rows
+    // past that — a fixed column count sized them to whatever was left over
+    const MAX_COLS = 12; // 12 × ~14px + gaps ≈ the 208px the expanded rail gives the strip
+    const cols = slotCount <= MAX_COLS ? Math.max(slotCount, 1) : Math.min(Math.ceil(slotCount / 2), MAX_COLS);
+    if (swarmMapGrid.style.getPropertyValue('--swarm-cols') !== String(cols)) {
+      swarmMapGrid.style.setProperty('--swarm-cols', cols);
+    }
 
     // Reconcile slots in place rather than rebuilding from scratch: this runs on
     // every state update, and wiping innerHTML would destroy the slot node the
@@ -612,10 +560,13 @@ const Topbar = (() => {
       }
     }
 
-    const footerText = waitingCount
-      ? `${liveCount} live · ${waitingCount} waiting · ${freeCount} free`
-      : `${liveCount} live · ${freeCount} free`;
-    swarmMapFooter.textContent = footerText;
+    // free slots are already legible as the dark ones, so the head counts only
+    // what is actually running
+    const parts = [];
+    if (busyCount) parts.push(`${busyCount} busy`);
+    if (attnCount) parts.push(`${attnCount} waiting`);
+    if (idleCount) parts.push(`${idleCount} idle`);
+    swarmMapFooter.textContent = parts.join(' · ');
   }
 
   function updateSessionCount(visible, total, max, byStatus) {
@@ -639,15 +590,30 @@ const Topbar = (() => {
     return fmtDur(Math.ceil(ms / 60000));
   }
 
+  // the expanded rail labels each bar with its level and a one-unit countdown
+  // ("3h", "2d") — the collapsed rail hides that head and shows the bar alone
+  function fmtCountdown(ms) {
+    const min = Math.max(0, Math.ceil(ms / 60000));
+    if (min >= 1440) return `${Math.floor(min / 1440)}d`;
+    if (min >= 60) return `${Math.floor(min / 60)}h`;
+    return `${min}m`;
+  }
+
   function renderRow(rowId, data) {
     const fill = document.getElementById(rowId).querySelector('.u-fill');
+    const pctEl = document.getElementById(rowId + '-pct');
+    const inEl = document.getElementById(rowId + '-in');
     if (!data || data.usedPct == null) {
-      fill.style.height = '0%';
+      fill.style.setProperty('--u', '0%');
       fill.classList.remove('warn', 'crit');
+      pctEl.textContent = '—';
+      inEl.textContent = '';
       return null;
     }
     const p = Math.max(0, Math.min(100, data.usedPct));
-    fill.style.height = p + '%';
+    fill.style.setProperty('--u', p + '%');
+    pctEl.textContent = p + '%';
+    inEl.textContent = data.resetsAt ? fmtCountdown(new Date(data.resetsAt) - Date.now()) : '';
     fill.classList.toggle('warn', p >= 75 && p < 90);
     fill.classList.toggle('crit', p >= 90);
     return p;
@@ -699,7 +665,7 @@ const Topbar = (() => {
 
   const setWorkspaceColors = (colors) => { WS_COLORS = colors || []; };
 
-  return { renderWorkspaces, renderArchive, renderNotifications, renderNotifPanel, updateSessionCount, renderUsage, renderSwarmMap, openWorkspaceFlyout, setWorkspaceColors, fmtIn };
+  return { renderWorkspaces, renderNotifications, renderNotifPanel, updateSessionCount, renderUsage, renderSwarmMap, openWorkspaceFlyout, setWorkspaceColors, fmtIn };
 })();
 
 window.Topbar = Topbar;
