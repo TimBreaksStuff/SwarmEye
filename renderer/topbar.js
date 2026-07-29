@@ -1,13 +1,12 @@
 /* Icon rail + top bar rendering: workspace tiles (drag to reorder, hover
- * flyout for rename/remove), session counter, usage mini
- * bars. Exposes window.Topbar. */
+ * flyout for rename/remove), the top bar's active-workspace context, usage
+ * mini bars. Exposes window.Topbar. */
 
 const Topbar = (() => {
   const workspacesEl = document.getElementById('workspaces');
-  const countEl = document.getElementById('session-count');
   const addAgentBtn = document.getElementById('add-agent');
   const usageEl = document.getElementById('usage');
-  const wsCountEl = document.getElementById('ws-count');
+  const ctxEl = document.getElementById('topbar-ctx');
 
   let lastUsage = null;
   const WS_DRAG = 'text/swarmeye-ws';
@@ -18,7 +17,7 @@ const Topbar = (() => {
   // it drives the flyout swatches
   let WS_COLORS = [];
 
-  /* the 66px rail only shows initials — hovering a tile opens a flyout with
+  /* the 57px rail only shows initials — hovering a tile opens a flyout with
    * the full name (double-click to rename) and the ✕ remove button */
   const flyout = document.createElement('div');
   flyout.id = 'rail-flyout';
@@ -128,7 +127,7 @@ const Topbar = (() => {
     })]);
     if (sig === railSig) return;
     railSig = sig;
-    wsCountEl.textContent = workspaces.length || '';
+    renderContext(workspaces.find((w) => w.id === selectedId));
     tileById.clear();
     workspacesEl.innerHTML = '';
     workspaces.forEach((ws) => {
@@ -217,6 +216,16 @@ const Topbar = (() => {
       tile.addEventListener('mouseleave', scheduleHideFlyout);
       workspacesEl.appendChild(tile);
     });
+  }
+
+  /* top bar centre zone: which workspace a + Agent lands in. Runs off the same
+   * signature guard as the rail, so it repaints on a selection, rename or
+   * colour change and never on a plain status flip. */
+  function renderContext(ws) {
+    ctxEl.hidden = !ws;
+    if (!ws) return;
+    ctxEl.querySelector('.tb-ctx-name').textContent = ws.name;
+    ctxEl.dataset.tip = ws.path;
   }
 
   /* double-click the flyout's name to rename it, same contentEditable-swap
@@ -561,26 +570,22 @@ const Topbar = (() => {
     }
 
     // free slots are already legible as the dark ones, so the head counts only
-    // what is actually running
-    const parts = [];
+    // what is actually running — plus the cap, which used to live in the top
+    // bar's own counter beside the same numbers
+    const parts = [`${live.length}/${totalSlots}`];
     if (busyCount) parts.push(`${busyCount} busy`);
     if (attnCount) parts.push(`${attnCount} waiting`);
     if (idleCount) parts.push(`${idleCount} idle`);
     swarmMapFooter.textContent = parts.join(' · ');
   }
 
-  function updateSessionCount(visible, total, max, byStatus) {
-    const parts = [];
-    if (byStatus) {
-      if (byStatus.working) parts.push(`${byStatus.working} busy`);
-      if (byStatus.idle) parts.push(`${byStatus.idle} idle`);
-      if (byStatus.exited) parts.push(`${byStatus.exited} exited`);
-    }
-    parts.push(total > visible
-      ? `${visible} here · ${total}/${max} total`
-      : `${total}/${max} agents`);
-    countEl.textContent = parts.join(' · ');
+  // the count itself reads in the rail (per-workspace badges + the swarm head);
+  // all the top bar still needs from it is whether the cap is reached
+  function updateAgentCap(total, max) {
     addAgentBtn.disabled = total >= max;
+    addAgentBtn.dataset.tip = total >= max
+      ? `Agent cap reached — ${total}/${max} running`
+      : `Start a plain agent or a role preset in the selected workspace — ${total}/${max} running`;
   }
 
   // time remaining rounds up, so a countdown never shows "0m" while it still
@@ -665,7 +670,7 @@ const Topbar = (() => {
 
   const setWorkspaceColors = (colors) => { WS_COLORS = colors || []; };
 
-  return { renderWorkspaces, renderNotifications, renderNotifPanel, updateSessionCount, renderUsage, renderSwarmMap, openWorkspaceFlyout, setWorkspaceColors, fmtIn };
+  return { renderWorkspaces, renderNotifications, renderNotifPanel, updateAgentCap, renderUsage, renderSwarmMap, openWorkspaceFlyout, setWorkspaceColors, fmtIn };
 })();
 
 window.Topbar = Topbar;

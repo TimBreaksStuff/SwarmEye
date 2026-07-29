@@ -2,14 +2,11 @@
 
 /* terminal palettes matching the app themes in tokens.css.
  *
- * The five SwarmEye-native dark themes (dark/orange/crimson/ocean/mono) are
- * one house ANSI ramp re-tinted: each spreads ANSI_RAMP and then overrides
- * only the hues that carry its identity — ocean pulls blue/cyan toward its
- * accent, crimson does the same for magenta, and so on. Every field below a
- * `...ANSI_RAMP` is therefore a deliberate difference from the house ramp,
- * not an incidental copy. The ported third-party themes (tokyonight, nord,
- * gruvbox, …) and the light ones each ship a complete ramp of their own and
- * stay spelled out in full. */
+ * The two dark themes (dark/orange) are one house ANSI ramp re-tinted: each
+ * spreads ANSI_RAMP and then overrides only the hues that carry its identity.
+ * Every field below a `...ANSI_RAMP` is therefore a deliberate difference from
+ * the house ramp, not an incidental copy. `light` ships a complete ramp of its
+ * own and stays spelled out in full. */
 const ANSI_RAMP = {
   red: '#ff5a5a',
   green: '#a3e635',
@@ -23,24 +20,6 @@ const ANSI_RAMP = {
   brightBlue: '#83bcff',
   brightMagenta: '#c4b0ff',
   brightCyan: '#93ece4',
-};
-
-/* the same idea for the light-backdrop themes added after light/sepia: one
- * ramp darkened for a white page, which each theme re-tints only where its
- * accent hue lives. xterm's per-cell contrast pass still runs on top. */
-const LIGHT_RAMP = {
-  red: '#d92f2f',
-  green: '#4d7c0f',
-  yellow: '#c07c00',
-  blue: '#2563eb',
-  magenta: '#7c3aed',
-  cyan: '#0e7490',
-  brightRed: '#ef4444',
-  brightGreen: '#65a30d',
-  brightYellow: '#d97706',
-  brightBlue: '#3b82f6',
-  brightMagenta: '#8b5cf6',
-  brightCyan: '#0891b2',
 };
 
 const XTERM_THEMES = {
@@ -59,9 +38,9 @@ const XTERM_THEMES = {
   light: {
     background: '#ffffff',
     foreground: '#1b1e23',
-    cursor: '#5c8a00',
+    cursor: '#3f6212',
     cursorAccent: '#ffffff',
-    selectionBackground: 'rgba(113, 168, 0, 0.25)',
+    selectionBackground: 'rgba(71, 109, 10, 0.25)',
     black: '#1b1e23',
     red: '#d92f2f',
     green: '#4d7c0f',
@@ -93,425 +72,6 @@ const XTERM_THEMES = {
     yellow: '#ffb04d',
     brightGreen: '#c8f55e',
     brightYellow: '#ffc879',
-  },
-  neo: {
-    background: '#0a0814',
-    foreground: '#eae7f7',
-    cursor: '#9c8bea',
-    cursorAccent: '#07060f',
-    selectionBackground: 'rgba(156, 139, 234, 0.25)',
-    black: '#07060f',
-    red: '#ff3d6e',
-    green: '#3dffa0',
-    yellow: '#ffd166',
-    blue: '#5aa2ff',
-    magenta: '#ff4fd8',
-    cyan: '#00e5ff',
-    white: '#eae7f7',
-    brightBlack: '#645e8b',
-    brightRed: '#ff6b92',
-    brightGreen: '#7affc0',
-    brightYellow: '#ffe08a',
-    brightBlue: '#86bcff',
-    brightMagenta: '#ff86e4',
-    brightCyan: '#4deeff',
-    brightWhite: '#ffffff',
-  },
-  matrix: {
-    background: '#050a05',
-    foreground: '#c8eecb',
-    cursor: '#00ff66',
-    cursorAccent: '#040804',
-    selectionBackground: 'rgba(0, 255, 102, 0.25)',
-    black: '#040804',
-    red: '#ff5a5a',
-    green: '#00e05a',
-    yellow: '#b8d977',
-    blue: '#4dd0a0',
-    magenta: '#34d399',
-    cyan: '#6fe8b8',
-    white: '#c8eecb',
-    brightBlack: '#507c56',
-    brightRed: '#ff7a7a',
-    brightGreen: '#4dff8f',
-    brightYellow: '#d6f0a0',
-    brightBlue: '#7fe6c0',
-    brightMagenta: '#6ee7b7',
-    brightCyan: '#9df5cf',
-    brightWhite: '#eafff0',
-  },
-  crimson: {
-    background: '#100809',
-    foreground: '#f2e6e7',
-    cursor: '#ff3b5c',
-    cursorAccent: '#0f0708',
-    selectionBackground: 'rgba(255, 59, 92, 0.25)',
-    black: '#0f0708',
-    white: '#f2e6e7',
-    brightBlack: '#785a5c',
-    brightWhite: '#ffffff',
-    ...ANSI_RAMP,
-    magenta: '#ff6b8a',
-    brightMagenta: '#ff8fa3',
-  },
-  ocean: {
-    background: '#070b10',
-    foreground: '#e3edf2',
-    cursor: '#22c3ee',
-    cursorAccent: '#06090d',
-    selectionBackground: 'rgba(34, 195, 238, 0.25)',
-    black: '#06090d',
-    white: '#e3edf2',
-    brightBlack: '#566d78',
-    brightWhite: '#ffffff',
-    ...ANSI_RAMP,
-    blue: '#38bdf8',
-    cyan: '#22c3ee',
-    brightBlue: '#7dd3fc',
-    brightCyan: '#4fd4f5',
-  },
-  mono: {
-    background: '#0b0b0b',
-    foreground: '#eaeaea',
-    cursor: '#e5e5e5',
-    cursorAccent: '#0a0a0a',
-    selectionBackground: 'rgba(255, 255, 255, 0.2)',
-    black: '#0a0a0a',
-    white: '#eaeaea',
-    brightBlack: '#656565',
-    brightWhite: '#ffffff',
-    ...ANSI_RAMP,
-    brightGreen: '#c8f55e',
-  },
-  sepia: {
-    background: '#fbf6ea',
-    foreground: '#2b2015',
-    cursor: '#6e4211',
-    cursorAccent: '#fbf6ea',
-    selectionBackground: 'rgba(138, 84, 22, 0.25)',
-    black: '#2b2015',
-    red: '#a52f22',
-    green: '#5c7a29',
-    yellow: '#8a6508',
-    blue: '#2f5f8f',
-    magenta: '#6f4a8c',
-    cyan: '#3d8a86',
-    white: '#2b2015',
-    brightBlack: '#7d6c50',
-    brightRed: '#c34d40',
-    brightGreen: '#7a9c3f',
-    brightYellow: '#a88326',
-    brightBlue: '#4d7dad',
-    brightMagenta: '#8d68aa',
-    brightCyan: '#57a8a3',
-    brightWhite: '#1a1208',
-  },
-  // 'system' deliberately has no entry: its palette was a byte-for-byte copy
-  // of dark, and setXtermTheme's `XTERM_THEMES[name] || XTERM_THEMES.dark`
-  // fallback already resolves it to exactly that.
-  tokyonight: {
-    background: '#13141c',
-    foreground: '#c0caf5',
-    cursor: '#c0caf5',
-    cursorAccent: '#1a1b26',
-    selectionBackground: 'rgba(122, 162, 247, 0.25)',
-    black: '#15161e',
-    red: '#f7768e',
-    green: '#9ece6a',
-    yellow: '#e0af68',
-    blue: '#7aa2f7',
-    magenta: '#bb9af7',
-    cyan: '#7dcfff',
-    white: '#a9b1d6',
-    brightBlack: '#414868',
-    brightRed: '#f7768e',
-    brightGreen: '#9ece6a',
-    brightYellow: '#e0af68',
-    brightBlue: '#7aa2f7',
-    brightMagenta: '#bb9af7',
-    brightCyan: '#7dcfff',
-    brightWhite: '#c0caf5',
-  },
-  everforest: {
-    background: '#252c30',
-    foreground: '#d3c6aa',
-    cursor: '#a7c080',
-    cursorAccent: '#2b3339',
-    selectionBackground: 'rgba(167, 192, 128, 0.25)',
-    black: '#414b50',
-    red: '#e67e80',
-    green: '#a7c080',
-    yellow: '#dbbc7f',
-    blue: '#7fbbb3',
-    magenta: '#d699b6',
-    cyan: '#83c092',
-    white: '#d3c6aa',
-    brightBlack: '#859289',
-    brightRed: '#f85552',
-    brightGreen: '#a7c080',
-    brightYellow: '#dbbc7f',
-    brightBlue: '#7fbbb3',
-    brightMagenta: '#d699b6',
-    brightCyan: '#83c092',
-    brightWhite: '#fdf6e3',
-  },
-  ayu: {
-    background: '#080b10',
-    foreground: '#bfbdb6',
-    cursor: '#ffb454',
-    cursorAccent: '#0a0e14',
-    selectionBackground: 'rgba(255, 180, 84, 0.25)',
-    black: '#0a0e14',
-    red: '#f28779',
-    green: '#91b362',
-    yellow: '#ffd580',
-    blue: '#59c2ff',
-    magenta: '#d2a6ff',
-    cyan: '#39bae6',
-    white: '#bfbdb6',
-    brightBlack: '#565e66',
-    brightRed: '#f28779',
-    brightGreen: '#91b362',
-    brightYellow: '#ffb454',
-    brightBlue: '#59c2ff',
-    brightMagenta: '#d2a6ff',
-    brightCyan: '#95e6cb',
-    brightWhite: '#e6e1cf',
-  },
-  catppuccin: {
-    background: '#161622',
-    foreground: '#cdd6f4',
-    cursor: '#cba6f7',
-    cursorAccent: '#1e1e2e',
-    selectionBackground: 'rgba(203, 166, 247, 0.25)',
-    black: '#45475a',
-    red: '#f38ba8',
-    green: '#a6e3a1',
-    yellow: '#f9e2af',
-    blue: '#89b4fa',
-    magenta: '#f5c2e7',
-    cyan: '#94e2d5',
-    white: '#bac2de',
-    brightBlack: '#585b70',
-    brightRed: '#f38ba8',
-    brightGreen: '#a6e3a1',
-    brightYellow: '#f9e2af',
-    brightBlue: '#89b4fa',
-    brightMagenta: '#f5c2e7',
-    brightCyan: '#94e2d5',
-    brightWhite: '#a6adc8',
-  },
-  'catppuccin-macchiato': {
-    background: '#1c1e2e',
-    foreground: '#cad3f5',
-    cursor: '#c6a0f6',
-    cursorAccent: '#24273a',
-    selectionBackground: 'rgba(198, 160, 246, 0.25)',
-    black: '#494d64',
-    red: '#ed8796',
-    green: '#a6da95',
-    yellow: '#eed49f',
-    blue: '#8aadf4',
-    magenta: '#f5bde6',
-    cyan: '#8bd5ca',
-    white: '#b8c0e0',
-    brightBlack: '#5b6078',
-    brightRed: '#ed8796',
-    brightGreen: '#a6da95',
-    brightYellow: '#eed49f',
-    brightBlue: '#8aadf4',
-    brightMagenta: '#f5bde6',
-    brightCyan: '#8bd5ca',
-    brightWhite: '#a5adcb',
-  },
-  gruvbox: {
-    background: '#1a1a1a',
-    foreground: '#ebdbb2',
-    cursor: '#fabd2f',
-    cursorAccent: '#282828',
-    selectionBackground: 'rgba(250, 189, 47, 0.25)',
-    black: '#282828',
-    red: '#cc241d',
-    green: '#98971a',
-    yellow: '#d79921',
-    blue: '#458588',
-    magenta: '#b16286',
-    cyan: '#689d6a',
-    white: '#a89984',
-    brightBlack: '#928374',
-    brightRed: '#fb4934',
-    brightGreen: '#b8bb26',
-    brightYellow: '#fabd2f',
-    brightBlue: '#83a598',
-    brightMagenta: '#d3869b',
-    brightCyan: '#8ec07c',
-    brightWhite: '#ebdbb2',
-  },
-  kanagawa: {
-    background: '#181820',
-    foreground: '#dcd7ba',
-    cursor: '#7e9cd8',
-    cursorAccent: '#1f1f28',
-    selectionBackground: 'rgba(126, 156, 216, 0.25)',
-    black: '#1f1f28',
-    red: '#c34043',
-    green: '#76946a',
-    yellow: '#c0a36e',
-    blue: '#7e9cd8',
-    magenta: '#957fb8',
-    cyan: '#6a9589',
-    white: '#c8c093',
-    brightBlack: '#727169',
-    brightRed: '#e82424',
-    brightGreen: '#98bb6c',
-    brightYellow: '#e6c384',
-    brightBlue: '#7fb4ca',
-    brightMagenta: '#938aa9',
-    brightCyan: '#7aa89f',
-    brightWhite: '#dcd7ba',
-  },
-  nord: {
-    background: '#242933',
-    foreground: '#eceff4',
-    cursor: '#88c0d0',
-    cursorAccent: '#2e3440',
-    selectionBackground: 'rgba(136, 192, 208, 0.25)',
-    black: '#3b4252',
-    red: '#bf616a',
-    green: '#a3be8c',
-    yellow: '#ebcb8b',
-    blue: '#81a1c1',
-    magenta: '#b48ead',
-    cyan: '#88c0d0',
-    white: '#e5e9f0',
-    brightBlack: '#4c566a',
-    brightRed: '#bf616a',
-    brightGreen: '#a3be8c',
-    brightYellow: '#ebcb8b',
-    brightBlue: '#81a1c1',
-    brightMagenta: '#b48ead',
-    brightCyan: '#8fbcbb',
-    brightWhite: '#eceff4',
-  },
-  'one-dark': {
-    background: '#1e2127',
-    foreground: '#abb2bf',
-    cursor: '#61afef',
-    cursorAccent: '#282c34',
-    selectionBackground: 'rgba(97, 175, 239, 0.25)',
-    black: '#282c34',
-    red: '#e06c75',
-    green: '#98c379',
-    yellow: '#e5c07b',
-    blue: '#61afef',
-    magenta: '#c678dd',
-    cyan: '#56b6c2',
-    white: '#abb2bf',
-    brightBlack: '#5c6370',
-    brightRed: '#e06c75',
-    brightGreen: '#98c379',
-    brightYellow: '#e5c07b',
-    brightBlue: '#61afef',
-    brightMagenta: '#c678dd',
-    brightCyan: '#56b6c2',
-    brightWhite: '#ffffff',
-  },
-  paper: {
-    background: '#ffffff',
-    foreground: '#17181a',
-    cursor: '#111827',
-    cursorAccent: '#ffffff',
-    selectionBackground: 'rgba(31, 41, 55, 0.2)',
-    black: '#17181a',
-    white: '#e5e7eb',
-    brightBlack: '#6a6d72',
-    brightWhite: '#f9fafb',
-    ...LIGHT_RAMP,
-  },
-  frost: {
-    background: '#ffffff',
-    foreground: '#10262c',
-    cursor: '#0a6577',
-    cursorAccent: '#ffffff',
-    selectionBackground: 'rgba(13, 127, 149, 0.22)',
-    black: '#10262c',
-    white: '#e2ebee',
-    brightBlack: '#5e7880',
-    brightWhite: '#f6fafb',
-    ...LIGHT_RAMP,
-    blue: '#0369a1',
-    cyan: '#0d7f95',
-    brightBlue: '#0284c7',
-    brightCyan: '#0f97b0',
-  },
-  blossom: {
-    background: '#fffdfd',
-    foreground: '#241619',
-    cursor: '#9d1543',
-    cursorAccent: '#ffffff',
-    selectionBackground: 'rgba(190, 29, 81, 0.2)',
-    black: '#241619',
-    white: '#eee1e4',
-    brightBlack: '#766068',
-    brightWhite: '#fbf5f6',
-    ...LIGHT_RAMP,
-    magenta: '#be1d51',
-    brightMagenta: '#d94070',
-  },
-  ash: {
-    background: '#f2f2f4',
-    foreground: '#1c1c1f',
-    cursor: '#86490a',
-    cursorAccent: '#e8e8ea',
-    selectionBackground: 'rgba(163, 90, 9, 0.22)',
-    black: '#1c1c1f',
-    white: '#dcdcde',
-    brightBlack: '#63636b',
-    brightWhite: '#f6f6f8',
-    ...LIGHT_RAMP,
-    yellow: '#a35a09',
-    brightYellow: '#c06e0d',
-  },
-  slate: {
-    background: '#f0f3f7',
-    foreground: '#171c23',
-    cursor: '#1739a8',
-    cursorAccent: '#e3e7ec',
-    selectionBackground: 'rgba(29, 78, 216, 0.2)',
-    black: '#171c23',
-    white: '#d5dae1',
-    brightBlack: '#5d6675',
-    brightWhite: '#f5f7fa',
-    ...LIGHT_RAMP,
-    blue: '#1d4ed8',
-    brightBlue: '#3b6ae8',
-  },
-  fog: {
-    background: '#f2f6f3',
-    foreground: '#16201a',
-    cursor: '#116430',
-    cursorAccent: '#e6ebe7',
-    selectionBackground: 'rgba(21, 128, 61, 0.2)',
-    black: '#16201a',
-    white: '#d9dedb',
-    brightBlack: '#5c6a61',
-    brightWhite: '#f6faf7',
-    ...LIGHT_RAMP,
-    green: '#15803d',
-    brightGreen: '#1f9c4d',
-  },
-  zinc: {
-    background: '#f3f1f5',
-    foreground: '#1c1a20',
-    cursor: '#5a1eb5',
-    cursorAccent: '#e8e6ea',
-    selectionBackground: 'rgba(109, 40, 217, 0.2)',
-    black: '#1c1a20',
-    white: '#dbd9dd',
-    brightBlack: '#64606d',
-    brightWhite: '#f7f5f9',
-    ...LIGHT_RAMP,
-    magenta: '#6d28d9',
   },
 };
 /* the canvas is transparent so the pane's glass (blur + tint, see .pane /
@@ -546,22 +106,12 @@ function glassTheme(palette, bgHex = palette.background) {
  * block the TUI paints (input box, selected row, diff gutter) into near-black
  * *with near-black text on it*. Hence the option, not a palette rewrite. */
 /* must match the overlay-off selector list in app.css */
-const LIGHT_THEMES = new Set([
-  'light', 'sepia', 'paper', 'frost', 'blossom', 'ash', 'slate', 'fog', 'zinc',
-]);
-/* What .pane-term resolves to for each of them — term-bg at 45% over the pane's
- * 55% surface over --bg (see app.css). xterm needs the real backdrop to measure
+const LIGHT_THEMES = new Set(['light']);
+/* What .pane-term resolves to for it — term-bg at 45% over the pane's 55%
+ * surface over --bg (see app.css). xterm needs the real backdrop to measure
  * against, not the palette's nominal `background`, which the CSS covers up. */
 const LIGHT_PANE_BG = {
   light: '#f8f9fb',
-  sepia: '#f8f2e6',
-  paper: '#fefefe',
-  frost: '#fdfefe',
-  blossom: '#fffcfd',
-  ash: '#eaeaec',
-  slate: '#e5e9ee',
-  fog: '#e8ede9',
-  zinc: '#eae8ec',
 };
 /* and what app.css pins that same stack to while the overlay is off */
 const FLAT_PANE_BG = '#0b0d10';
@@ -607,6 +157,17 @@ let autoOrganize = true;
 // the only consumer and it used to pull the whole config across the boundary
 // to answer one boolean
 let skipPermissions = false;
+
+// "Fixed agent pane buttons" option in ⌨ Options — off by default, which folds
+// the five rarely-used header buttons behind the ⋯ tray; on keeps every button
+// inline the way it used to be
+let fixedActions = false;
+
+// every header glyph is drawn the same way — one stroke weight, one grid, so a
+// pane header reads as one row of icons rather than mono arrows beside SVGs
+const icon = (paths) =>
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" '
+  + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
 
 /* ---- cost & context panel ---- */
 
@@ -891,7 +452,7 @@ class Pane {
     this.btnApprove = document.createElement('button');
     this.btnApprove.className = 'pane-btn approve';
     this.btnApprove.dataset.tip = 'Approve (shift-click: always allow)';
-    this.btnApprove.textContent = '✓';
+    this.btnApprove.innerHTML = icon('<path d="M5 12.5l5 5L19 7"/>');
     this.btnApprove.style.display = 'none';
     this.btnApprove.addEventListener('click', (e) => {
       if (!this.respondToPrompt('yes', e.shiftKey)) toast("couldn't read the prompt — open the pane");
@@ -900,7 +461,7 @@ class Pane {
     this.btnDeny = document.createElement('button');
     this.btnDeny.className = 'pane-btn deny';
     this.btnDeny.dataset.tip = 'Deny';
-    this.btnDeny.textContent = '✕';
+    this.btnDeny.innerHTML = icon('<path d="M6 6l12 12M18 6L6 18"/>');
     this.btnDeny.style.display = 'none';
     this.btnDeny.addEventListener('click', () => {
       if (!this.respondToPrompt('no', false)) toast("couldn't read the prompt — open the pane");
@@ -913,7 +474,7 @@ class Pane {
     this.btnRestart = document.createElement('button');
     this.btnRestart.className = 'pane-btn restart';
     this.btnRestart.dataset.tip = 'Restart & continue last conversation (shift-click: fresh session)';
-    this.btnRestart.textContent = '↻';
+    this.btnRestart.innerHTML = icon('<path d="M20.5 9.5A8.5 8.5 0 1 0 21 14"/><path d="M21 4v5.5h-5.5"/>');
     this.btnRestart.style.display = 'none';
     this.btnRestart.addEventListener('click', (e) => handlers.onRestart(this, { resume: !e.shiftKey }));
 
@@ -932,13 +493,13 @@ class Pane {
     const btnExport = document.createElement('button');
     btnExport.className = 'pane-btn export';
     btnExport.dataset.tip = 'Save transcript to a file';
-    btnExport.textContent = '⤓';
+    btnExport.innerHTML = icon('<path d="M12 3v11"/><path d="M7.5 10L12 14.5 16.5 10"/><path d="M4 20h16"/>');
     btnExport.addEventListener('click', () => handlers.onExport(this));
 
     const btnSearch = document.createElement('button');
     btnSearch.className = 'pane-btn search';
     btnSearch.dataset.tip = 'Search (Ctrl+Shift+F)';
-    btnSearch.textContent = '⌕';
+    btnSearch.innerHTML = icon('<circle cx="11" cy="11" r="6.5"/><path d="M20.5 20.5l-4.8-4.8"/>');
     btnSearch.addEventListener('click', () => this.toggleSearch());
 
     const btnMic = document.createElement('button');
@@ -955,38 +516,38 @@ class Pane {
     const btnFontDown = document.createElement('button');
     btnFontDown.className = 'pane-btn font-down';
     btnFontDown.dataset.tip = 'Smaller text';
-    btnFontDown.textContent = '−';
+    btnFontDown.innerHTML = icon('<path d="M5 12h14"/>');
     btnFontDown.addEventListener('click', () => this.setFontSize(this.term.options.fontSize - 1));
 
     const btnFontUp = document.createElement('button');
     btnFontUp.className = 'pane-btn font-up';
     btnFontUp.dataset.tip = 'Larger text';
-    btnFontUp.textContent = '+';
+    btnFontUp.innerHTML = icon('<path d="M12 5v14M5 12h14"/>');
     btnFontUp.addEventListener('click', () => this.setFontSize(this.term.options.fontSize + 1));
 
     const btnMax = document.createElement('button');
     btnMax.className = 'pane-btn max';
     btnMax.dataset.tip = 'Maximize / restore (Ctrl+Shift+M)';
-    btnMax.textContent = '⛶';
+    btnMax.innerHTML = icon('<path d="M9 4H4v5"/><path d="M15 4h5v5"/><path d="M20 15v5h-5"/><path d="M4 15v5h5"/>');
     btnMax.addEventListener('click', () => handlers.onMaximize(this));
 
     this.btnSplitRight = document.createElement('button');
     this.btnSplitRight.className = 'pane-btn split-right';
     this.btnSplitRight.dataset.tip = 'Open a new agent to the right';
-    this.btnSplitRight.textContent = '→';
+    this.btnSplitRight.innerHTML = icon('<path d="M4 12h15"/><path d="M13.5 6.5L19 12l-5.5 5.5"/>');
     this.btnSplitRight.addEventListener('click', () => handlers.onSplit(this, 'right'));
 
     this.btnSplitDown = document.createElement('button');
     this.btnSplitDown.className = 'pane-btn split-down';
     this.btnSplitDown.dataset.tip = 'Open a new agent below';
-    this.btnSplitDown.textContent = '↓';
+    this.btnSplitDown.innerHTML = icon('<path d="M12 4v15"/><path d="M6.5 13.5L12 19l5.5-5.5"/>');
     this.btnSplitDown.addEventListener('click', () => handlers.onSplit(this, 'down'));
     this.syncSplitButtons();
 
     this.btnClose = document.createElement('button');
     this.btnClose.className = 'pane-btn close';
     this.btnClose.dataset.tip = 'Close session';
-    this.btnClose.textContent = '✕';
+    this.btnClose.innerHTML = icon('<path d="M6 6l12 12M18 6L6 18"/>');
     // mousedown, not click: a click needs down+up on the same element and
     // can get eaten by focus/layout churn in between — mousedown cannot
     this.btnClose.addEventListener('mousedown', (e) => {
@@ -996,10 +557,35 @@ class Pane {
       this.requestClose();
     });
 
-    header.append(
-      this.dot, this.taskEl, this.roleEl, this.effortEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.badge,
-      this.btnRestart, this.btnClear, btnExport, btnSearch, btnMic, btnFontDown, btnFontUp, btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
+    // the four buttons nobody reaches for mid-turn — inline when "Fixed agent
+    // pane buttons" is on, folded under the ⋯ otherwise. Search and text size
+    // have keyboard shortcuts, and text size is an Options row as well, so a
+    // pane header that shows all nine at once is nine equal-weight glyphs per
+    // pane and none of them louder than the agent's own name. The mic stays
+    // out: dictation is reached mid-turn, so it sits in the cluster itself.
+    this.overflowEl = document.createElement('span');
+    this.overflowEl.className = 'pane-overflow';
+    this.overflowEl.append(btnExport, btnSearch, btnFontDown, btnFontUp);
+    this.overflowEl.addEventListener('click', () => this.closeActionTray());
+
+    this.btnMore = document.createElement('button');
+    this.btnMore.className = 'pane-btn more';
+    this.btnMore.dataset.tip = 'Export, search, text size';
+    this.btnMore.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>';
+    this.btnMore.addEventListener('click', () => this.toggleActionTray());
+
+    // one bordered cluster, the way the top bar groups its secondary actions
+    const actions = document.createElement('span');
+    actions.className = 'pane-actions';
+    actions.append(
+      this.btnRestart, this.btnClear, btnMic, this.overflowEl, this.btnMore,
+      btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
+
+    header.append(
+      this.dot, this.taskEl, this.roleEl, this.effortEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.badge, actions
+    );
+    this.syncActionsMode();
 
     // search row (hidden until toggled)
     this.searchEl = document.createElement('div');
@@ -1606,7 +1192,10 @@ class Pane {
     // arrive first on a reattach — take it when the chip is still blank
     if (!this.modelLabel && u.model) this.setModel(prettyModelName(u.model));
 
-    this.usageSparkEl.textContent = sparkline(u.series);
+    // the sparkline and the tool trail are the only two values in the row that
+    // don't say what they are — everything else carries its own unit
+    const spark = sparkline(u.series);
+    this.usageSparkEl.textContent = spark ? 'per turn ' + spark : '';
     this.usageSparkEl.dataset.tip = 'Tokens per turn, most recent on the right';
     this.usageTurnsEl.textContent = u.turns + (u.turns === 1 ? ' turn' : ' turns');
 
@@ -1632,7 +1221,7 @@ class Pane {
       this.usageShareEl.style.display = 'none';
     }
 
-    this.usageToolsEl.textContent = this.toolTrail.join(' → ');
+    this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : '';
     this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran';
   }
 
@@ -1991,6 +1580,30 @@ class Pane {
     this.btnSplitDown.style.display = autoOrganize ? 'none' : '';
   }
 
+  /* ⋯ tray — the folded buttons drop under the header. Dismissed the way the
+   * branch menu is: a capture-phase mousedown anywhere outside it. */
+  toggleActionTray() {
+    if (this.overflowEl.classList.contains('open')) { this.closeActionTray(); return; }
+    this.overflowEl.classList.add('open');
+    // the mousedown fires before the ⋯ button's own click, so a click on the
+    // button itself must not count as "outside" — it would close and reopen
+    this._trayDismiss = (e) => {
+      if (!this.overflowEl.contains(e.target) && !this.btnMore.contains(e.target)) this.closeActionTray();
+    };
+    document.addEventListener('mousedown', this._trayDismiss, true);
+  }
+
+  closeActionTray() {
+    if (!this.overflowEl.classList.contains('open')) return;
+    this.overflowEl.classList.remove('open');
+    document.removeEventListener('mousedown', this._trayDismiss, true);
+  }
+
+  syncActionsMode() {
+    this.el.classList.toggle('fixed-actions', fixedActions);
+    if (fixedActions) this.closeActionTray();
+  }
+
   /* ---- rename ---- */
 
   startRename() {
@@ -2207,6 +1820,7 @@ class Pane {
 
   dispose() {
     this.closeBranchMenu();
+    this.closeActionTray();
     if (this.stopDictation) this.stopDictation();
     clearTimeout(this.idleTimer);
     clearTimeout(this.closeArmTimer);
@@ -2272,6 +1886,10 @@ Pane.setShowInitialCommand = (on) => { showInitialCommand = !!on; };
 
 /* same pattern as setShowInitialCommand, for the → / ↓ split buttons */
 Pane.setAutoOrganize = (on) => { autoOrganize = !!on; };
+
+/* and for "Fixed agent pane buttons" — on unfolds the ⋯ tray back into the
+ * header cluster; the caller re-syncs already-open panes */
+Pane.setFixedActions = (on) => { fixedActions = !!on; };
 
 /* and again for "Default agent permissions: auto" — the only thing that reads
  * it here is autoAcceptDialogs, which must not stall on an IPC round trip in

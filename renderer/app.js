@@ -65,15 +65,11 @@ function syncChrome() {
 
 function syncChromeNow() {
   const counts = {};
-  const byStatus = { working: 0, idle: 0, exited: 0 };
   for (const pane of state.panes.values()) {
     const id = pane.session.workspaceId;
     counts[id] = counts[id] || { n: 0, attn: false };
     counts[id].n += 1;
     if (pane.status === 'attention') counts[id].attn = true;
-    if (pane.status === 'exited') byStatus.exited += 1;
-    else if (pane.status === 'working') byStatus.working += 1;
-    else byStatus.idle += 1; // idle + attention: not doing work right now
   }
   Topbar.renderWorkspaces(orderedWorkspaces(), state.selectedWorkspaceId, counts, {
     onSelect: (id) => { toggleBoard(false); selectWorkspace(id); }, // a pill always means "show me the grid"
@@ -86,7 +82,7 @@ function syncChromeNow() {
   const wsColor = {};
   for (const ws of state.workspaces) wsColor[ws.id] = ws.color;
   Topbar.renderSwarmMap([...state.panes.values()], maxAgents, notifHandlers.onOpen, wsColor);
-  Topbar.updateSessionCount(grid.panes.length, liveAgentCount(), maxAgents, byStatus);
+  Topbar.updateAgentCap(liveAgentCount(), maxAgents);
   renderSwarmView(); // same coalesced beat as the rest of the chrome
   emptyState.style.display = grid.panes.length ? 'none' : '';
   reattachAllBtn.hidden = ![...state.panes.values()].some((p) => p.detached);
@@ -742,6 +738,13 @@ const applyUsagePanel = boolOption('usage-panel-toggle', 'usagePanel', false, (o
   for (const p of state.panes.values()) p.syncUsagePanel();
 });
 
+/* "Fixed agent pane buttons" — off by default: the five rarely-used header
+ * buttons fold behind each pane's ⋯. On puts them back inline. */
+const applyFixedPaneActions = boolOption('pane-fixed-actions-toggle', 'paneFixedActions', false, (on) => {
+  Pane.setFixedActions(on);
+  for (const p of state.panes.values()) p.syncActionsMode();
+});
+
 /* "Auto-organize agent windows" — on by default; off lets each pane's → / ↓
  * buttons place new agents by hand instead of the automatic square-ish grid */
 const applyAutoOrganize = boolOption('auto-organize-toggle', 'autoOrganize', true, (on) => {
@@ -777,7 +780,10 @@ function applyTheme(name) {
   for (const dot of themeDots) dot.classList.toggle('active', dot.dataset.theme === name);
 }
 themeDots.forEach((dot) => dot.addEventListener('click', () => applyTheme(dot.dataset.theme)));
-applyTheme(localStorage.getItem('swarmeye.theme') || 'dark');
+/* a theme this build no longer ships (the picker used to offer 25) falls back
+ * to dark rather than leaving data-theme pointing at a block that is gone */
+const savedTheme = localStorage.getItem('swarmeye.theme');
+applyTheme([...themeDots].some((d) => d.dataset.theme === savedTheme) ? savedTheme : 'dark');
 
 /* "Theme background overlay" — on by default; off hides the theme-tinted
  * background grid wash and pins the app's chassis (background, left bar,
@@ -940,6 +946,7 @@ document.getElementById('options-reset-btn').addEventListener('click', async () 
   applySkipPermissions(false);
   applyShowInitialCommand(false);
   applyUsagePanel(false);
+  applyFixedPaneActions(false);
   applyAutoOrganize(true);
   applyAgentPadding(true);
   for (const { key } of DEFAULT_PICKERS) applyDefault[key]('default');
@@ -1008,8 +1015,18 @@ async function waitForInjectionsToSettle(pane) {
  * button alike — so it's invoked from turn one instead of waiting on the
  * model to notice it's relevant on its own. Idempotent per session: whichever
  * trigger (SessionStart hook or the fallback timer) fires first wins.
- * Returns how many commands it typed — each is a turn the caller may have to
+ *
+ * Several skills go in as one `/a /b /c` message rather than one message
+ * each: claude expands a leading skill plus up to five more stacked after it
+ * (2.1.199+), so six active skills cost one turn instead of six. Expansion
+ * stops at the first token that isn't an inline skill, and everything from
+ * there on is read as argument text — so a `context: fork` skill ends the run
+ * and is sent on a line of its own instead of silently swallowing whatever
+ * followed it.
+ *
+ * Returns how many messages it typed — each is a turn the caller may have to
  * wait out before sending a prompt of its own. */
+const SKILL_STACK_MAX = 6; // claude expands the first skill plus five more
 async function tryInjectSkills(sessionId) {
   if (skillInjectAttempted.has(sessionId)) return 0;
   const pane = state.panes.get(sessionId);
@@ -1018,13 +1035,20 @@ async function tryInjectSkills(sessionId) {
   const active = typeof Skills !== 'undefined' ? await Skills.getActiveSkills() : [];
   // a workspace-local skill only exists for agents running in that folder
   const forHere = active.filter((s) => !s.workspaceId || s.workspaceId === pane.session.workspaceId);
+  const runs = [];
   for (const skill of forHere) {
-    window.swarm.writeSession(sessionId, '/' + skill.command);
+    const open = runs[runs.length - 1];
+    const stackable = open && !open.fork && !skill.fork && open.commands.length < SKILL_STACK_MAX;
+    if (stackable) open.commands.push('/' + skill.command);
+    else runs.push({ fork: !!skill.fork, commands: ['/' + skill.command] });
+  }
+  for (const run of runs) {
+    window.swarm.writeSession(sessionId, run.commands.join(' '));
     await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
     window.swarm.writeSession(sessionId, '\r');
     await new Promise((r) => setTimeout(r, TASK_MODEL_SETTLE_MS));
   }
-  return forHere.length;
+  return runs.length;
 }
 
 /* The startup sequence of a manually-added agent (+ Coding Agent / Ctrl+N):

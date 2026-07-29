@@ -63,7 +63,13 @@ function readSkillMeta(dest, fallbackName) {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
   let name = fallbackName;
   let description = '';
+  let fork = false;
   if (fm) {
+    // `context: fork` runs the skill as its own subagent, which ends claude's
+    // skill-stacking run — such a skill has to be sent on its own line (see
+    // tryInjectSkills in renderer/app.js)
+    fork = /^context:\s*fork\b/m.test(fm[1]);
+
     const lines = fm[1].split(/\r?\n/);
     const nameLine = lines.find((l) => /^name:/.test(l));
     if (nameLine) name = nameLine.replace(/^name:\s*/, '').trim().replace(/^["']|["']$/g, '') || name;
@@ -86,7 +92,7 @@ function readSkillMeta(dest, fallbackName) {
       }
     }
   }
-  return { name, description };
+  return { name, description, fork };
 }
 
 /* Skills that exist on disk without SwarmEye having installed them — the ones
@@ -122,6 +128,7 @@ function localSkillsIn(dir, { sourceId, sourceLabel, workspaceId = null }) {
       dir: skillDir,
       name: meta.name,
       description: meta.description,
+      fork: meta.fork,
       enabled: true, // on disk in a .claude/skills Claude Code reads = already live
       active: false, // filled in by listLocal from config
       updateAvailable: false,
@@ -169,8 +176,15 @@ class SkillsManager {
     return found;
   }
 
+  /* `fork` is re-read off disk instead of stored with the rest of the entry:
+   * it decides whether a skill can share one message with others at agent
+   * start, and a `git pull` can flip it under an entry saved at install time. */
   list() {
-    return [...this._configSkills(), ...this.listLocal()];
+    const installed = this._configSkills().map((s) => ({
+      ...s,
+      fork: readSkillMeta(this._skillDir(s), s.name).fork,
+    }));
+    return [...installed, ...this.listLocal()];
   }
 
   _findLocal(id) {

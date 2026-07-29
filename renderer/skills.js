@@ -323,6 +323,7 @@ const Skills = (() => {
     return skills.filter((s) => s.active).map((s) => ({
       command: s.invokeName || s.id,
       workspaceId: s.workspaceId || null,
+      fork: !!s.fork,
     }));
   }
 

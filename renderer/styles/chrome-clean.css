@@ -1,4 +1,4 @@
-/* SwarmEye — clean top bar + left bar
+/* SwarmEye — clean top bar + left bar + agent panes
  * Drop-in override sheet. Load AFTER styles/app.css:
  *   <link rel="stylesheet" href="styles/chrome-clean.css" />
  * Uses only tokens from styles/tokens.css, so every theme still works.
@@ -9,9 +9,9 @@
 /* ============================ TOP BAR ============================ */
 
 #topbar {
-  height: 52px;
-  padding: 0 16px;
-  gap: 14px;
+  height: 46px;
+  padding: 0 14px;
+  gap: 10px;
   background: var(--surface);
   backdrop-filter: none;                 /* flat, no glass */
   border-bottom: 1px solid var(--border);
@@ -21,79 +21,129 @@
 #logo { margin-right: 0; font-size: 13px; }
 #logo .logo-icon { width: 24px; height: 24px; }
 
-/* status counter, grouped and held to one line */
-#session-count {
+/* centre zone: the workspace the primary action lands in */
+#topbar-ctx {
+  display: flex;
+  align-items: center;
+  min-width: 0;
   flex: none;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0;
-  color: var(--muted);
+  font-size: 12px;
   white-space: nowrap;
 }
-/* hairline between the counter and the icon group */
-#session-count::after {
-  content: '';
-  display: inline-block;
-  width: 1px;
-  height: 20px;
-  margin-left: 14px;
-  vertical-align: -6px;
-  background: var(--border2);
+#topbar-ctx[hidden] { display: none; }
+.tb-ctx-name {
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* square-ish icon buttons instead of round glass pills */
-#topbar > #gsearch-btn,
-#topbar > #msg-btn,
-#topbar > #preview-btn,
-#topbar > #notif-btn,
-#topbar > #kbd-help {
-  width: 30px;
-  height: 30px;
+/* transient chips: one shape, three tones, no pulse */
+#topbar .topbar-chip {
+  flex: none;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+  animation: none;
+  box-shadow: none;
+  transition: background .15s, border-color .15s;
+}
+#topbar .topbar-chip[hidden] { display: none; }
+#topbar .chip-err {
+  cursor: default;
+  color: var(--err);
+  border: 1px solid color-mix(in srgb, var(--err) 40%, var(--border2));
+  background: color-mix(in srgb, var(--err) 10%, transparent);
+}
+#topbar .chip-amber {
+  color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+}
+#topbar .chip-accent {
+  color: var(--accent-text);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border2));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+#topbar .chip-amber:hover { background: color-mix(in srgb, var(--amber) 16%, transparent); }
+#topbar .chip-accent:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+/* five secondary actions share one border, divided by hairlines */
+#topbar-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: transparent;
+}
+#topbar-actions > button {
+  width: 32px;
+  height: 28px;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   padding: 0;
-  border: 1px solid var(--border2);
-  border-radius: 8px;
+  border: 0;
+  border-left: 1px solid var(--border2);
+  border-radius: 0;
   background: transparent;
   backdrop-filter: none;
   color: var(--text2);
-  font-size: 14px;
   cursor: pointer;
-  transition: border-color .15s, color .15s, background .15s;
+  transition: color .15s, background .15s;
 }
-#topbar > #gsearch-btn:hover,
-#topbar > #msg-btn:hover,
-#topbar > #preview-btn:hover,
-#topbar > #notif-btn:hover,
-#topbar > #kbd-help:hover {
-  border-color: var(--border-hover);
+#topbar-actions > button:first-child { border-left: 0; border-radius: 7px 0 0 7px; }
+#topbar-actions > button:last-child { border-radius: 0 7px 7px 0; }
+#topbar-actions > button:hover,
+#topbar-actions > button.active {
   color: var(--text);
   background: var(--hover);
+  border-color: var(--border2);
+  box-shadow: none;
 }
-#topbar > #gsearch-btn svg,
-#topbar > #msg-btn svg,
-#topbar > #preview-btn svg,
-#topbar > #notif-btn svg,
-#topbar > #kbd-help svg { width: 15px; height: 15px; display: block; }
+#topbar-actions > button svg { width: 15px; height: 15px; display: block; }
 
-/* Options lives in the top bar now — no name, no rail tile look */
-#topbar > #kbd-help { border-radius: 8px; width: 30px; height: 30px; }
-#topbar > #kbd-help .rail-tile-name { display: none !important; }
+/* Options lives in the cluster now — no name, no rail tile look */
+#topbar-actions > #kbd-help .rail-tile-name { display: none !important; }
 
-/* notifications keep the amber attention state, minus the glow */
-#topbar > #notif-btn {
+/* the bell is amber only while something is unread — a permanent alert
+ * colour makes the alert mean nothing */
+#topbar-actions > #notif-btn { color: var(--text2); }
+#topbar-actions > #notif-btn.unread,
+#topbar-actions > #notif-btn.unread:hover {
   color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 34%, var(--border2));
-  background: color-mix(in srgb, var(--amber) 7%, transparent);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  /* the cluster's hairlines are shared — an amber one here would read as the
+   * neighbouring button's border, not the bell's state */
+  border-color: var(--border2);
+  animation: none;
   box-shadow: none;
 }
 #notif-n {
-  top: -5px; right: -5px;
+  top: -4px; right: -1px;
   min-width: 15px; height: 15px;
   border-radius: 8px;
   font-size: 9px; line-height: 15px;
+}
+
+/* keyboard focus is visible on every top-bar control */
+#topbar-actions > button:focus-visible,
+#topbar .topbar-chip:focus-visible,
+#add-agent:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* one primary action, rectangular */
@@ -120,6 +170,10 @@
   padding: 0;
   overflow: hidden;                       /* the workspace list scrolls, not the rail */
   background: var(--surface);
+}
+/* only the pinned-open rail is flat: a hover preview floats over the grid
+ * without reflowing it, so it keeps the popover shadow app.css gives it */
+#leftbar.expanded #leftbar-surface {
   box-shadow: none;
   border-color: var(--border);
 }
@@ -158,6 +212,8 @@
   gap: 2px;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-width: thin;                  /* #leftbar-surface's `none` inherits */
+  scrollbar-color: var(--border3) transparent;
 }
 #leftbar.expanded #add-workspace,
 #leftbar.hover-expanded #add-workspace { order: 4; margin: 2px 10px 10px; }
@@ -176,10 +232,14 @@
   border-radius: 0;
   background: transparent;
 }
-#leftbar.expanded #board-btn,       #leftbar.hover-expanded #board-btn       { order: 7; }
-#leftbar.expanded #swarm-view-btn,  #leftbar.hover-expanded #swarm-view-btn  { order: 8; }
-#leftbar.expanded #history-btn,     #leftbar.hover-expanded #history-btn     { order: 9; }
-#leftbar.expanded #skills-btn,      #leftbar.hover-expanded #skills-btn      { order: 10; }
+/* the four destinations get the same head the workspace list has, so the rail
+ * reads as two named groups rather than one named list and four loose rows */
+#leftbar.expanded .nav-head,
+#leftbar.hover-expanded .nav-head { order: 7; margin-top: 4px; }
+#leftbar.expanded #board-btn,       #leftbar.hover-expanded #board-btn       { order: 8; }
+#leftbar.expanded #swarm-view-btn,  #leftbar.hover-expanded #swarm-view-btn  { order: 9; }
+#leftbar.expanded #history-btn,     #leftbar.hover-expanded #history-btn     { order: 10; }
+#leftbar.expanded #skills-btn,      #leftbar.hover-expanded #skills-btn      { order: 11; }
 #leftbar.expanded #board-btn,
 #leftbar.expanded #swarm-view-btn,
 #leftbar.expanded #history-btn,
@@ -198,7 +258,7 @@
  * columns), so the row wrapper disappears there and its head with it */
 .u-row { display: contents; }
 .u-head { display: none; }
-/* the 66px rail has no room for a section head either */
+/* the 57px rail has no room for a section head either */
 .ws-head { display: none; }
 
 #leftbar.expanded #usage,
@@ -371,6 +431,7 @@
 }
 
 /* --- swarm overview: one strip, no card --- */
+/* same head treatment as WORKSPACES and VIEWS — three groups, one style */
 .swarm-map-title,
 #leftbar.expanded .swarm-map-title,
 #leftbar.hover-expanded .swarm-map-title {
@@ -378,7 +439,7 @@
   font-size: 10px;
   font-weight: 600;
   letter-spacing: .14em;
-  color: color-mix(in srgb, var(--accent) 45%, var(--muted));
+  color: var(--muted);
   text-align: left;
 }
 /* --swarm-cols is set per render from the slot count, so the slots fill one
@@ -406,4 +467,287 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* --- collapsed rail: the same flat language as the expanded rows --- */
+/* app.css styles the 56px rail as glass buttons — rounded squares with a
+ * border, a glow on hover and a mono uppercase glyph. That is a second design
+ * system inside one control: hovering the rail open swapped every tile for a
+ * flat row. These rules give the collapsed state the row treatment, minus the
+ * name. */
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile {
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  backdrop-filter: none;
+  color: var(--text2);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+}
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile svg { width: 16px; height: 16px; }
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile:hover {
+  background: var(--hover);
+  color: var(--text);
+  box-shadow: none;
+}
+/* a touch stronger than the expanded row's 6%: there is no name beside it to
+ * carry the selection */
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile.selected {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+  box-shadow: none;
+}
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile.attn {
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  color: var(--amber);
+}
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile.attn.selected {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--amber);
+}
+#leftbar:not(.expanded):not(.hover-expanded) #add-workspace.rail-tile {
+  border: none;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 400;
+}
+#leftbar:not(.expanded):not(.hover-expanded) #add-workspace.rail-tile:hover {
+  background: var(--hover);
+  color: var(--text);
+  box-shadow: none;
+}
+/* two badges per tile, not four. The agent count and the pin marker both read
+ * in the hover flyout ("N agents · path", and the pin lit); hanging them off
+ * the corners of a borderless tile only made it look busy. */
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile .rail-n,
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile .ws-pin { display: none; }
+/* the identity colour is the same 3px bar the expanded row uses, just left of
+ * the glyph instead of left of the name */
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile .ws-color-dot {
+  top: 50%;
+  bottom: auto;
+  left: 3px;
+  width: 3px;
+  height: 16px;
+  margin-top: -8px;
+  border: none;
+  border-radius: 2px;
+}
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile .ws-attn {
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+/* no glow on the usage bars or the swarm slots either — same reason */
+#leftbar:not(.expanded):not(.hover-expanded) .u-fill,
+#leftbar:not(.expanded):not(.hover-expanded) .swarm-map-slot { box-shadow: none; }
+
+/* keyboard focus was invisible on every tile in both states */
+.rail-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ========================== AGENT PANES ========================== */
+
+/* --- the surface: flat, like the top bar and the rail --- */
+/* app.css builds a pane out of 55% surface, a 14px blur and a 26/64px drop
+ * shadow — the last glass left in the app once the chrome went flat. */
+.pane {
+  background: var(--surface);
+  backdrop-filter: none;
+  border-radius: 10px;
+  box-shadow: none;
+}
+.pane.focused { border-color: var(--accent); box-shadow: none; }
+#grid > .pane:only-child.focused,
+#grid.max-mode > .pane.maximized.focused { box-shadow: none; }
+/* the terminal was translucent so the pane's glass could read through it;
+ * with an opaque pane there is nothing left to read through */
+.pane-term { background: var(--term-bg); }
+/* one flat surface: the header, the command row and the usage panel are told
+ * apart by their hairlines, not by three different tints of the same colour */
+.pane-header,
+.pane-subheader,
+.pane-usage { background: transparent; }
+.pane-header {
+  position: relative;                    /* anchors the ⋯ tray below */
+  gap: 7px;
+  padding: 7px 8px 7px 10px;
+}
+
+/* --- the agent's name is the loudest thing in its own header --- */
+/* it was mono 10px uppercase --muted, quieter than every chip beside it */
+.pane-title {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+
+/* --- one chip shape, three tones --- */
+/* neutral: what the agent is (task, role, effort, model) */
+.pane-task,
+.pane-role,
+.pane-effort,
+.pane-llm,
+.pane-git,
+.pane-badge {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text2);
+  border: 1px solid var(--border2);
+  background: transparent;
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+/* accent: the branch chip is the only one of the six you can click */
+.pane-git { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 35%, var(--border2)); }
+.pane-git:hover { background: var(--hover); border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
+.pane-git.dirty {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+}
+/* state: the pane is not running the way it should be */
+.pane-badge {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 40%, var(--border2));
+  background: color-mix(in srgb, var(--err) 8%, transparent);
+}
+.pane.detached .pane-badge {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+}
+/* the permission mode is a control, not a chip, but it reads on the same line */
+.pane-mode {
+  height: 22px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text2);
+  border-color: var(--border2);
+}
+/* the hook status says what the agent is doing — sentences, not shouting */
+.pane-status {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text2);
+  opacity: 1;
+}
+
+/* --- one busy signal, not three --- */
+/* a pulsing dot, an equalizer and a status line all said "working" at once.
+ * The equalizer keeps the motion, the dot keeps the colour, the status keeps
+ * the words. */
+.pane-dot,
+.pane-dot.attn,
+.pane.exited .pane-dot { animation: none; box-shadow: none; }
+.pane-subheader-bar { background: var(--border3); box-shadow: none; }
+.pane-usage-bar > i { box-shadow: none; }
+.pane.maximized .pane-btn.max {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* --- the usage panel reads in the same voice --- */
+.pane-usage-spark { letter-spacing: 0; color: var(--text2); }
+.pane-usage-model { color: var(--text2); }
+
+/* --- the actions: one segmented cluster, five buttons folded away --- */
+.pane-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 0;
+  padding: 1px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+}
+.pane-actions .pane-btn {
+  width: 24px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text2);
+  transition: color .15s, background .15s;
+}
+.pane-actions .pane-btn:hover { color: var(--text); background: var(--hover); border-color: transparent; }
+.pane-actions .pane-btn svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
+.pane-actions .pane-btn.close:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+.pane-actions .pane-btn.close.armed {
+  color: var(--err);
+  background: color-mix(in srgb, var(--err) 20%, transparent);
+  border-color: transparent;
+}
+.pane-actions .pane-btn.restart { color: var(--accent-text); }
+.pane-actions .pane-btn.mic.listening { color: var(--err); border-color: transparent; }
+
+/* answering a live permission prompt is the one thing worth its own weight,
+ * so the pair stays outside the cluster */
+.pane-btn.approve,
+.pane-btn.deny {
+  width: 24px;
+  height: 22px;
+  border-radius: 6px;
+}
+.pane-btn.approve {
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border2));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.pane-btn.approve:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.pane-btn.deny {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 40%, var(--border2));
+  background: color-mix(in srgb, var(--err) 8%, transparent);
+}
+.pane-btn.deny:hover { background: color-mix(in srgb, var(--err) 18%, transparent); }
+.pane-btn.approve svg,
+.pane-btn.deny svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
+
+/* folded (the default): export / search / text size drop out of the header
+ * into a tray under the ⋯ — the pane clips its own overflow, so the tray
+ * hangs inside the pane rather than over its neighbour */
+.pane-overflow {
+  display: none;
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 8px;
+  z-index: 6;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.pane-overflow.open { display: flex; }
+/* "Fixed agent pane buttons" on: the same four flow back into the cluster in
+ * place, and the ⋯ that opened them has nothing left to open */
+.pane.fixed-actions .pane-overflow { display: contents; }
+.pane.fixed-actions .pane-btn.more { display: none; }
+.pane-btn.more svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
+
+/* --- keyboard focus: app.css has no :focus-visible rule at all --- */
+.pane-btn:focus-visible,
+.pane-mode:focus-visible,
+.pane-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }

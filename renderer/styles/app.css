@@ -50,22 +50,14 @@ body::before {
 :root[data-theme-overlay="off"] body::before {
   display: none;
 }
-/* The light-background themes write near-black text and near-white
- * borders — one vanishes against the dark chassis above, the other glares.
- * They borrow the default neutral ramp and keep their own accent hue, which
- * is the part that carries the theme's identity; --accent-text is mixed
- * toward white because every one of them darkens it for a light page. (The
- * matching terminal-palette flip lives in pane.js — see setXtermTheme, whose
- * LIGHT_THEMES set must list exactly the themes selected here.) */
-:root[data-theme-overlay="off"][data-theme="light"],
-:root[data-theme-overlay="off"][data-theme="sepia"],
-:root[data-theme-overlay="off"][data-theme="paper"],
-:root[data-theme-overlay="off"][data-theme="frost"],
-:root[data-theme-overlay="off"][data-theme="blossom"],
-:root[data-theme-overlay="off"][data-theme="ash"],
-:root[data-theme-overlay="off"][data-theme="slate"],
-:root[data-theme-overlay="off"][data-theme="fog"],
-:root[data-theme-overlay="off"][data-theme="zinc"] {
+/* The light theme writes near-black text and near-white borders — one
+ * vanishes against the dark chassis above, the other glares. It borrows the
+ * default neutral ramp and keeps its own accent hue, which is the part that
+ * carries the theme's identity; --accent-text is mixed toward white because
+ * it darkens it for a light page. (The matching terminal-palette flip lives
+ * in pane.js — see setXtermTheme, whose LIGHT_THEMES set must list exactly
+ * the themes selected here.) */
+:root[data-theme-overlay="off"][data-theme="light"] {
   --border: #1a1c20;
   --border2: #22252b;
   --border3: #2b2e34;
@@ -111,11 +103,15 @@ body::before {
  * resizing #leftbar itself, so panes never reflow just from a mouse hover.
  * The permanent "expanded" mode widens the placeholder too, for a real
  * (intentional) layout change. */
+/* 57px, not a round number picked by eye: 1px of it is the surface's right
+ * border, so a centred 42px tile lands its icon at x=28 — exactly where the
+ * expanded row puts it (10px list padding + 10px row padding + 8px half-icon).
+ * Hovering the rail open no longer slides the whole icon column sideways. */
 #leftbar {
   position: relative;
   z-index: 2;
   flex: none;
-  width: 66px;
+  width: 57px;
   min-height: 0;
   overflow: visible;
   transition: width 0.16s ease;
@@ -129,7 +125,7 @@ body::before {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  width: 66px;
+  width: 57px;
   padding: 14px 0;
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -137,7 +133,7 @@ body::before {
   overflow-x: hidden;
   min-height: 0;
   scrollbar-width: none;
-  transition: width 0.16s ease, padding 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+  transition: width 0.16s ease, padding 0.16s ease, gap 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
 }
 #leftbar-surface::-webkit-scrollbar { display: none; }
 
@@ -513,14 +509,6 @@ body::before {
 #add-agent:disabled {
   opacity: 0.35;
   cursor: not-allowed;
-}
-
-#session-count {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-  white-space: nowrap;
 }
 
 #kbd-pop, #kbd-shortcuts-pop {
@@ -1122,7 +1110,6 @@ body::before {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.45; transform: scale(0.8); }
 }
-.pane.attn { border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
 .pane.exited .pane-dot {
   background: var(--err);
   box-shadow: 0 0 8px rgba(255, 90, 90, 0.5);
@@ -1916,8 +1903,8 @@ body::before {
   height: 24px;
   cursor: pointer;
 }
-.arch-del:hover { color: #ff7a7a; }
-.arch-del.armed { color: #ff5a5a; border-color: #ff5a5a; }
+.arch-del:hover { color: var(--err); }
+.arch-del.armed { color: var(--err); border-color: var(--err); }
 
 /* ---------- options row in the ⌨ popover ---------- */
 
@@ -1970,31 +1957,8 @@ body::before {
   padding: 0;
 }
 .theme-dot[data-theme="dark"]   { background: linear-gradient(135deg, #0a0b0d 55%, #d6ff4b 55%); }
-.theme-dot[data-theme="light"]  { background: linear-gradient(135deg, #f2f3f5 55%, #71a800 55%); }
+.theme-dot[data-theme="light"]  { background: linear-gradient(135deg, #f2f3f5 55%, #476d0a 55%); }
 .theme-dot[data-theme="orange"] { background: linear-gradient(135deg, #0d0b08 55%, #ff9d2e 55%); }
-.theme-dot[data-theme="neo"]    { background: linear-gradient(135deg, #07060f 55%, #9c8bea 55%); }
-.theme-dot[data-theme="matrix"] { background: linear-gradient(135deg, #040804 55%, #00ff66 55%); }
-.theme-dot[data-theme="crimson"] { background: linear-gradient(135deg, #0f0708 55%, #ff3b5c 55%); }
-.theme-dot[data-theme="ocean"]  { background: linear-gradient(135deg, #06090d 55%, #22c3ee 55%); }
-.theme-dot[data-theme="mono"]   { background: linear-gradient(135deg, #0a0a0a 55%, #e5e5e5 55%); }
-.theme-dot[data-theme="sepia"]  { background: linear-gradient(135deg, #f1e9dc 55%, #8a5416 55%); }
-.theme-dot[data-theme="system"] { background: linear-gradient(135deg, #0a0b0d 55%, #d6ff4b 55%); }
-.theme-dot[data-theme="tokyonight"] { background: linear-gradient(135deg, #1a1b26 55%, #7aa2f7 55%); }
-.theme-dot[data-theme="everforest"] { background: linear-gradient(135deg, #2b3339 55%, #a7c080 55%); }
-.theme-dot[data-theme="ayu"]    { background: linear-gradient(135deg, #0a0e14 55%, #ffb454 55%); }
-.theme-dot[data-theme="catppuccin"] { background: linear-gradient(135deg, #1e1e2e 55%, #cba6f7 55%); }
-.theme-dot[data-theme="catppuccin-macchiato"] { background: linear-gradient(135deg, #24273a 55%, #c6a0f6 55%); }
-.theme-dot[data-theme="gruvbox"] { background: linear-gradient(135deg, #282828 55%, #fabd2f 55%); }
-.theme-dot[data-theme="kanagawa"] { background: linear-gradient(135deg, #1f1f28 55%, #7e9cd8 55%); }
-.theme-dot[data-theme="nord"]   { background: linear-gradient(135deg, #2e3440 55%, #88c0d0 55%); }
-.theme-dot[data-theme="one-dark"] { background: linear-gradient(135deg, #282c34 55%, #61afef 55%); }
-.theme-dot[data-theme="paper"]  { background: linear-gradient(135deg, #ffffff 55%, #1f2937 55%); }
-.theme-dot[data-theme="frost"]  { background: linear-gradient(135deg, #f7fbfc 55%, #0d7f95 55%); }
-.theme-dot[data-theme="blossom"] { background: linear-gradient(135deg, #fdf8f9 55%, #be1d51 55%); }
-.theme-dot[data-theme="ash"]    { background: linear-gradient(135deg, #dcdcde 55%, #a35a09 55%); }
-.theme-dot[data-theme="slate"]  { background: linear-gradient(135deg, #d5dae1 55%, #1d4ed8 55%); }
-.theme-dot[data-theme="fog"]    { background: linear-gradient(135deg, #d9dedb 55%, #15803d 55%); }
-.theme-dot[data-theme="zinc"]   { background: linear-gradient(135deg, #dbd9dd 55%, #6d28d9 55%); }
 .theme-dot.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-glow);
@@ -2827,8 +2791,8 @@ body::before {
   cursor: pointer;
   flex: none;
 }
-.board-del:hover { color: #ff7a7a; }
-.board-del.armed { color: #ff5a5a; border-color: #ff5a5a; }
+.board-del:hover { color: var(--err); }
+.board-del.armed { color: var(--err); border-color: var(--err); }
 
 #board-archive[hidden] { display: none; }
 .board-archive-head {
@@ -2857,8 +2821,8 @@ body::before {
   padding: 6px 14px;
   cursor: pointer;
 }
-.board-archive-delall:hover { color: #ff7a7a; border-color: #ff7a7a; }
-.board-archive-delall.armed { color: #ff5a5a; border-color: #ff5a5a; }
+.board-archive-delall:hover { color: var(--err); border-color: var(--err); }
+.board-archive-delall.armed { color: var(--err); border-color: var(--err); }
 .board-archive-delall:disabled { opacity: 0.4; cursor: not-allowed; }
 #board-archive-search,
 #skills-search {
@@ -3355,7 +3319,7 @@ body::before {
   flex: none;
 }
 .skill-copy-btn:hover { color: var(--text); border-color: var(--border-hover); }
-.skill-remove-btn:hover { color: #ff7a7a; border-color: #ff7a7a; }
+.skill-remove-btn:hover { color: var(--err); border-color: var(--err); }
 .skill-remove-btn.armed {
   color: var(--err);
   border-color: var(--err);
@@ -3723,7 +3687,9 @@ body::before {
 .sv-legend-done { color: var(--entry-dot); }
 .sv-legend-idle { color: var(--muted2); }
 .sv-legend-exited { color: var(--err); }
-.sv-legend-note { color: var(--faint); }
+/* --muted2, not --faint: this is 9px prose, the smallest text in the app, and
+ * --faint is mixed for dividers and disabled ghosts rather than for reading */
+.sv-legend-note { color: var(--muted2); }
 
 /* ---- the dock ----
  * Type here reads at the left rail's scale (11px labels, 13px names) rather

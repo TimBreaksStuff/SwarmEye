@@ -29,13 +29,13 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
 
 ### Workspaces and the icon rail
 
-A vertical rail runs down the left side: the usage widget at the top, then each workspace as a tile, a dashed `+` tile that opens a folder picker, and the `Task Board` tile — pinned to the bottom are the swarm map status grid, `Swarm View`, `History`, `Skills`, and `⚙` Options tiles.
+A vertical rail runs down the left side: the usage widget at the top, then a `WORKSPACES` group — each workspace as a tile, plus a `+` tile that opens a folder picker — and pinned to the bottom the `SWARM` status strip and a `VIEWS` group holding `Task Board`, `Swarm View`, `History` and `Skills`.
 
-The selected tile decides which folder new agents start in. A tile whose agents need attention turns amber with a pulsing dot, and a corner badge shows its agent count. Hover a tile for a flyout with the full name and path — double-click the name there to rename, `📌` to pin it, or `✕` to remove it (running agents are killed after a confirm click); the folder on disk is never touched. Drag tiles to reorder them.
+The selected tile decides which folder new agents start in. A tile whose agents need attention turns amber with a pulsing dot; expanded, the row also carries its agent count. Hover a tile for a flyout with the full name, path and agent count — double-click the name there to rename, `📌` to pin it, or `✕` to remove it (running agents are killed after a confirm click); the folder on disk is never touched. Drag tiles to reorder them.
 
-**Pinning** floats a workspace to the top of the rail, marked with a pin in its corner, and `Ctrl+Tab` cycles in the order you see rather than the stored one. Inside each group (pinned, then the rest) the drag order is kept, so unpinning drops a workspace back exactly where it was instead of at the end.
+**Pinning** floats a workspace to the top of the rail, marked with a pin beside its name (and lit in its hover flyout), and `Ctrl+Tab` cycles in the order you see rather than the stored one. Inside each group (pinned, then the rest) the drag order is kept, so unpinning drops a workspace back exactly where it was instead of at the end.
 
-The rail comes **Expanded** (full workspace names, tile labels, radial usage gauges) or **Collapsed** (66px icons only, hover to preview the wider layout as an overlay).
+The rail comes **Expanded** (full workspace names and tile labels) or **Collapsed** (57px icons only, hover to preview the wider layout as a floating overlay). Both states use the same flat row treatment, and the icons sit in the same column either way, so opening the rail doesn't shift them sideways.
 
 ### Agent panes
 
@@ -287,7 +287,7 @@ The `⚙` tile at the bottom of the icon rail opens the Options panel. `↺ Rese
 
 | Option | Default | What it does |
 |---|---|---|
-| **Small left menu** | off | Collapses the icon rail to 66px icons-only; hovering previews the expanded layout as an overlay without reflowing the grid. |
+| **Small left menu** | off | Collapses the icon rail to 57px icons-only; hovering previews the expanded layout as an overlay without reflowing the grid. |
 | **Menu bar size** | 100% | Scales the top bar and icon rail, 70–160%. |
 | **Task board, Skills & Options text size** | 100% | Scales the board, archive, Skills screen and this panel, 70–160%. |
 | **Agent pane text size** | 13px | Default terminal text size, 8–24px. Shared with the per-pane `−`/`+` buttons and `Ctrl +`/`−`, so changing it here live-updates every open pane. |
@@ -305,8 +305,8 @@ The `⚙` tile at the bottom of the icon rail opens the Options panel. `↺ Rese
 | **Desktop notifications** | on | Raises a real OS notification — naming the agent, its workspace and what happened — when an agent finishes a turn or needs you while the SwarmEye window isn't focused. Clicking it brings the window back. See [Notification center](#notification-center). |
 | **Notification sound** | Chime | Played when an agent finishes a turn — Chime, Ping, Pop, Blip or None. |
 | **Dictation engine** | not installed | Shows install state and installs the local Whisper engine — see [Voice dictation](#voice-dictation). Deliberately **not** part of `↺ Reset`: an install isn't a preference. |
-| **Colour theme** | Dark | Restyles the whole cockpit *and* every terminal's ANSI palette. 26 themes: Dark, Light, Orange, Neo, Matrix, Crimson, Ocean, Mono, Sepia, System, Tokyo Night, Everforest, Ayu, Catppuccin, Catppuccin Macchiato, Gruvbox, Kanagawa, Nord, One Dark, and seven light ones — Paper, Frost and Blossom on white, Ash, Slate, Fog and Zinc on light grey. |
-| **Theme background overlay** | on | The selected theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, pane and terminal surfaces — stays the default dark shade, and only the theme's own colours (borders, text, accents, terminal ramp) still follow the theme. The nine light themes swap to a light-on-dark ramp when it is off, so their near-black text stays readable. |
+| **Colour theme** | Dark | Restyles the whole cockpit *and* every terminal's ANSI palette. Three themes: Dark, Light and Orange. |
+| **Theme background overlay** | on | The selected theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, pane and terminal surfaces — stays the default dark shade, and only the theme's own colours (borders, text, accents, terminal ramp) still follow the theme. Light swaps to a light-on-dark ramp when it is off, so its near-black text stays readable. |
 
 ---
 
