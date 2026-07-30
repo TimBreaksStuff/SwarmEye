@@ -11,6 +11,7 @@ const Speech = (() => {
   const supported = !!(window.swarm && window.swarm.speechStart && navigator.mediaDevices);
   let active = null; // { id, opts, stream, ctx }
   let nextId = 1;
+  const DOUBLE_CLICK_MS = 250;
 
   function teardownAudio(a) {
     if (a.stream) a.stream.getTracks().forEach((t) => t.stop());
@@ -115,9 +116,13 @@ const Speech = (() => {
    * .listening class, and turn the two user-facing failures into the same two
    * toasts. Only the interim flag and what to do with the text ever differed.
    *
-   * opts: { interim, onStart, onResult }  — onStart runs just before the mic
-   * opens, for a caller that needs to snapshot state first (the task form
-   * remembers what was already typed).
+   * opts: { interim, onStart, onResult, onEnd, onDouble }  — onStart runs just
+   * before the mic opens, for a caller that needs to snapshot state first (the
+   * task form remembers what was already typed); onEnd when it closes, however
+   * it closed. A caller that passes onDouble also gets double-click: the
+   * single-click toggle is then held back by DOUBLE_CLICK_MS so a second click
+   * can claim it instead (the pane's hands-free mode) — without that wait, the
+   * two clicks would start and kill a recognizer before the double even fired.
    *
    * Returns { toggle, stop }; both are safe no-ops when dictation isn't
    * supported, and stop() only stops a session this button actually started. */
@@ -127,7 +132,11 @@ const Speech = (() => {
       return { toggle: () => {}, stop: () => {} };
     }
     let dictating = false;
-    const finish = () => { dictating = false; btn.classList.remove('listening'); };
+    const finish = () => {
+      dictating = false;
+      btn.classList.remove('listening');
+      opts.onEnd && opts.onEnd();
+    };
     const toggle = () => {
       if (dictating) { stop(); return; }
       if (opts.onStart) opts.onStart();
@@ -144,7 +153,12 @@ const Speech = (() => {
         },
       });
     };
-    btn.addEventListener('click', toggle);
+    let clickTimer = null;
+    btn.addEventListener('click', () => {
+      if (!opts.onDouble) { toggle(); return; }
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; opts.onDouble(); return; }
+      clickTimer = setTimeout(() => { clickTimer = null; toggle(); }, DOUBLE_CLICK_MS);
+    });
     return { toggle, stop: () => { if (dictating) stop(); } };
   }
 

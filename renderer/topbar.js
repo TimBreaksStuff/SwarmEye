@@ -93,13 +93,24 @@ const Topbar = (() => {
       handlers.onSetPinned(ws.id, !ws.pinned);
     });
 
+    // the workspace notebook — what agents started here are told to read
+    const notes = document.createElement('button');
+    notes.className = 'rail-flyout-notes';
+    notes.textContent = '📝';
+    notes.dataset.tip = 'Workspace notes — every agent started here is pointed at them';
+    notes.addEventListener('click', (e) => {
+      e.stopPropagation(); // the popover's own outside-click handler would shut it again
+      hideFlyout();
+      handlers.onOpenNotes(ws);
+    });
+
     const x = document.createElement('button');
     x.className = 'rail-flyout-x';
     x.textContent = '✕';
     x.dataset.tip = 'Remove workspace';
     x.addEventListener('click', () => handlers.onRemove(ws.id));
 
-    flyout.append(infoEl, pin, x);
+    flyout.append(infoEl, notes, pin, x);
     flyout.hidden = false;
     const r = tile.getBoundingClientRect();
     flyout.style.left = Math.round(r.right + 10) + 'px';

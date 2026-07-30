@@ -16,6 +16,20 @@ const STT_CMD =
 const STT_CHECK =
   'test -x "$HOME/.local/share/swarmeye/stt/venv/bin/python" && test -f "$HOME/.local/share/swarmeye/stt/model/model.bin"';
 
+/* The other direction: spoken notifications. Piper (provisioned by
+ * scripts/setup-tts.sh into ~/.local/share/swarmeye/tts, inside WSL on
+ * Windows) reads the line to say on stdin and writes raw 16-bit mono PCM on
+ * stdout. That comes back base64'd — bytes crossing the WSL boundary as text
+ * can't be mangled — and the renderer turns it into an AudioBuffer, so no
+ * audio device is needed on the shell's side of the boundary. */
+const TTS_CMD =
+  'T="$HOME/.local/share/swarmeye/tts"; "$T/piper/piper" --model "$T/voice.onnx"'
+  + ' --espeak_data "$T/piper/espeak-ng-data" --output-raw 2>/dev/null | base64 | tr -d "\\n"';
+const TTS_CHECK =
+  'test -x "$HOME/.local/share/swarmeye/tts/piper/piper" && test -f "$HOME/.local/share/swarmeye/tts/voice.onnx"';
+const TTS_RATE = 22050; // every "medium" voice is 22.05 kHz, and the installer pins the voice
+const TTS_MAX_CHARS = 300; // an announcement, not an audiobook
+
 class SpeechBridge {
   constructor({ send, debugLog }) {
     this.send = send; // (channel, payload) => void, no-op if window is gone
@@ -25,7 +39,9 @@ class SpeechBridge {
     this.pending = []; // audio lines received before ready
     this.stopRequested = false;
     this.checked = null; // cached install check (promise)
+    this.ttsChecked = null;
     this.installing = false;
+    this.tts = null; // the synthesizer currently running, if any
   }
 
   available() {
@@ -35,26 +51,39 @@ class SpeechBridge {
     return this.checked;
   }
 
+  ttsAvailable() {
+    if (!this.ttsChecked) {
+      this.ttsChecked = exec(TTS_CHECK, 10000).then((out) => out !== null);
+    }
+    return this.ttsChecked;
+  }
+
   /* Runs setup-stt.sh from the ⌨ Options panel, streaming its output back so a
    * multi-minute model download isn't a frozen button. Same script the
    * `npm run setup:stt` path uses, so both routes behave identically —
    * including the prereq checks, which have to live in the script rather than
    * here (on Windows this process is on the wrong side of the WSL boundary
    * to see whether python3 exists). */
-  _scriptPath() {
+  _scriptPath(name) {
     // asar can't be executed from, and electron-builder unpacks scripts/ next
     // to it — see asarUnpack in package.json
-    return path.join(__dirname, '..', 'scripts', 'setup-stt.sh').replace('app.asar', 'app.asar.unpacked');
+    return path.join(__dirname, '..', 'scripts', name).replace('app.asar', 'app.asar.unpacked');
   }
 
-  install() {
+  install() { return this._runSetup('setup-stt.sh', 'speech:install-progress', 'checked'); }
+
+  installTts() { return this._runSetup('setup-tts.sh', 'tts:install-progress', 'ttsChecked'); }
+
+  // one install at a time, whichever engine: both are long downloads, and the
+  // Options panel only shows one running log box anyway
+  _runSetup(script, channel, cacheKey) {
     if (this.installing) return Promise.resolve({ ok: false, reason: 'busy' });
     this.installing = true;
     return new Promise((resolve) => {
       // Windows-only: a script path that can't be expressed as a WSL path.
       // Clear the flag before bailing or the Install button stays dead until
       // the app restarts.
-      const proc = spawnScript(this._scriptPath());
+      const proc = spawnScript(this._scriptPath(script));
       if (!proc) {
         this.installing = false;
         return resolve({ ok: false, reason: 'path' });
@@ -64,7 +93,7 @@ class SpeechBridge {
         this.installing = false;
         // a fresh install must be visible without an app restart, and a failed
         // one must not leave a cached false behind
-        this.checked = res.ok ? Promise.resolve(true) : null;
+        this[cacheKey] = res.ok ? Promise.resolve(true) : null;
         resolve(res);
       };
       // stderr carries the prereq "fix:" lines — the most useful output there
@@ -77,13 +106,13 @@ class SpeechBridge {
           while ((nl = buf.indexOf('\n')) >= 0) {
             const line = buf.slice(0, nl);
             buf = buf.slice(nl + 1);
-            this.send('speech:install-progress', { line });
+            this.send(channel, { line });
           }
         });
       }
       proc.on('error', (err) => {
         this.debugLog('[speech] install spawn error: ' + err.message);
-        this.send('speech:install-progress', { line: 'could not run the setup script: ' + err.message });
+        this.send(channel, { line: 'could not run the setup script: ' + err.message });
         done({ ok: false, reason: 'spawn' });
       });
       proc.on('close', (code) => done(code === 0 ? { ok: true } : { ok: false, reason: 'failed', code }));
@@ -156,6 +185,45 @@ class SpeechBridge {
     if (!this.proc || this.stopRequested) return;
     this.stopRequested = true;
     if (this.ready) this.proc.stdin.end();
+  }
+
+  /* Say one line. The text comes from the renderer, so it is squeezed to a
+   * single control-character-free line here as well — it is written to the
+   * synthesizer's stdin, never onto a command line, but the length cap and the
+   * newline strip are what keep one announcement one announcement. */
+  async speak(text) {
+    const line = String(text || '').replace(/\p{C}/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, TTS_MAX_CHARS);
+    if (!line) return { ok: false, reason: 'empty' };
+    if (!(await this.ttsAvailable())) return { ok: false, reason: 'not-installed' };
+    // several agents finishing together announce the newest, so a synthesizer
+    // still working on the previous line is abandoned rather than queued
+    this._killTts();
+    return new Promise((resolve) => {
+      const proc = spawnShell(TTS_CMD);
+      this.tts = proc;
+      let out = '';
+      proc.stdout.on('data', (d) => { out += d.toString(); });
+      proc.stderr.on('data', (d) => this.debugLog('[tts] ' + d));
+      proc.on('error', (err) => {
+        if (this.tts !== proc) return;
+        this.tts = null;
+        this.debugLog('[tts] spawn error: ' + err.message);
+        resolve({ ok: false, reason: 'spawn' });
+      });
+      proc.on('close', () => {
+        if (this.tts !== proc) return resolve({ ok: false, reason: 'superseded' });
+        this.tts = null;
+        resolve(out ? { ok: true, pcm: out, rate: TTS_RATE } : { ok: false, reason: 'no-audio' });
+      });
+      proc.stdin.end(line + '\n');
+    });
+  }
+
+  _killTts() {
+    const proc = this.tts;
+    if (!proc) return;
+    this.tts = null;
+    try { proc.kill(); } catch { /* already gone */ }
   }
 
   _kill() {

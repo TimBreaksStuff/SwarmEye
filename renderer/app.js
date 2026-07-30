@@ -78,6 +78,7 @@ function syncChromeNow() {
     onRename: renameWorkspace,
     onSetColor: setWorkspaceColor,
     onSetPinned: setWorkspacePinned,
+    onOpenNotes: (ws) => Notes.open(ws),
   });
   const wsColor = {};
   for (const ws of state.workspaces) wsColor[ws.id] = ws.color;
@@ -291,6 +292,7 @@ function isShortcut(e) {
   if (e.code === 'KeyX' && !e.shiftKey) return true;
   if (e.code === 'KeyT' && !e.shiftKey) return true;
   if (e.code === 'KeyR' && !e.shiftKey) return true;
+  if (e.code === 'KeyK' && !e.shiftKey) return true;
   if (!e.shiftKey) return false;
   return e.code === 'KeyM' || e.code === 'KeyF' || e.code === 'KeyG' || e.code === 'KeyB'
     || e.code === 'KeyS' || e.code === 'KeyE' || /^Digit\d$/.test(e.code);
@@ -311,6 +313,7 @@ function handleShortcut(e) {
   if (e.key === '-' || e.key === '_') { if (focused) focused.setFontSize(focused.term.options.fontSize - 1); return true; }
   if (e.key === '0' && !e.shiftKey) { if (focused) focused.setFontSize(Pane.DEFAULT_FONT_SIZE); return true; }
 
+  if (e.code === 'KeyK' && !e.shiftKey) { Palette.toggle(); return true; }
   if (e.code === 'KeyN' && !e.shiftKey) { addAgent(); return true; }
   if (e.code === 'KeyX' && !e.shiftKey) { if (focused) focused.requestClose(); return true; }
   if (e.code === 'KeyT' && !e.shiftKey) { toggleBoard(true); return true; }
@@ -344,6 +347,10 @@ function handleShortcut(e) {
  * sees the key. Elements are looked up lazily; several are declared further
  * down this file. */
 const ESCAPABLE = [
+  // outermost of the popovers: it opens over whatever view you were on, so it
+  // has to go before anything it might be covering
+  [() => document.getElementById('palette-pop'), () => Palette.close()],
+  [() => document.getElementById('notes-pop'), () => Notes.close()],
   [() => gsearchEl, () => toggleGlobalSearch(false)],
   [() => msgPopEl, () => Messenger.close()],
   [() => kbdShortcutsPop, () => { kbdShortcutsPop.hidden = true; }],
@@ -351,6 +358,7 @@ const ESCAPABLE = [
   // above the notification entries: the transcript modal is opened from them,
   // so it has to be the innermost thing Escape closes
   [() => document.getElementById('hist-modal'), () => History.closeModal()],
+  [() => document.getElementById('coord-modal'), () => Coordinator.close()],
   [() => notifPopEl, () => closeNotifPop()],
   [() => notifPanelEl, () => { notifPanelEl.hidden = true; }],
   [() => sessionViewEl, () => Board.closeSessionView()],
@@ -840,48 +848,167 @@ notifSoundSel.addEventListener('change', () => {
   Sounds.play(notifSound); // preview so the pick is audible immediately
 });
 
-/* dictation engine installer — the ⌨ popover row. The engine is a Python venv
- * plus a ~465 MB Whisper model (inside WSL on Windows), so it's never
- * installed automatically; this runs the same scripts/setup-stt.sh that
- * `npm run setup:stt` does, streaming its output into a log box because a
- * multi-minute download behind a disabled button is indistinguishable from a
- * hang. Not part of ↺ Reset — an install isn't a preference. */
-const sttStatusEl = document.getElementById('stt-status');
-const sttInstallBtn = document.getElementById('stt-install-btn');
-const sttLogEl = document.getElementById('stt-log');
-const STT_LOG_MAX = 200;
-
-async function refreshSttStatus() {
-  const installed = await window.swarm.speechInstalled();
-  sttStatusEl.textContent = installed ? 'installed' : 'not installed';
-  sttStatusEl.classList.toggle('ok', installed);
-  sttInstallBtn.textContent = installed ? 'Reinstall' : 'Install';
-}
-refreshSttStatus();
-
-// registered once, not per click — preload's onX are bare ipcRenderer.on with
-// no unsubscribe, same constraint onSkillUpdateStatus lives with
-window.swarm.onSpeechInstallProgress(({ line }) => {
-  sttLogEl.textContent += line + '\n';
-  const lines = sttLogEl.textContent.split('\n');
-  if (lines.length > STT_LOG_MAX) sttLogEl.textContent = lines.slice(-STT_LOG_MAX).join('\n');
-  sttLogEl.scrollTop = sttLogEl.scrollHeight;
+/* "Spoken notifications" — off by default, and dead until the voice engine in
+ * the row below is installed. Says which agent finished and what it said last;
+ * only for turns that end while you aren't watching, the same gate the sound
+ * uses. Deliberately not wired to 'attention': that already flashes the
+ * taskbar, raises a toast and rings the bell, and a busy swarm would talk
+ * without pause. */
+let notifSpeech = false;
+const applyNotifSpeech = boolOption('voice-notif-toggle', 'notifSpeech', false, (on) => {
+  notifSpeech = on;
+});
+document.getElementById('voice-notif-toggle').addEventListener('change', (e) => {
+  // a preview only when it's switched on by hand — boolOption's own effect
+  // also runs at boot, where an announcement out of nowhere would be a bug
+  if (e.target.checked) Sounds.speak('Spoken notifications on');
 });
 
-sttInstallBtn.addEventListener('click', async () => {
-  sttInstallBtn.disabled = true;
-  sttStatusEl.textContent = 'installing…';
-  sttStatusEl.classList.remove('ok');
-  sttLogEl.textContent = '';
-  sttLogEl.hidden = false;
-  const res = await window.swarm.speechInstall();
-  sttInstallBtn.disabled = false;
-  // the main process clears its cached availability check on success, so the
-  // mic works straight away — no app restart
-  if (res.ok) toast('dictation engine installed — the mic button works now');
-  else if (res.reason === 'busy') toast('an install is already running');
-  else toast('dictation engine install failed — see the log in ⌨ Options');
-  refreshSttStatus();
+/* The agent's closing message lands a beat after the Stop that ended the turn
+ * — the transcript read behind it is async (see applyTaskSummary) — so a
+ * finished agent is armed here and announced by whichever comes first: its
+ * summary, or this timer, which says the name alone. */
+const pendingSpeech = new Map(); // sessionId -> { name, timer }
+const SPEAK_SUMMARY_WAIT_MS = 2500;
+
+function armSpeech(pane) {
+  if (!notifSpeech) return;
+  const id = pane.session.id;
+  const prev = pendingSpeech.get(id);
+  if (prev) clearTimeout(prev.timer);
+  // the name is copied, not the pane: a task with 'close on complete' takes
+  // its pane down before the summary arrives
+  pendingSpeech.set(id, {
+    name: pane.session.agentName,
+    timer: setTimeout(() => sayDone(id, null), SPEAK_SUMMARY_WAIT_MS),
+  });
+}
+
+function sayDone(id, line) {
+  const entry = pendingSpeech.get(id);
+  if (!entry) return; // no finished turn waiting on a voice — mid-turn summaries pass through
+  pendingSpeech.delete(id);
+  clearTimeout(entry.timer);
+  Sounds.speak(line ? `${entry.name} finished. ${line}` : `${entry.name} finished its turn.`);
+}
+
+/* What actually gets said. The closing message is markdown written for the eye
+ * — headings, inline identifiers, commit hashes, file paths — and read out
+ * verbatim it is gibberish ("one point three nine point one, five one six six
+ * nine c b"). So the syntax and the unspeakable tokens come out first, and
+ * then the first fragment that is really a sentence is picked: anything that
+ * is mostly symbols, a bare version or a heading is skipped rather than
+ * announced. An opener too short to say anything on its own ("Fixed and
+ * shipped.") takes the sentence after it along. */
+const SPEECH_MAX = 200; // ~12 seconds — an update, not a reading
+const SPEECH_SHORT = 45; // an opener under this is joined with the next sentence
+const SPEECH_HOLE = '\u0000'; // marks where an unsayable identifier was taken out
+
+function speechClean(text) {
+  return text
+    .replace(/```[\s\S]*?```/g, ' ') // a code block read aloud is noise
+    // a plain-word code span stays — a filename reads better than a gap; one
+    // carrying symbols can't be said at all and leaves a hole behind instead
+    .replace(/`([^`]*)`/g, (m, code) => (/^[\w.\-/]{1,24}$/.test(code) ? code : SPEECH_HOLE))
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1') // a link says its text, not its URL
+    .replace(/\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b/gi, ' ') // commit hashes
+    .replace(/\S*\/\S+/g, (t) => t.split('/').filter(Boolean).pop() || ' ') // a path says its file
+    .replace(/[*_#>|~[\]()]/g, ' ')
+    .replace(/^[-•*\d.)\s]+(?=[A-Za-z])/gm, '') // list markers, not words
+    .replace(/[^\S\n]+([.,!?;:])/g, '$1') // don't strand the punctuation the split needs
+    .replace(/[^\S\n]+/g, ' ') // collapse spaces but keep the line breaks
+    .replace(/\n+/g, '\n')
+    .trim();
+}
+
+/* Worth saying: several real words, and not mostly digits and symbols. */
+function speakableSentence(s) {
+  if (s.split(' ').filter((w) => /[A-Za-z]{2,}/.test(w)).length < 4) return false;
+  return (s.match(/[A-Za-z ]/g) || []).length / s.length > 0.6;
+}
+
+function speechLine(text) {
+  const sentences = speechClean(text)
+    .split(/(?<=[.!?])\s+|\n/)
+    .map((s) => s.trim())
+    // "the check used <hole> instead of <hole>" is worse than saying nothing:
+    // a sentence built around an identifier that can't be spoken is dropped
+    .filter((s) => !s.includes(SPEECH_HOLE))
+    .filter(speakableSentence);
+  if (!sentences.length) return null;
+  let line = sentences[0];
+  // a heading or bullet carries no full stop of its own, so give it one before
+  // the next sentence runs into it
+  if (line.length < SPEECH_SHORT && sentences[1]) line = `${line.replace(/[^.!?]$/, '$&.')} ${sentences[1]}`;
+  // cut on a word boundary — half a word is worse than a shorter sentence
+  return line.length > SPEECH_MAX ? `${line.slice(0, SPEECH_MAX).replace(/\s+\S*$/, '')}…` : line;
+}
+
+/* local engine installers — the ⌨ popover's dictation and voice rows. Neither
+ * engine ships with the app (a Python venv plus a ~465 MB Whisper model for
+ * dictation, the Piper binary plus a ~61 MB voice for speech, both inside WSL
+ * on Windows), so each row runs the same scripts/setup-*.sh that
+ * `npm run setup:*` does and streams its output into a log box — a
+ * multi-minute download behind a disabled button is indistinguishable from a
+ * hang. Neither is part of ↺ Reset: an install isn't a preference. */
+const ENGINE_LOG_MAX = 200;
+
+function engineRow({ statusId, btnId, logId, installed, install, onProgress, okToast, failToast }) {
+  const statusEl = document.getElementById(statusId);
+  const btn = document.getElementById(btnId);
+  const logEl = document.getElementById(logId);
+
+  const refresh = async () => {
+    const on = await installed();
+    statusEl.textContent = on ? 'installed' : 'not installed';
+    statusEl.classList.toggle('ok', on);
+    btn.textContent = on ? 'Reinstall' : 'Install';
+  };
+
+  // registered once, not per click — preload's onX are bare ipcRenderer.on with
+  // no unsubscribe, same constraint onSkillUpdateStatus lives with
+  onProgress(({ line }) => {
+    logEl.textContent += line + '\n';
+    const lines = logEl.textContent.split('\n');
+    if (lines.length > ENGINE_LOG_MAX) logEl.textContent = lines.slice(-ENGINE_LOG_MAX).join('\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  });
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    statusEl.textContent = 'installing…';
+    statusEl.classList.remove('ok');
+    logEl.textContent = '';
+    logEl.hidden = false;
+    const res = await install();
+    btn.disabled = false;
+    // the main process clears its cached availability check on success, so the
+    // engine works straight away — no app restart
+    if (res.ok) toast(okToast);
+    else if (res.reason === 'busy') toast('an install is already running');
+    else toast(failToast);
+    refresh();
+  });
+
+  refresh();
+}
+
+engineRow({
+  statusId: 'stt-status', btnId: 'stt-install-btn', logId: 'stt-log',
+  installed: () => window.swarm.speechInstalled(),
+  install: () => window.swarm.speechInstall(),
+  onProgress: window.swarm.onSpeechInstallProgress,
+  okToast: 'dictation engine installed — the mic button works now',
+  failToast: 'dictation engine install failed — see the log in ⌨ Options',
+});
+
+engineRow({
+  statusId: 'tts-status', btnId: 'tts-install-btn', logId: 'tts-log',
+  installed: () => window.swarm.ttsInstalled(),
+  install: () => window.swarm.ttsInstall(),
+  onProgress: window.swarm.onTtsInstallProgress,
+  okToast: 'voice installed — spoken notifications work now',
+  failToast: 'voice install failed — see the log in ⌨ Options',
 });
 
 /* The ⌨ popover's three default pickers are one control three times: fill the
@@ -934,8 +1061,15 @@ const applyDefaultFocus = boolOption('default-focus-toggle', 'defaultFocus', fal
   Board.setDefaults({ defaultFocus: on });
 });
 
-/* reset to default — restores every setting in the Options popover */
-document.getElementById('options-reset-btn').addEventListener('click', async () => {
+/* reset to default — restores every setting in the Options popover. Two
+ * clicks, like every other control here that can't be undone: one stray click
+ * would otherwise throw away a whole configuration silently. */
+const optionsResetBtn = document.getElementById('options-reset-btn');
+optionsResetBtn.addEventListener('click', () => {
+  Confirm.armOrFire(optionsResetBtn, 'options-reset', resetOptions);
+});
+
+async function resetOptions() {
   applyLeftbarStyle('expanded');
   applyTopbarZoom(1);
   applyBoardZoom(1);
@@ -953,13 +1087,14 @@ document.getElementById('options-reset-btn').addEventListener('click', async () 
   applyDefaultFocus(false);
   applyTaskSummaryOption(true);
   applyDesktopNotifs(true);
+  applyNotifSpeech(false);
   applyTheme('dark');
   applyThemeOverlay(true);
   notifSound = 'chime';
   notifSoundSel.value = notifSound;
   localStorage.setItem('swarmeye.notifSound', notifSound);
   toast('options reset to default');
-});
+}
 
 /* ---- task board: queued todos for agents, started now or auto-scheduled
  * once an agent slot and usage headroom are both available ---- */
@@ -1178,9 +1313,11 @@ async function startTask(task, { notify = false } = {}) {
   try {
     // launched as a --model flag (session-only), never a typed `/model`
     // command — that saves as the user's default for new sessions and would
-    // bleed this task's choice into every agent started afterward
+    // bleed this task's choice into every agent started afterward.
+    // A role brings its own model tier, so an unset model means "let the role
+    // decide" rather than "send the default" — the same rule addAgent uses.
     const modelArg = task.model && task.model !== 'default' ? task.model : undefined;
-    const res = await window.swarm.createSession(task.workspaceId, 100, 30, modelArg);
+    const res = await window.swarm.createSession(task.workspaceId, 100, 30, modelArg, undefined, task.role || undefined);
     if (!res.ok) {
       if (notify) {
         toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached — task left pending` : 'could not start task: ' + res.reason);
@@ -1232,9 +1369,10 @@ async function tryInjectPrompt(sessionId) {
     typedCommands++;
   }
   // `/focus` is a toggle, and claude doesn't always start with it off — so
-  // only send it when the footer shows it's not already active, or this
-  // would just as easily switch it off as on
-  if (task.focus && !pane.detectFocus()) {
+  // send it only when the footer disagrees with what the task asked for:
+  // that both turns it on when wanted and off when claude carried it over
+  // from a previous session
+  if (!!task.focus !== pane.detectFocus()) {
     window.swarm.writeSession(sessionId, '/focus');
     await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
     window.swarm.writeSession(sessionId, '\r');
@@ -1272,12 +1410,12 @@ function applyTaskSummary(sessionId, summary) {
   renderBoard();
 }
 
-async function createTask({ text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt }) {
+async function createTask({ text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt, role }) {
   if (!workspaceId) { toast('pick a workspace for this task'); return; }
   const targetResetsAt = mode === 'next-session'
     ? (usageSnapshot && usageSnapshot.fiveHour && usageSnapshot.fiveHour.resetsAt) || null
     : null;
-  const res = await window.swarm.createTask({ text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt, targetResetsAt });
+  const res = await window.swarm.createTask({ text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt, targetResetsAt, role });
   if (!res.ok) {
     toast(res.reason === 'empty-text' ? 'task text can’t be empty' : 'could not create task');
     return;
@@ -1309,6 +1447,7 @@ function startChain(task) {
     closeOnComplete: task.closeOnComplete,
     priority: task.priority,
     category: task.category,
+    role: task.role,
     chain: rest,
   });
 }
@@ -1332,6 +1471,7 @@ function startRepeat(task) {
     closeOnComplete: task.closeOnComplete,
     priority: task.priority,
     category: task.category,
+    role: task.role,
     chain: task.chain,
     repeat: task.repeat,
     nextRunAt: Date.now() + every,
@@ -1785,6 +1925,7 @@ const paneHandlers = {
         notifyOS(pane, 'finished its turn'); // taskbar flash + OS toast; the bell below carries the detail
         pushNotif(pane, 'done', 'finished its turn');
         Sounds.play(notifSound);
+        armSpeech(pane); // spoken once its summary lands, or 2.5s from now
       }
       // a Stop that lands before the task's prompt is in (or before its turn
       // has started) belongs to a startup injection, not to the task
@@ -1831,7 +1972,7 @@ const paneHandlers = {
     if (res.ok) toast('transcript saved to ' + res.path);
     else if (!res.canceled) toast('could not save: ' + res.reason);
   },
-  async onRestart(pane, { resume }) {
+  async onRestart(pane, { resume, model }) {
     // a detached pane's agent is still running — reconnect, don't respawn
     if (pane.detached) {
       if (await reattachPane(pane)) {
@@ -1853,12 +1994,16 @@ const paneHandlers = {
       rows: pane.term.rows,
       resume,
       role: s.role,
+      // only set by the pane's right-sizing offer; a plain restart comes back
+      // on whatever tier it was launched with
+      model,
     });
     if (!res.ok) {
       toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not restart: ' + res.reason);
       return false;
     }
     if (resume && !res.resumed) toast('no previous conversation in this folder — started fresh');
+    if (model) toast(`${s.agentName} restarted on ${model}`);
     const fresh = new Pane(res.session, paneHandlers, { managed: pane.managed });
     state.panes.delete(s.id);
     state.panes.set(res.session.id, fresh);
@@ -1991,7 +2136,10 @@ window.swarm.onSessionExit(({ id, exitCode, detached }) => {
 window.swarm.onSessionState((payload) => {
   const pane = state.panes.get(payload.id);
   if (pane) pane.applyHookEvent(payload);
-  if (payload.summary) applyTaskSummary(payload.id, payload.summary);
+  if (payload.summary) {
+    applyTaskSummary(payload.id, payload.summary);
+    sayDone(payload.id, speechLine(payload.summary)); // no-op unless this session just finished
+  }
   // the task's own turn has begun — from here a Stop is its completion. Every
   // event but Stop (and SessionStart, which precedes the prompt) says the
   // agent is live on the prompt we just sent it.
@@ -2172,6 +2320,68 @@ window.swarm.onUpdateError(({ error }) => {
  * real keystroke instead of a pasted chunk with a newline in it. */
 const msgPopEl = document.getElementById('msg-pop');
 
+Notes.init({ toast });
+
+/* Everything the palette (Ctrl+K) can reach. Built fresh on every open — a
+ * closed agent or a finished task must never still be offered — and kept here
+ * rather than in palette.js because this is the one file that knows both the
+ * app's state and what each entry should actually do. */
+Palette.init({
+  getItems() {
+    const out = [];
+    const wsName = (id) => (state.workspaces.find((w) => w.id === id) || {}).name || '?';
+
+    for (const pane of state.panes.values()) {
+      if (pane.exited) continue;
+      out.push({
+        group: 'agent',
+        label: pane.session.agentName,
+        hint: `${pane.session.workspaceName} · ${pane.status}`,
+        run: () => notifHandlers.onOpen(pane.session.id), // swaps workspace and view too
+      });
+    }
+
+    for (const ws of state.workspaces) {
+      out.push({ group: 'workspace', label: ws.name, hint: ws.path, run: () => { toggleBoard(false); selectWorkspace(ws.id); } });
+      out.push({
+        group: 'new agent',
+        label: 'New agent in ' + ws.name,
+        hint: 'spawn',
+        run: async () => { await selectWorkspace(ws.id); addAgent(); },
+      });
+      out.push({ group: 'notes', label: 'Notes · ' + ws.name, hint: '.swarmeye/notes.md', run: () => Notes.open(ws) });
+    }
+
+    for (const t of state.tasks) {
+      if (t.status === 'completed') continue;
+      out.push({
+        group: 'task',
+        label: t.text.replace(/\s+/g, ' ').slice(0, 90),
+        hint: `${t.status} · ${wsName(t.workspaceId)}`,
+        run: () => toggleBoard(true),
+      });
+    }
+
+    for (const s of Skills.installed()) {
+      out.push({ group: 'skill', label: s.name, hint: s.repo || 'skill', run: () => toggleSkills(true) });
+    }
+
+    const views = [
+      ['Agent grid', () => { toggleBoard(false); toggleSwarmView(false); toggleSkills(false); toggleHistory(false); }],
+      ['Task Board', () => toggleBoard(true)],
+      ['Swarm View', () => toggleSwarmView(true)],
+      ['History', () => toggleHistory(true)],
+      ['Skills', () => toggleSkills(true)],
+    ];
+    for (const [label, run] of views) out.push({ group: 'view', label, hint: 'open', run });
+
+    out.push({ group: 'action', label: 'Message agents', hint: 'Ctrl+Shift+E', run: () => Messenger.open() });
+    out.push({ group: 'action', label: 'Search across all agents', hint: 'Ctrl+Shift+G', run: () => toggleGlobalSearch(true) });
+    out.push({ group: 'action', label: 'Options & shortcuts', hint: 'gear', run: () => kbdHelpBtn.click() });
+    return out;
+  },
+});
+
 Messenger.init({
   listAgents: () => [...state.panes.values()]
     .filter((p) => !p.exited)
@@ -2311,14 +2521,18 @@ addAgentBtn.addEventListener('click', () => {
   menu.className = 'branch-menu';
   const entries = [{ label: 'Claude', tip: 'A plain agent — your Options default model, no role prompt' }];
   for (const r of roles) entries.push({ label: r.label, role: r.key, tip: `${r.label} role prompt · ${r.model}` });
-  for (const { label, role, tip } of entries) {
+  // the coordinator is the odd one out: it starts no agent of its own, it
+  // splits a request into board tasks that the scheduler then starts
+  entries.push({ label: 'Coordinator', coordinate: true, tip: 'Split one multi-part request into subtasks on the board — nothing starts until you approve them' });
+  for (const { label, role, tip, coordinate } of entries) {
     const row = document.createElement('button');
     row.className = 'branch-item';
     row.textContent = label;
     row.dataset.tip = tip;
     row.addEventListener('click', () => {
       closeAgentKindMenu();
-      addAgent({ role });
+      if (coordinate) openCoordinator();
+      else addAgent({ role });
     });
     menu.appendChild(row);
   }
@@ -2329,6 +2543,17 @@ addAgentBtn.addEventListener('click', () => {
   agentKindMenuEl = menu;
   document.addEventListener('mousedown', onAgentKindDismiss, true);
 });
+
+/* The coordinator splits into tasks, so it needs a workspace but no agent
+ * slot — the cap applies later, when the scheduler starts what it produced. */
+function openCoordinator() {
+  const ws = state.workspaces.find((w) => w.id === state.selectedWorkspaceId);
+  if (!ws) {
+    toast('add and select a workspace first');
+    return;
+  }
+  Coordinator.open({ workspaceId: ws.id, workspaceName: ws.name, roles, onCreate: createTask });
+}
 // the number and the gauges are two elements showing one thing — clicking
 // either refreshes it
 async function refreshUsageNow() {

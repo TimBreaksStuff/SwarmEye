@@ -190,6 +190,32 @@ const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SPARK_CHARS = '▁▂▃▄▅▆▇█';
 const TOOL_TRAIL_MAX = 3;
 
+/* How long the "another agent is in this file" chip stays up after the last
+ * shared write, re-armed by each new one. Shorter than the window main uses to
+ * decide what counts as shared (hooks.js COLLISION_WINDOW_MS): that one has to
+ * span an agent that reads for a while between edits, this one only has to
+ * outlast the gap between two agents actively working the same file. */
+const COLLISION_SHOW_MS = 10 * 60 * 1000;
+
+/* ---- right-sizing the model ----
+ *
+ * Tools that only look. An agent that has made this many calls in a row
+ * without touching a file is reading, and reading is work a cheaper tier does
+ * about as well — the first rule in CLAUDE.md's cost list, which the app has
+ * so far only documented. Bash is deliberately absent: it can do anything,
+ * including write, so it ends a streak rather than extending it.
+ *
+ * The streak, not the turn count, is the signal: it resets the moment the
+ * agent edits something, so an agent that reads for a while and then starts
+ * building never gets the offer. */
+const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'NotebookRead', 'WebFetch', 'WebSearch']);
+const RIGHTSIZE_MIN_CALLS = 12;
+
+/* Roles that are Opus *because* they read and judge — a Reviewer or a Planner
+ * doing nothing but reading is the job being done right, not a tier to save
+ * on, so the streak says nothing about them. */
+const RIGHTSIZE_SKIP_ROLES = new Set(['reviewer', 'planner']);
+
 function fmtTokens(n) {
   if (!n) return '0';
   if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M';
@@ -226,6 +252,14 @@ const IDLE_AFTER_MS = 2500;
 // output arriving this soon after a keystroke/mouse report is its echo, not
 // the agent working — typing or clicking must not light the busy indicator
 const INPUT_ECHO_MS = 400;
+
+// Saying this at the end of a dictated phrase submits it: the phrase itself is
+// stripped, dictation stops and Enter is pressed. Trailing punctuation is
+// allowed because whisper ends most utterances with a full stop.
+const DICTATE_SUBMIT = /[\s,]*\bsend it\b[\s.!?,]*$/i;
+// gap before Enter so it lands as its own keystroke rather than part of the
+// pasted chunk — the same reason tryInjectPrompt (app.js) splits its writes
+const DICTATE_SUBMIT_DELAY_MS = 150;
 
 /* Claude permission modes. There is no "set mode" API for a running claude —
  * the only control is Shift+Tab cycling — so we read the current mode from
@@ -471,6 +505,29 @@ class Pane {
     this.badge.className = 'pane-badge';
     this.badge.style.display = 'none';
 
+    // "somebody else is in this file too" — its own chip rather than the badge
+    // above, which is already spoken for by exited/detached and would have the
+    // two states overwrite each other.
+    this.collisionEl = document.createElement('span');
+    this.collisionEl.className = 'pane-collision';
+    this.collisionEl.style.display = 'none';
+
+    // "this Opus agent has only been reading" — click twice to bring it back
+    // on Haiku. A button, not a chip: it is the one thing in the header that
+    // changes what the agent costs.
+    this.readOnlyStreak = 0;
+    this.rightsizeEl = document.createElement('button');
+    this.rightsizeEl.className = 'pane-rightsize';
+    this.rightsizeEl.textContent = '→ Haiku';
+    this.rightsizeEl.style.display = 'none';
+    this.rightsizeEl.addEventListener('click', () => {
+      Confirm.armOrFire(this.rightsizeEl, 'rightsize:' + this.session.id, () => {
+        this.readOnlyStreak = 0;
+        this.syncRightsize(); // the offer goes away with the agent it was for
+        this.handlers.onRestart(this, { resume: true, model: 'haiku' });
+      });
+    });
+
     this.btnRestart = document.createElement('button');
     this.btnRestart.className = 'pane-btn restart';
     this.btnRestart.dataset.tip = 'Restart & continue last conversation (shift-click: fresh session)';
@@ -504,12 +561,38 @@ class Pane {
 
     const btnMic = document.createElement('button');
     btnMic.className = 'pane-btn mic';
-    btnMic.dataset.tip = 'Dictate (click to start/stop, Ctrl+R)';
+    btnMic.dataset.tip = 'Dictate (click to start/stop, Ctrl+R) — say "send it" to submit, double-click for hands-free';
     btnMic.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>';
-    // closing the pane mid-dictation must release the mic (see dispose)
+    // closing the pane mid-dictation must release the mic (see dispose).
+    // Double-click arms hands-free: "send it" still submits, but the mic stays
+    // open for the next prompt instead of closing, until a second double-click
+    // (or anything else that stops dictation) ends it.
+    let dictating = false;
     const mic = window.Speech.wire(btnMic, {
-      onResult: (text) => { if (text) this.term.paste(text + ' '); },
+      onStart: () => { dictating = true; },
+      onEnd: () => { dictating = false; this.setHandsFree(false); },
+      onDouble: () => {
+        if (this.handsFree) { this.stopDictation(); return; }
+        this.setHandsFree(true);
+        if (!dictating) mic.toggle();
+      },
+      onResult: (text) => {
+        if (!text) return;
+        const submit = DICTATE_SUBMIT.test(text);
+        const body = submit ? text.replace(DICTATE_SUBMIT, '') : text;
+        if (body) this.term.paste(submit ? body : body + ' ');
+        if (!submit) return;
+        if (!this.handsFree) this.stopDictation();
+        setTimeout(() => {
+          if (!this.exited) window.swarm.writeSession(this.session.id, '\r');
+        }, DICTATE_SUBMIT_DELAY_MS);
+      },
     });
+    this.handsFree = false;
+    this.setHandsFree = (on) => {
+      this.handsFree = on;
+      btnMic.classList.toggle('hands-free', on);
+    };
     this.toggleDictation = mic.toggle;
     this.stopDictation = mic.stop;
 
@@ -583,7 +666,7 @@ class Pane {
     );
 
     header.append(
-      this.dot, this.taskEl, this.roleEl, this.effortEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.badge, actions
+      this.dot, this.taskEl, this.roleEl, this.effortEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.rightsizeEl, this.collisionEl, this.badge, actions
     );
     this.syncActionsMode();
 
@@ -1045,7 +1128,7 @@ class Pane {
     return true;
   }
 
-  applyHookEvent({ event, tool, message, model, usage, transcript }) {
+  applyHookEvent({ event, tool, message, model, usage, transcript, collision }) {
     if (this.exited) return;
     // /clear and --resume both move the agent onto another transcript file,
     // so the newest one the hooks reported wins
@@ -1056,6 +1139,13 @@ class Pane {
       // a null payload is the reset /clear sends: the tally starts over
       this.usage = usage || null;
       this.renderUsagePanel();
+      return;
+    }
+    // another agent is writing a file this one is writing — like UsageUpdate,
+    // a bookkeeping event that says nothing about this agent's own state, so
+    // it returns before the working/waiting handling below
+    if (event === 'Collision') {
+      if (collision) this.setCollision(collision);
       return;
     }
     const wasWorking = this.working;
@@ -1087,6 +1177,9 @@ class Pane {
       if (tool) {
         this.toolTrail.push(tool);
         if (this.toolTrail.length > TOOL_TRAIL_MAX) this.toolTrail.shift();
+        if (READ_ONLY_TOOLS.has(tool)) this.readOnlyStreak++;
+        else this.readOnlyStreak = 0;
+        this.syncRightsize();
       }
       this.setStatusText(tool === 'Bash' ? 'vibing...' : (tool || ''));
     } else if (event === 'Notification') {
@@ -1117,6 +1210,45 @@ class Pane {
     if (wasWorking !== this.working) {
       this.handlers.onStatusChange(this, this.working ? 'working' : 'idle');
     }
+  }
+
+  /* Name whoever else has written this file recently. The ids come from main,
+   * which has no idea what an agent is called — the names are resolved here,
+   * against the panes actually on screen, so a session that has since been
+   * closed simply drops out of the list instead of showing as a raw id. */
+  setCollision({ file, others }) {
+    const names = [];
+    for (const id of others || []) {
+      for (const pane of livePanes) if (pane.session.id === id) names.push(pane.session.agentName);
+    }
+    if (!names.length) return;
+    this.collisionEl.textContent = '⚠ ' + file.split(/[\\/]/).pop();
+    this.collisionEl.dataset.tip =
+      `${names.join(', ')} ${names.length > 1 ? 'have' : 'has'} also edited ${file} recently`;
+    this.collisionEl.style.display = '';
+    clearTimeout(this.collisionTimer);
+    this.collisionTimer = setTimeout(() => {
+      this.collisionEl.style.display = 'none';
+    }, COLLISION_SHOW_MS);
+  }
+
+  /* Offer a cheaper tier to an Opus agent that has done nothing but read.
+   * The offer states what it will do before it does it and takes two clicks —
+   * a model swap that happened silently mid-task would be the worst possible
+   * version of this. Hidden again the moment the agent edits something. */
+  syncRightsize() {
+    const n = this.readOnlyStreak;
+    const eligible = n >= RIGHTSIZE_MIN_CALLS
+      && !this.exited
+      && /^opus\b/i.test(this.modelLabel || '')
+      && !RIGHTSIZE_SKIP_ROLES.has(this.session.role);
+    this.rightsizeEl.style.display = eligible ? '' : 'none';
+    if (!eligible) return;
+    this.rightsizeEl.dataset.tip =
+      `${this.session.agentName} has run ${n} read-only tool calls in a row on `
+      + `${this.modelLabel}. Click twice to restart it on Haiku — the conversation `
+      + 'is kept (--continue), so it picks up where it left off. The thread so far '
+      + 'is re-sent once at the cheaper rate.';
   }
 
   /* ---- cost & context panel ---- */
@@ -1231,6 +1363,9 @@ class Pane {
     if (!label) return;
     this.modelLabel = label;
     this.syncModelChip();
+    // the tier usually lands after the first tool calls, so the streak can
+    // already be long by the time we learn it is Opus
+    this.syncRightsize();
   }
 
   setEffort(label) {
@@ -1825,6 +1960,7 @@ class Pane {
     clearTimeout(this.idleTimer);
     clearTimeout(this.closeArmTimer);
     clearTimeout(this.modeTimer);
+    clearTimeout(this.collisionTimer);
     clearInterval(this.usageTimer);
     livePanes.delete(this);
     this.observer.disconnect();

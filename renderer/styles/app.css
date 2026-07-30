@@ -552,6 +552,7 @@ body::before {
   white-space: nowrap;
 }
 #options-reset-btn:hover { color: var(--accent-text); border-color: var(--accent); }
+#options-reset-btn.armed { color: var(--err); border-color: var(--err); }
 #kbd-pop .kbd-row, #kbd-shortcuts-pop .kbd-row {
   display: flex;
   align-items: center;
@@ -563,23 +564,31 @@ body::before {
   color: var(--text2);
 }
 #kbd-pop .kbd-opt { padding: 6px 0; }
-/* the two Options rows whose button carries a word (dictation Install, update
- * Download/Restart) — both have to escape .opt-ctl button's 24x24 stepper box */
+/* the three Options rows whose button carries a word (dictation Install, voice
+ * Install, update Download/Restart) — all have to escape .opt-ctl button's
+ * 24x24 stepper box. The min-width keeps the two engine rows' buttons the same
+ * size as each other whether they read Install or Reinstall, so they line up
+ * down the panel instead of stepping in and out with their own labels. */
 #stt-install-btn,
+#tts-install-btn,
 #update-action-btn {
   width: auto;
   height: auto;
+  min-width: 82px; /* the widest of Install / Reinstall / Download / Restart */
   padding: 5px 10px;
   font-size: 11px;
 }
 #stt-install-btn:disabled,
+#tts-install-btn:disabled,
 #update-action-btn:disabled { opacity: 0.5; cursor: default; }
 #stt-install-btn:disabled:hover,
+#tts-install-btn:disabled:hover,
 #update-action-btn:disabled:hover { color: var(--text2); border-color: var(--border3); }
 .stt-status.ok { color: var(--accent-text); }
-/* setup-stt.sh's output while it runs — pip and the model download can take
- * minutes, and silence reads as a hang */
-#stt-log {
+/* the setup scripts' output while they run — pip, the model and the voice
+ * download can take minutes, and silence reads as a hang */
+#stt-log,
+#tts-log {
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.5;
@@ -1239,6 +1248,9 @@ body::before {
 .pane-btn.mic svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
 .pane-btn.clear svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
 .pane-btn.mic.listening { color: var(--err); border-color: var(--err); }
+/* hands-free (double-click): stays open across submits, so it reads as armed
+   rather than as the single red phrase the plain listening state marks */
+.pane-btn.mic.hands-free { color: var(--accent-text); border-color: var(--accent); }
 
 /* quick-respond to a live permission prompt — approve/deny without opening the pane */
 .pane-btn.approve { color: var(--accent-text); }
@@ -2594,6 +2606,10 @@ body::before {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
+  /* a card carrying priority + category + chain + mode is wider than its
+     column — wrap the row rather than pushing the last badge out of sight
+     behind a horizontal scrollbar */
+  flex-wrap: wrap;
 }
 .board-card-who-wrap {
   display: flex;
@@ -2622,7 +2638,12 @@ body::before {
   display: flex;
   align-items: center;
   gap: 5px;
-  flex: none;
+  /* takes the width the name leaves and wraps inside it — as a `flex: none`
+     item it sized to max-content and pushed the last badge out of the card */
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .board-card-badge,
 .board-card-priority {
@@ -4290,7 +4311,8 @@ body::before {
 .hist-resume:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* the transcript modal — one past conversation, read in place */
-#hist-modal {
+#hist-modal,
+#coord-modal {
   /* fixed, not absolute: the view it lives in is laid out wider than the
    * window (the grid behind it sets that width), so an inset:0 overlay would
    * centre itself off-screen to the right */
@@ -4305,8 +4327,10 @@ body::before {
   padding: 76px 24px 24px;
   background: color-mix(in srgb, #000 55%, transparent);
 }
-#hist-modal[hidden] { display: none; }
-#hist-modal-box {
+#hist-modal[hidden],
+#coord-modal[hidden] { display: none; }
+#hist-modal-box,
+#coord-modal-box {
   display: flex;
   flex-direction: column;
   width: min(980px, 100%);
@@ -4317,19 +4341,22 @@ body::before {
   background: var(--surface);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
 }
-#hist-modal-head {
+#hist-modal-head,
+#coord-modal-head {
   display: flex;
   align-items: center;
   gap: 14px;
   justify-content: space-between;
 }
-#hist-modal-title {
+#hist-modal-title,
+#coord-modal-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#hist-modal-meta {
+#hist-modal-meta,
+#coord-modal-meta {
   margin: 6px 0 10px;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -4371,3 +4398,78 @@ body::before {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* the coordinator modal — the shell is shared with the transcript modal
+   above; only the request box, the split rows and the footer are its own */
+#coord-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border3) transparent;
+}
+#coord-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+#coord-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.coord-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.coord-row textarea {
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.coord-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.coord-row-controls select {
+  padding: 3px 6px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.coord-drop { margin-left: auto; }
+#coord-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+#coord-split:disabled,
+#coord-create:disabled { opacity: 0.5; cursor: not-allowed; }
+/* .pill and #coord-plan both set display, which beats the UA [hidden] rule —
+   the two states of this modal swap by hiding, so say it explicitly */
+#coord-plan[hidden],
+#coord-input[hidden],
+#coord-split[hidden],
+#coord-create[hidden] { display: none; }

@@ -126,7 +126,7 @@ const Skills = (() => {
     if (skill.updateAvailable && !skill.local) {
       const updateBtn = document.createElement('button');
       updateBtn.className = 'skill-update-btn';
-      updateBtn.textContent = '⟳ update';
+      Icons.set(updateBtn, 'refresh', 'update');
       updateBtn.dataset.tip = 'Pull the latest commit for this skill';
       updateBtn.addEventListener('click', async () => {
         updateBtn.disabled = true;
@@ -140,7 +140,7 @@ const Skills = (() => {
     if (!skill.enabled && !skill.local) {
       const copyBtn = document.createElement('button');
       copyBtn.className = 'skill-copy-btn';
-      copyBtn.textContent = '📋';
+      Icons.set(copyBtn, 'copy');
       copyBtn.dataset.tip = 'Copy a command to load this skill in one project\'s terminal';
       copyBtn.addEventListener('click', async () => {
         const cmd = await window.swarm.skillTerminalCommand(skill.id);
@@ -152,7 +152,7 @@ const Skills = (() => {
 
     const removeBtn = document.createElement('button');
     removeBtn.className = 'skill-remove-btn';
-    removeBtn.textContent = '🗑';
+    Icons.set(removeBtn, 'trash');
     removeBtn.dataset.tip = skill.local
       ? 'Delete this skill\'s folder from disk (click twice) — there\'s no clone to restore it from'
       : 'Remove this skill (click twice)';
@@ -208,7 +208,7 @@ const Skills = (() => {
 
     const chevron = document.createElement('span');
     chevron.className = 'skill-repo-chevron';
-    chevron.textContent = '▾';
+    chevron.innerHTML = Icons.markup('chevron');
     header.appendChild(chevron);
 
     if (group.local) {
@@ -248,7 +248,7 @@ const Skills = (() => {
     if (!group.local) {
       const removeAllBtn = document.createElement('button');
       removeAllBtn.className = 'skill-repo-remove-btn';
-      removeAllBtn.textContent = '🗑 all';
+      Icons.set(removeAllBtn, 'trash', 'all');
       removeAllBtn.dataset.tip = 'Remove every skill from this repo (click twice)';
       removeAllBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -377,5 +377,15 @@ const Skills = (() => {
     render();
   });
 
-  return { refresh, getActiveSkills };
+  /* The installed skills, flattened for the command palette. Empty until the
+   * first refresh() — the palette simply offers no skills until then rather
+   * than forcing a fetch every time it opens. */
+  function installed() {
+    return skills.map((s) => ({
+      name: s.name || s.invokeName || s.id,
+      repo: s.sourceLabel || s.repoId || (s.local ? 'on disk' : ''),
+    }));
+  }
+
+  return { refresh, getActiveSkills, installed };
 })();

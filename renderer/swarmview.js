@@ -406,11 +406,11 @@ const SwarmView = (() => {
     actions.className = 'sv-node-actions';
     const yes = document.createElement('button');
     yes.className = 'sv-yes';
-    yes.textContent = '✓';
+    Icons.set(yes, 'check');
     yes.dataset.tip = 'Approve — shift-click to also stop asking';
     const no = document.createElement('button');
     no.className = 'sv-no';
-    no.textContent = '✕';
+    Icons.set(no, 'close');
     no.dataset.tip = 'Deny';
     actions.append(yes, no);
 
@@ -525,11 +525,11 @@ const SwarmView = (() => {
     actions.className = 'sv-row-actions';
     const yes = document.createElement('button');
     yes.className = 'sv-yes';
-    yes.textContent = '✓';
+    Icons.set(yes, 'check');
     yes.dataset.tip = 'Approve — shift-click to also stop asking';
     const no = document.createElement('button');
     no.className = 'sv-no';
-    no.textContent = '✕';
+    Icons.set(no, 'close');
     no.dataset.tip = 'Deny';
     actions.append(yes, no);
 
@@ -602,11 +602,11 @@ const SwarmView = (() => {
     actions.className = 'sv-row-actions';
     const yes = document.createElement('button');
     yes.className = 'sv-yes';
-    yes.textContent = '✓';
+    Icons.set(yes, 'check');
     yes.dataset.tip = 'Approve — shift-click to also stop asking';
     const no = document.createElement('button');
     no.className = 'sv-no';
-    no.textContent = '✕';
+    Icons.set(no, 'close');
     no.dataset.tip = 'Deny';
     actions.append(yes, no);
 

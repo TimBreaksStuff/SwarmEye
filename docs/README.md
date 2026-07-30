@@ -7,10 +7,12 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
 ## Contents
 
 - [Key features](#key-features)
+  - [Command palette](#command-palette-ctrlk)
   - [Cost & context panel](#cost--context-panel) · [Swarm view](#swarm-view) · [Swarm timeline](#swarm-timeline) · [History](#history) · [Messages between agents](#messages-between-agents) · [Preview dock](#preview-dock)
 - [The task board](#the-task-board)
 - [Skills](#skills)
 - [Voice dictation](#voice-dictation)
+- [Spoken notifications](#spoken-notifications)
 - [Options reference](#options-reference)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Where things are stored](#where-things-are-stored)
@@ -73,6 +75,57 @@ Every agent SwarmEye spawns reports its real state through Claude Code's hook sy
 - **Done** — the pane shows `done` and flags attention.
 
 If the window isn't focused, the taskbar flashes (dock bounces on macOS) and the event lands in the notification bell. Clicking into a pane clears its attention state. Hovering the agent name or its status dot shows the task prompt that started it.
+
+### Collision guard
+
+Running several agents in one repo, the collision that costs you is two of them editing the same file. SwarmEye watches the same hook stream it reads state from: when an agent is about to write a file another agent has written in the last **30 minutes**, both panes get an amber `⚠ <file>` chip, and its tooltip names the other agent — *"Roomba Prime has also edited /…/app.js recently"*.
+
+- It fires from `PreToolUse`, which runs **before** the write lands, so the chip is up while the second edit is still being made rather than after both have hit the disk.
+- Only the four tools that change a file count: `Edit`, `Write`, `MultiEdit`, `NotebookEdit`. Two agents reading one file collide over nothing.
+- Both sides are flagged, each naming the other — a warning only the second agent's pane could see would be half a warning.
+- The chip clears itself about ten minutes after the last shared write, and is re-armed by each new one, so two agents genuinely working the same file keep it lit.
+- **Nothing is blocked and no lock is taken.** This is observability: it tells you who else is in the file and leaves the decision to you. If you want real isolation, give the agents separate worktrees.
+
+Agents that were already running when you updated to 1.40.0 report no paths until they're restarted — the hook settings an agent runs with are written at launch.
+
+### Command palette (`Ctrl+K`)
+
+With ten panes across five workspaces, the rail plus `Tab` cycling is the bottleneck. `Ctrl+K` opens one box that reaches everything:
+
+- **Agents** — jump to one by name; it switches workspace and swaps back to the grid on the way, so it works from any view.
+- **Workspaces** — select one. **New agent in \<workspace\>** spawns there without selecting it first.
+- **Tasks** still open, and **installed skills** — both open the screen that owns them.
+- **Views** — the grid, Task Board, Swarm View, History, Skills.
+- **Verbs** — Notes, Message agents, Search across all agents, Options.
+
+Matching is fuzzy, and scored the way people type: hits at the start of a word and runs of adjacent characters count for more, so initials work (`tb` → Task Board) and `swar` puts Swarm View above a workspace that merely contains those letters.
+
+The list is rebuilt every time it opens, so an agent you just closed or a task that just finished is never offered. `↑`/`↓` to move, `Enter` to run, `Esc` to close — and `Esc` reaches it before anything underneath, since it opens over whatever view you were on.
+
+### Workspace notebook
+
+Hover a workspace tile and click `📝` in its flyout to open that folder's notebook, stored as **`.swarmeye/notes.md`** in the workspace itself — so it lives with the repo, and can be committed if you want the team to share it.
+
+It answers "what should the next agent already know?": conventions, gotchas, where things live, decisions that aren't visible in the code.
+
+- **Agents are given the path, not the contents.** Every agent launched in a workspace whose notebook has something in it gets one appended line naming `.swarmeye/notes.md` and telling it to read the file before making assumptions. Inlining the notes instead would put all of them in every agent's context and bill for them on every turn, relevant or not — a pointer costs about twenty tokens once.
+- **An empty notebook is skipped entirely.** No pointer is added while the file is missing or blank, so nothing is spent sending an agent to read nothing.
+- **A role and the notes share one flag.** Both are `--append-system-prompt` text and `claude` keeps only the last such flag, so SwarmEye joins them — a Builder in a workspace with notes keeps its role prompt and its Sonnet tier.
+- **Saving is explicit** (`Save`, or `Ctrl+Enter`); closing an edited box saves rather than discarding. Writing on every keystroke would change the file underneath an agent that was reading it.
+- The path is resolved in the main process from the workspace id and always sits inside that workspace's folder. Capped at 20,000 characters — the agent pays to read it, so keep it a page, not a book.
+
+Agents already running when you write the notes don't get the pointer; it's added at launch. Restart one, or just tell it to read the file.
+
+### Model right-sizing
+
+Matching the model to the job is the biggest cost lever there is — cost per token differs by an order of magnitude across tiers — and until now SwarmEye only documented it. When a pane running **Opus** makes **12 read-only tool calls in a row** (`Read`, `Grep`, `Glob`, `NotebookRead`, `WebFetch`, `WebSearch`), its header grows a `→ Haiku` button.
+
+- **Two clicks**, the same confirm every destructive control uses. The tooltip says which agent, how long the streak is, and what will happen, before you commit.
+- The agent is **restarted with `--continue`**, so the conversation is kept and it picks up where it left off. The thread so far is re-sent once at the cheaper rate, so the saving starts from the next turn rather than retroactively.
+- It is a **streak, not a turn count**. Anything that could touch a file — including `Bash`, which can do anything — resets it to zero and withdraws the offer, so an agent that reads for a while and then starts building is never nudged to downgrade mid-edit.
+- **Reviewers and Planners never get it.** Those roles run on Opus *because* they read and judge; a long read-only streak from them is the job being done right.
+
+The same plumbing means a restart can move any agent between tiers: `session:restart` now carries a model, validated against the same whitelist the task board uses.
 
 ### Cost & context panel
 
@@ -281,6 +334,18 @@ Language is auto-detected per phrase (German and English mix freely), with punct
 
 ---
 
+## Spoken notifications
+
+The other direction: SwarmEye telling *you* something. Turn **Spoken notifications** on in `⚙` Options and every turn that ends while you aren't watching that pane is said out loud — the agent's name plus the news from its closing message, e.g. *"Nova finished. The cart total now updates when a line item is removed."*
+
+That message is markdown written for the eye, so it is reduced to something sayable first: code blocks, commit hashes and markdown syntax go, a link says its text, a path says its file, and headings, bare version numbers and anything mostly symbols are skipped rather than read out. A sentence that only makes sense with an identifier in it — *"the check used `<` instead of `<=`"* — is dropped whole rather than announced with holes, and an opener with no news in it ("Fixed and shipped.") is joined with the sentence after it. Nothing sayable at all leaves just *"Nova finished its turn."* A finished agent whose summary hasn't arrived yet (the transcript is read a beat after the turn ends) is announced by name alone after 2.5 seconds, so nothing is ever left unsaid.
+
+It needs the **Voice engine** row installed first — the [Piper](https://github.com/rhasspy/piper) binary plus one voice, about 110 MB, downloaded into `~/.local/share/swarmeye/tts` (inside WSL on Windows) by `scripts/setup-tts.sh`. `npm run setup:tts` (`setup:tts:win` from a Windows shell) does the same thing from the command line, and takes a voice name if you want a different one: any of the ~50 English voices at [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices), e.g. `npm run setup:tts en_GB-alba-medium`. The default is `en_US-hfc_female-medium`.
+
+Synthesis runs locally and takes about a third of a second per announcement; nothing is uploaded, and no audio device is needed inside WSL — the sound is generated as raw samples and played by the app itself. Only *finished* turns speak. "Needs attention" deliberately stays silent: it already flashes the taskbar, raises a toast and rings the bell, and a busy swarm would talk without pause. Several agents finishing at once announce the newest rather than queueing.
+
+---
+
 ## Options reference
 
 The `⚙` tile at the bottom of the icon rail opens the Options panel. `↺ Reset` in its header restores every option below to its default in one click.
@@ -304,7 +369,9 @@ The `⚙` tile at the bottom of the icon rail opens the Options panel. `↺ Rese
 | **Task summary on completion** | on | Puts the agent's closing message on the task card when a task finishes, read from its own transcript on the pass that already records the turn's cost. Off leaves Completed cards as they were. |
 | **Desktop notifications** | on | Raises a real OS notification — naming the agent, its workspace and what happened — when an agent finishes a turn or needs you while the SwarmEye window isn't focused. Clicking it brings the window back. See [Notification center](#notification-center). |
 | **Notification sound** | Chime | Played when an agent finishes a turn — Chime, Ping, Pop, Blip or None. |
+| **Spoken notifications** | off | Says which agent just finished — and the first sentence of its closing message — for turns that end while you aren't watching that pane. Needs the voice engine below; see [Spoken notifications](#spoken-notifications). |
 | **Dictation engine** | not installed | Shows install state and installs the local Whisper engine — see [Voice dictation](#voice-dictation). Deliberately **not** part of `↺ Reset`: an install isn't a preference. |
+| **Voice engine** | not installed | Shows install state and installs the local Piper voice used by spoken notifications (~110 MB) — see [Spoken notifications](#spoken-notifications). Deliberately **not** part of `↺ Reset`: an install isn't a preference. |
 | **Colour theme** | Dark | Restyles the whole cockpit *and* every terminal's ANSI palette. Three themes: Dark, Light and Orange. |
 | **Theme background overlay** | on | The selected theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, pane and terminal surfaces — stays the default dark shade, and only the theme's own colours (borders, text, accents, terminal ramp) still follow the theme. Light swaps to a light-on-dark ramp when it is off, so its near-black text stays readable. |
 
@@ -318,6 +385,7 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 |---|---|
 | `Tab` | Next agent in this workspace |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous workspace |
+| `Ctrl+K` | Command palette — jump to anything |
 | `Ctrl+N` | New agent |
 | `Ctrl+X` | Close focused agent (again within 5s: confirm kill) |
 | `Ctrl+T` | Task board, new-task form |
@@ -343,6 +411,7 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 |---|---|---|
 | Config, logs, hook state | `%APPDATA%\swarmeye\` | `~/Library/Application Support/SwarmEye/` |
 | Dictation engine | `~/.local/share/swarmeye/stt` (inside WSL) | `~/.local/share/swarmeye/stt` |
+| Voice engine | `~/.local/share/swarmeye/tts` (inside WSL) | `~/.local/share/swarmeye/tts` |
 | Past conversations (read-only, Claude Code's) | `~/.claude/projects/` (inside WSL) | `~/.claude/projects/` |
 | tmux config | `~/.config/swarmeye/tmux.conf` (inside WSL) | `~/.config/swarmeye/tmux.conf` |
 

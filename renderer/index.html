@@ -132,7 +132,7 @@
       <div id="grid"></div>
       <div id="empty-state">
         <div class="big">No agents here<span class="plus">_</span></div>
-        <div>select a workspace, then hit + coding agent</div>
+        <div>select a workspace, then hit + agent</div>
       </div>
     </main>
 
@@ -141,9 +141,9 @@
         <div class="board-head">
           <div class="kbd-title">Task Board</div>
           <div class="board-head-actions">
-            <button id="board-new-btn" class="pill">+ New Task</button>
-            <button id="board-archive-btn" class="pill" data-tip="View archived tasks">🗄 Archive</button>
-            <button id="board-close-btn" class="pill" data-tip="Close task board (Esc)">✕ Close</button>
+            <button id="board-new-btn" class="pill pill-primary">+ New Task</button>
+            <button id="board-archive-btn" class="pill" data-tip="View archived tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="4.5" rx="1.2"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M10 13h4"/></svg><span>Archive</span></button>
+            <button id="board-close-btn" class="pill" data-tip="Close task board (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
           </div>
         </div>
         <div id="board-main">
@@ -153,7 +153,7 @@
             <div class="board-form-row">
               <select id="board-form-ws"></select>
               <select id="board-form-category" data-tip="Category"></select>
-              <button id="board-form-category-manage" type="button" data-tip="Manage categories for this workspace">⚙</button>
+              <button id="board-form-category-manage" type="button" data-tip="Manage categories for this workspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M4.9 7.5l1.9 1.1M17.2 15.4l1.9 1.1M4.9 16.5l1.9-1.1M17.2 8.6l1.9-1.1"/></svg></button>
               <button id="board-form-mic" type="button" data-tip="Dictate task description (Ctrl+R)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
               </button>
@@ -224,7 +224,7 @@
         <div id="board-archive" hidden>
           <div class="board-archive-head">
             <span class="board-archive-title">Archived <span id="board-archive-count" class="board-col-n"></span></span>
-            <button id="board-archive-delete-all" class="board-archive-delall" data-tip="Permanently delete all archived tasks (click twice)">🗑 Delete All</button>
+            <button id="board-archive-delete-all" class="board-archive-delall" data-tip="Permanently delete all archived tasks (click twice)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.4 1.4 0 0 0 1.4 1.3h6.4a1.4 1.4 0 0 0 1.4-1.3l.9-12.5"/><path d="M10.4 10v6.5M13.6 10v6.5"/></svg><span>Delete all</span></button>
           </div>
           <div class="board-archive-filters">
             <input id="board-archive-search" type="search" placeholder="search archived tasks…" spellcheck="false" />
@@ -247,8 +247,8 @@
         <div class="board-head">
           <div class="kbd-title">Skills</div>
           <div class="board-head-actions">
-            <button id="skills-add-btn" class="pill">+ Add Skill</button>
-            <button id="skills-close-btn" class="pill" data-tip="Close skills (Esc)">✕ Close</button>
+            <button id="skills-add-btn" class="pill pill-primary">+ Add Skill</button>
+            <button id="skills-close-btn" class="pill" data-tip="Close skills (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
           </div>
         </div>
         <div id="skills-main">
@@ -282,15 +282,15 @@
           <div class="kbd-title">History</div>
           <div class="board-head-actions">
             <select id="history-ws" data-tip="Which workspace's past conversations to list"></select>
-            <button id="history-refresh-btn" class="pill" data-tip="Re-read the transcript folder">⟳ Refresh</button>
-            <button id="history-archive-btn" class="pill" data-tip="Conversations older than the 15 most recent">🗄 Archive</button>
-            <button id="history-close-btn" class="pill" data-tip="Close history (Esc)">✕ Close</button>
+            <button id="history-refresh-btn" class="pill" data-tip="Re-read the transcript folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20.5 4v4.5H16"/></svg><span>Refresh</span></button>
+            <button id="history-archive-btn" class="pill" data-tip="Conversations older than the 15 most recent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="4.5" rx="1.2"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M10 13h4"/></svg><span>Archive</span></button>
+            <button id="history-close-btn" class="pill" data-tip="Close history (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
           </div>
         </div>
         <div id="history-main">
           <div id="history-list-head" class="board-archive-head">
             <span class="board-archive-title"><span id="history-list-title">Recent </span><span id="history-list-count" class="board-col-n"></span></span>
-            <button id="history-delete-all" class="board-archive-delall">🗑 Delete All</button>
+            <button id="history-delete-all" class="board-archive-delall"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.4 1.4 0 0 0 1.4 1.3h6.4a1.4 1.4 0 0 0 1.4-1.3l.9-12.5"/><path d="M10.4 10v6.5M13.6 10v6.5"/></svg><span>Delete all</span></button>
           </div>
           <div class="skills-filters">
             <input id="history-search" type="search" placeholder="filter past conversations…" spellcheck="false" />
@@ -309,12 +309,34 @@
         <div id="hist-modal-head">
           <div id="hist-modal-title" class="kbd-title">Conversation</div>
           <div class="board-head-actions">
-            <button id="hist-modal-download" class="pill" data-tip="Save this conversation as a text file">⭳ Download</button>
-            <button id="hist-modal-close" class="pill" data-tip="Close (Esc)">✕ Close</button>
+            <button id="hist-modal-download" class="pill" data-tip="Save this conversation as a text file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v11"/><path d="m7.8 10.6 4.2 4.2 4.2-4.2"/><path d="M4.5 17v2a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg><span>Download</span></button>
+            <button id="hist-modal-close" class="pill" data-tip="Close (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
           </div>
         </div>
         <div id="hist-modal-meta"></div>
         <div id="hist-modal-body"></div>
+      </div>
+    </div>
+
+    <!-- the coordinator: a multi-part request, then the subtasks it split into,
+         reviewed before any of them becomes a task -->
+    <div id="coord-modal" hidden>
+      <div id="coord-modal-box">
+        <div id="coord-modal-head">
+          <div id="coord-modal-title" class="kbd-title">Coordinator</div>
+          <div class="board-head-actions">
+            <button id="coord-close" class="pill" data-tip="Close (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
+          </div>
+        </div>
+        <div id="coord-modal-meta"></div>
+        <div id="coord-modal-body">
+          <textarea id="coord-input" rows="6" placeholder="Describe everything you want done — the coordinator splits it into subtasks and assigns each one a role…" data-tip="Ctrl+Enter to split"></textarea>
+          <div id="coord-plan" hidden></div>
+        </div>
+        <div id="coord-foot">
+          <button id="coord-split" class="pill">Split</button>
+          <button id="coord-create" class="pill" hidden>Create tasks</button>
+        </div>
       </div>
     </div>
 
@@ -337,10 +359,10 @@
               <button class="pill" data-layout="clusters">clusters</button>
               <button class="pill" data-layout="ring">ring</button>
             </span>
-            <button id="sv-preview-btn" class="pill" data-tip="Show a live terminal preview of every running agent above the activity list">▤ Previews</button>
-            <button id="sv-click-btn" class="pill" data-tip="Whether a single click on an agent selects it here or jumps straight to its pane">⤳ Click</button>
-            <button id="sv-timeline-btn" class="pill" data-tip="Show the last hour as a ribbon under the map — one lane per agent, coloured by what it was doing">▦ Timeline</button>
-            <button id="swarm-view-close-btn" class="pill" data-tip="Close swarm view (Esc)">✕ Close</button>
+            <button id="sv-preview-btn" class="pill" data-tip="Show a live terminal preview of every running agent above the activity list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17"/></svg><span>Previews</span></button>
+            <button id="sv-click-btn" class="pill" data-tip="Whether a single click on an agent selects it here or jumps straight to its pane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4.2 18.5 11l-5.4 1.4L11 18 6 4.2Z"/></svg><span>Click</span></button>
+            <button id="sv-timeline-btn" class="pill" data-tip="Show the last hour as a ribbon under the map — one lane per agent, coloured by what it was doing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11M4 12h16M4 17.5h8"/></svg><span>Timeline</span></button>
+            <button id="swarm-view-close-btn" class="pill" data-tip="Close swarm view (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
           </div>
         </div>
         <div id="sv-body">
@@ -385,8 +407,8 @@
         <div class="board-head">
           <div class="kbd-title">Notifications</div>
           <div class="board-head-actions">
-            <button id="notif-panel-clear" class="pill" data-tip="Remove all notifications">🗑 Clear All</button>
-            <button id="notif-panel-close" class="pill" data-tip="Close notifications">✕ Close</button>
+            <button id="notif-panel-clear" class="pill" data-tip="Remove all notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.4 1.4 0 0 0 1.4 1.3h6.4a1.4 1.4 0 0 0 1.4-1.3l.9-12.5"/><path d="M10.4 10v6.5M13.6 10v6.5"/></svg><span>Clear all</span></button>
+            <button id="notif-panel-close" class="pill" data-tip="Close notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
           </div>
         </div>
         <div id="notif-panel-list"></div>
@@ -427,6 +449,25 @@
     <div id="msg-targets" class="msg-targets"></div>
   </div>
 
+  <div id="palette-pop" hidden>
+    <input id="palette-input" placeholder="jump to an agent, workspace, task, skill, view…" spellcheck="false" autocomplete="off" />
+    <div id="palette-list"></div>
+    <div id="palette-empty" class="palette-empty" hidden>nothing matches</div>
+  </div>
+
+  <div id="notes-pop" hidden>
+    <div class="notes-head">
+      <div id="notes-title" class="kbd-title">Notes</div>
+      <button id="notes-close" class="pill" data-tip="Close (Esc) — unsaved text is saved first">Close</button>
+    </div>
+    <textarea id="notes-text" rows="14" spellcheck="false"
+      placeholder="What should the next agent in this workspace already know?&#10;&#10;Conventions, gotchas, where things live, decisions that aren't in the code."></textarea>
+    <div class="notes-foot">
+      <span id="notes-hint" class="notes-hint"></span>
+      <button id="notes-save" class="pill pill-primary" data-tip="Write .swarmeye/notes.md (Ctrl+Enter)">Save</button>
+    </div>
+  </div>
+
   <div id="notif-pop" hidden></div>
 
   <div id="board-category-pop" hidden>
@@ -443,8 +484,8 @@
       <div id="session-view-head">
         <span id="session-view-title"></span>
         <span class="spacer"></span>
-        <button id="session-view-export" data-tip="Save this transcript to a file">⤓</button>
-        <button id="session-view-close" data-tip="Close">✕</button>
+        <button id="session-view-export" data-tip="Save this transcript to a file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v11"/><path d="m7.8 10.6 4.2 4.2 4.2-4.2"/><path d="M4.5 17v2a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg></button>
+        <button id="session-view-close" data-tip="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg></button>
       </div>
       <pre id="session-view-body"></pre>
     </div>
@@ -453,7 +494,7 @@
   <div id="kbd-pop" hidden>
     <div class="kbd-head">
       <div class="kbd-title">Options</div>
-      <button id="options-reset-btn" data-tip="Restore every option below to its default value">↺ Reset</button>
+      <button id="options-reset-btn" data-tip="Restore every option below to its default value (click twice)">↺ Reset</button>
     </div>
     <div class="kbd-row kbd-opt"><span>SwarmEye version</span>
       <span class="opt-ctl">
@@ -573,6 +614,11 @@
         <select id="notif-sound-sel" data-tip="Played when an agent finishes its turn"></select>
       </span>
     </div>
+    <div class="kbd-row kbd-opt"><span>Spoken notifications</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="voice-notif-toggle" data-tip="Says out loud which agent just finished — and the first sentence of its closing message, once that has landed — for turns that end while you aren't watching that pane. Needs the voice engine below.">
+      </span>
+    </div>
     <div class="kbd-row kbd-opt"><span>Dictation engine</span>
       <span class="opt-ctl">
         <span id="stt-status" class="stt-status">checking…</span>
@@ -580,6 +626,13 @@
       </span>
     </div>
     <pre id="stt-log" hidden></pre>
+    <div class="kbd-row kbd-opt"><span>Voice engine</span>
+      <span class="opt-ctl">
+        <span id="tts-status" class="stt-status">checking…</span>
+        <button id="tts-install-btn" data-tip="Downloads the Piper speech engine and one voice (~110 MB, into WSL on Windows) — runs fully offline, nothing is uploaded">Install</button>
+      </span>
+    </div>
+    <pre id="tts-log" hidden></pre>
     <div class="kbd-row kbd-opt kbd-opt-theme"><span>Colour theme</span>
       <span class="opt-ctl" id="theme-opts">
         <button class="theme-dot" data-theme="dark" data-tip="Dark"></button>
@@ -603,6 +656,7 @@
     </div>
     <div class="kbd-row"><span>Next agent in workspace</span><kbd>Tab</kbd></div>
     <div class="kbd-row"><span>Next / previous workspace</span><kbd data-keep-ctrl>Ctrl+Tab · Ctrl+Shift+Tab</kbd></div>
+    <div class="kbd-row"><span>Command palette — jump to anything</span><kbd>Ctrl+K</kbd></div>
     <div class="kbd-row"><span>New agent</span><kbd>Ctrl+N</kbd></div>
     <div class="kbd-row"><span>Close focused agent (again: confirm kill)</span><kbd>Ctrl+X</kbd></div>
     <div class="kbd-row"><span>New task (dashboard)</span><kbd>Ctrl+T</kbd></div>
@@ -626,6 +680,7 @@
   <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
   <script src="tooltip.js"></script>
   <script src="confirm.js"></script>
+  <script src="icons.js"></script>
   <script src="speech.js"></script>
   <script src="pane.js"></script>
   <script src="grid.js"></script>
@@ -633,9 +688,12 @@
   <script src="board.js"></script>
   <script src="skills.js"></script>
   <script src="history.js"></script>
+  <script src="coordinator.js"></script>
   <script src="swarmview.js"></script>
   <script src="timeline.js"></script>
   <script src="message.js"></script>
+  <script src="notes.js"></script>
+  <script src="palette.js"></script>
   <script src="preview.js"></script>
   <script src="sounds.js"></script>
   <script src="app.js"></script>

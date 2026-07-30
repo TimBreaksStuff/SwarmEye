@@ -138,6 +138,31 @@ const ROLES = {
   },
 };
 
+/* A workspace can keep a `.swarmeye/notes.md` — what one agent learned about
+ * this repo, so the next one starts with it instead of rediscovering it.
+ *
+ * It reaches the agent as a *pointer*, not as content. Inlining the file would
+ * put every line of it in every agent's context and bill for it on every turn
+ * whether the notes were relevant or not; a pointer costs ~20 tokens once and
+ * lets the agent open the file when the work actually calls for it.
+ *
+ * Same quoting rules as the role prompts above: no quotes, $, backticks or
+ * backslashes, since this lands in the same single-quoted tmux command. */
+const NOTES_REL = path.join('.swarmeye', 'notes.md');
+const NOTES_PROMPT = 'This workspace keeps shared notes at .swarmeye/notes.md. '
+  + 'Read that file before making assumptions about this repo, and append anything '
+  + 'a later agent working here would want to know.';
+
+/* An empty notes file is not worth a pointer — the agent would open it, find
+ * nothing, and the tokens would be spent for no reason. */
+function hasNotes(cwd) {
+  try {
+    return fs.statSync(path.join(cwd, NOTES_REL)).size > 0;
+  } catch {
+    return false;
+  }
+}
+
 /* --allow-dangerously-skip-permissions is opt-in (⌨ Options) — without it
  * claude won't offer bypass-permissions ("auto") mode in the Shift+Tab cycle
  * at all. Unlike --dangerously-skip-permissions, the --allow- variant only
@@ -151,7 +176,7 @@ const ROLES = {
  * every agent started afterward. `--model` only affects this one process.
  * Already whitelisted server-side (main.js task:create) — re-checked here
  * since it lands directly in a shell command line. */
-function claudeBase({ model, resume, role } = {}) {
+function claudeBase({ model, resume, role, notes } = {}) {
   let cmd = config.load().skipPermissions ? 'claude --allow-dangerously-skip-permissions' : 'claude';
   const preset = ROLES[role];
   // the role's model is a default, not an override — an explicit pick (the
@@ -162,7 +187,11 @@ function claudeBase({ model, resume, role } = {}) {
   // costs no turn and cannot collide with the task board's own prompt injection.
   // The texts below are ours and contain no shell metacharacters — that is what
   // makes them safe inside the single-quoted tmux command (see _launch).
-  if (preset) cmd += ` --append-system-prompt "${preset.prompt}"`;
+  // one --append-system-prompt carrying both, not two flags: the role and the
+  // notes pointer are the same kind of appended text, and claude takes the
+  // last such flag rather than concatenating them
+  const appended = [preset && preset.prompt, notes && NOTES_PROMPT].filter(Boolean).join(' ');
+  if (appended) cmd += ` --append-system-prompt "${appended}"`;
   // a conversation id picked from the History screen. Claude Code names its
   // transcripts after the session uuid, so the id is what --resume takes;
   // re-validated here since it lands in a shell command line.
@@ -226,7 +255,16 @@ class PtyManager {
     const restored = [];
     const dead = [];
     for (const meta of Object.values(known)) {
-      if (alive.has(meta.tmuxName) && restored.length < this.maxSessions) {
+      // Already attached: hand back the live session rather than opening a
+      // second client. `session:list` calls this every time, and a renderer
+      // reload calls it again — a duplicate client would drag the tmux window
+      // down to its own 100x30 and leave every pane redrawing at the wrong
+      // width.
+      const live = this.sessions.get(meta.id);
+      if (live) {
+        restored.push(live.session);
+        this.counter = Math.max(this.counter, meta.num || 0);
+      } else if (alive.has(meta.tmuxName) && restored.length < this.maxSessions) {
         restored.push(this._launch(meta, 100, 30, null));
         this.counter = Math.max(this.counter, meta.num || 0);
       } else {
@@ -273,7 +311,8 @@ class PtyManager {
     // persisted so a pane rebuilt from tmux after a restart still shows its
     // role chip — the flag itself is long gone by then, it lives in the process
     if (ROLES[opts.role]) meta.role = opts.role;
-    return this._launch(meta, cols, rows, this.decorateCmd(id, claudeBase(opts)));
+    return this._launch(meta, cols, rows,
+      this.decorateCmd(id, claudeBase({ ...opts, notes: hasNotes(workspace.path) })));
   }
 
   /* Does this folder have a previous Claude conversation to continue?
@@ -288,7 +327,7 @@ class PtyManager {
   /* Respawn an exited agent in the same folder under the same name.
    * resume=true continues the last conversation in that directory —
    * silently downgraded to a fresh session when there is none. */
-  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, role }) {
+  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, role, model }) {
     if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
     const resumed = resume ? await this.hasHistory(cwd) : false;
     // Checked here, right before the synchronous launch below, rather than
@@ -310,7 +349,13 @@ class PtyManager {
     // a restarted agent keeps the role it was launched with — the system
     // prompt has to be re-appended, it is not part of the resumed conversation
     if (ROLES[role]) meta.role = role;
-    const cmd = this.decorateCmd(id, resumed ? claudeBase({ role }) + ' --continue' : claudeBase({ role }));
+    // `model` is how a restart moves the agent to another tier (the pane's
+    // right-sizing offer). Left undefined it is the role's model, or the
+    // account default — i.e. exactly what a plain restart did before.
+    const notes = hasNotes(cwd);
+    const cmd = this.decorateCmd(id, resumed
+      ? claudeBase({ role, model, notes }) + ' --continue'
+      : claudeBase({ role, model, notes }));
     const session = this._launch(meta, cols, rows, cmd);
     return { session, resumed };
   }
@@ -483,4 +528,4 @@ class PtyManager {
   }
 }
 
-module.exports = { PtyManager, claudeProjectDirName, ROLES };
+module.exports = { PtyManager, claudeProjectDirName, ROLES, NOTES_REL };

@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Notification, crashRep
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
-const { PtyManager, ROLES } = require('./sessions');
+const { PtyManager, ROLES, NOTES_REL } = require('./sessions');
 const { UsageMonitor } = require('./usage');
 const { HookMonitor } = require('./hooks');
 const { GitMonitor, listBranches, checkoutBranch, diffStat } = require('./git');
@@ -12,6 +12,7 @@ const { IS_WIN } = require('./platform');
 const { UpdateChecker } = require('./update');
 const { SpeechBridge } = require('./speech');
 const { SkillsManager } = require('./skills');
+const coordinator = require('./coordinator');
 
 let win = null;
 let ptys = null;
@@ -236,6 +237,19 @@ function registerIpc() {
     const cfg = config.load();
     const existing = cfg.workspaces.find((w) => w.path === p);
     if (existing) return { workspace: existing, workspaces: cfg.workspaces };
+    /* Adding a folder that was removed earlier brings the old workspace back
+     * rather than minting a second one for the same path: its id is what the
+     * tasks, sessions and notes are filed under, so a new id would orphan all
+     * of them and leave the archived entry behind forever. */
+    const archived = (cfg.archivedWorkspaces || []).find((w) => w.path === p);
+    if (archived) {
+      cfg.archivedWorkspaces = cfg.archivedWorkspaces.filter((w) => w.id !== archived.id);
+      cfg.workspaces.push(archived);
+      cfg.selectedWorkspaceId = archived.id;
+      config.save(cfg);
+      if (git) git.tick();
+      return { workspace: archived, workspaces: cfg.workspaces, selectedWorkspaceId: cfg.selectedWorkspaceId };
+    }
     const ws = {
       id: 'ws_' + Math.random().toString(36).slice(2, 8),
       name: path.basename(p),
@@ -271,6 +285,41 @@ function registerIpc() {
       config.save(cfg);
     }
     return { workspaces: cfg.workspaces };
+  });
+
+  /* The workspace notebook (.swarmeye/notes.md). The path is resolved here
+   * from the workspace id and always sits under that workspace's own folder —
+   * the renderer never names a file, so there is nothing to escape out of.
+   * Plain fs, not the shell: the workspace path is a host path on both
+   * platforms (it is what node-pty chdirs into), unlike the transcripts. */
+  const NOTES_MAX = 20000; // the agent pays to read this file — keep it a page, not a book
+
+  function workspaceNotesFile(workspaceId) {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    return ws ? path.join(ws.path, NOTES_REL) : null;
+  }
+
+  ipcMain.handle('notes:read', (e, { workspaceId }) => {
+    const file = workspaceNotesFile(workspaceId);
+    if (!file) return { ok: false, reason: 'no-workspace' };
+    try {
+      return { ok: true, text: fs.readFileSync(file, 'utf8') };
+    } catch {
+      return { ok: true, text: '' }; // not written yet is not a failure
+    }
+  });
+
+  ipcMain.handle('notes:write', (e, { workspaceId, text }) => {
+    const file = workspaceNotesFile(workspaceId);
+    if (!file) return { ok: false, reason: 'no-workspace' };
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, String(text || '').slice(0, NOTES_MAX), 'utf8');
+      return { ok: true };
+    } catch (err) {
+      debugLog('[notes:write] FAIL ' + err.message);
+      return { ok: false, reason: err.message };
+    }
   });
 
   // removing a workspace archives it (the folder ref, not the agents),
@@ -406,7 +455,7 @@ function registerIpc() {
   // the renderer once an agent slot and usage headroom are both available
   const TASK_PATCH_KEYS = ['status', 'paneId', 'startedAt', 'completedAt', 'targetResetsAt', 'stopped', 'sessionLog', 'summary', 'priority', 'category'];
 
-  ipcMain.handle('task:create', (e, { text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt, targetResetsAt }) => {
+  ipcMain.handle('task:create', (e, { text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt, targetResetsAt, role }) => {
     const cfg = config.load();
     const ws = cfg.workspaces.find((w) => w.id === workspaceId);
     const clean = String(text || '').slice(0, 4000).trim();
@@ -420,6 +469,9 @@ function registerIpc() {
       mode: cleanMode,
       startMode: ['acceptEdits', 'plan', 'bypass'].includes(startMode) ? startMode : 'default',
       model: ['sonnet', 'opus', 'haiku', 'fable'].includes(model) ? model : 'default',
+      // the role preset the task's agent launches with — same table and same
+      // check session:create applies, since it ends up in the same flag
+      role: Object.hasOwn(ROLES, String(role || '')) ? role : '',
       effort: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode', 'auto'].includes(effort) ? effort : 'default',
       focus: !!focus,
       closeOnComplete: closeOnComplete !== false,
@@ -505,6 +557,15 @@ function registerIpc() {
     cfg.archivedTasks = [];
     config.save(cfg);
     return { archivedTasks: cfg.archivedTasks };
+  });
+
+  // the coordinator: one multi-part request in, a reviewable list of subtasks
+  // out. It creates nothing by itself — the renderer's modal is what turns the
+  // approved rows into ordinary tasks through task:create above.
+  ipcMain.handle('coordinator:split', async (e, { text, workspaceId }) => {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return { ok: false, reason: 'no-workspace' };
+    return coordinator.split(text, ws.name);
   });
 
   // called once by the renderer at boot: reattach surviving tmux sessions
@@ -593,6 +654,8 @@ function registerIpc() {
         rows: payload.rows,
         resume: !!payload.resume,
         role: Object.hasOwn(ROLES, String(payload.role || '')) ? payload.role : undefined,
+        // same whitelist task:create applies — it lands in the same launch flag
+        model: ['sonnet', 'opus', 'haiku', 'fable'].includes(payload.model) ? payload.model : undefined,
       });
       debugLog('[session:restart] ok ' + session.id + ' "' + session.agentName + '" wanted-resume=' + !!payload.resume + ' resumed=' + resumed);
       return { ok: true, session, resumed };
@@ -727,6 +790,9 @@ function registerIpc() {
   ipcMain.handle('speech:start', (e, id) => speech.start(id));
   ipcMain.on('speech:audio', (e, b64) => speech.feed(b64));
   ipcMain.on('speech:stop', () => speech.stop());
+  ipcMain.handle('tts:installed', () => speech.ttsAvailable());
+  ipcMain.handle('tts:install', () => speech.installTts());
+  ipcMain.handle('tts:speak', (e, text) => speech.speak(text));
 }
 
 app.whenReady().then(() => {

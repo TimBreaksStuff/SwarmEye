@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('swarm', {
   selectWorkspace: (id) => ipcRenderer.invoke('workspace:select', id),
   addWorkspaceCategory: (id, name) => ipcRenderer.invoke('workspace:add-category', { id, name }),
   removeWorkspaceCategory: (id, name) => ipcRenderer.invoke('workspace:remove-category', { id, name }),
+  // the workspace notebook — main resolves the file from the id
+  readNotes: (workspaceId) => ipcRenderer.invoke('notes:read', { workspaceId }),
+  writeNotes: (workspaceId, text) => ipcRenderer.invoke('notes:write', { workspaceId, text }),
   setAutoUsageLimit: (n) => ipcRenderer.invoke('config:set-auto-usage-limit', n),
   setSkipPermissions: (on) => ipcRenderer.invoke('config:set-skip-permissions', on),
 
@@ -25,6 +28,7 @@ contextBridge.exposeInMainWorld('swarm', {
   deleteTask: (id) => ipcRenderer.invoke('task:delete', id),
   purgeTask: (id) => ipcRenderer.invoke('task:purge', id),
   purgeAllTasks: () => ipcRenderer.invoke('task:purge-all'),
+  splitTask: (text, workspaceId) => ipcRenderer.invoke('coordinator:split', { text, workspaceId }),
 
   listSessions: () => ipcRenderer.invoke('session:list'),
   createSession: (workspaceId, cols, rows, model, resumeId, role) =>
@@ -74,6 +78,10 @@ contextBridge.exposeInMainWorld('swarm', {
   onSpeechResult: (cb) => ipcRenderer.on('speech:result', (e, p) => cb(p)),
   onSpeechError: (cb) => ipcRenderer.on('speech:error', (e, p) => cb(p)),
   onSpeechEnd: (cb) => ipcRenderer.on('speech:end', (e, p) => cb(p)),
+  ttsInstalled: () => ipcRenderer.invoke('tts:installed'),
+  ttsInstall: () => ipcRenderer.invoke('tts:install'),
+  onTtsInstallProgress: (cb) => ipcRenderer.on('tts:install-progress', (e, p) => cb(p)),
+  ttsSpeak: (text) => ipcRenderer.invoke('tts:speak', text),
 
   onSessionData: (cb) => ipcRenderer.on('session:data', (e, p) => cb(p)),
   onSessionExit: (cb) => ipcRenderer.on('session:exit', (e, p) => cb(p)),

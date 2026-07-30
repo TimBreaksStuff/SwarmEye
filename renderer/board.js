@@ -390,7 +390,7 @@ const Board = (() => {
       info.textContent = c;
       const del = document.createElement('button');
       del.className = 'arch-del';
-      del.textContent = '✕';
+      Icons.set(del, 'close');
       del.dataset.tip = 'Remove category (click twice)';
       del.addEventListener('click', () => {
         armOrFire(del, 'cat:' + ws.id + ':' + c, () => lastHandlers && lastHandlers.onRemoveCategory(ws.id, c));
@@ -629,7 +629,7 @@ const Board = (() => {
     const btn = document.createElement('button');
     btn.className = 'board-card-rerun';
     btn.dataset.tip = 'Run this task again';
-    btn.textContent = '⟳';
+    Icons.set(btn, 'refresh');
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       handlers.onRunAgain(task);
@@ -645,7 +645,7 @@ const Board = (() => {
     const viewBtn = document.createElement('button');
     viewBtn.className = 'board-card-session';
     viewBtn.dataset.tip = 'View agent session transcript';
-    viewBtn.textContent = '▤';
+    Icons.set(viewBtn, 'view');
     viewBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       openSessionView(task, workspaces, handlers);
@@ -742,7 +742,7 @@ const Board = (() => {
   function addDeleteButton(actions, { tip, key, fire }) {
     const delBtn = document.createElement('button');
     delBtn.className = 'board-del';
-    delBtn.textContent = '✕';
+    Icons.set(delBtn, 'close');
     delBtn.dataset.tip = tip;
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -769,7 +769,7 @@ const Board = (() => {
       const rightBtn = document.createElement('button');
       rightBtn.className = 'board-card-move';
       rightBtn.dataset.tip = 'Move to Scheduled';
-      rightBtn.textContent = '→';
+      Icons.set(rightBtn, 'right');
       rightBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         handlers.onMoveStatus(task.id, 'pending');
@@ -779,7 +779,7 @@ const Board = (() => {
       const leftBtn = document.createElement('button');
       leftBtn.className = 'board-card-move';
       leftBtn.dataset.tip = 'Move to Manual';
-      leftBtn.textContent = '←';
+      Icons.set(leftBtn, 'left');
       leftBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         handlers.onMoveStatus(task.id, 'manual');
@@ -789,7 +789,7 @@ const Board = (() => {
       const startBtn = document.createElement('button');
       startBtn.className = 'board-card-start';
       startBtn.dataset.tip = 'Start this task now';
-      startBtn.textContent = '▶ start';
+      Icons.set(startBtn, 'play', 'start');
       startBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         handlers.onStart(task.id);
@@ -940,8 +940,12 @@ const Board = (() => {
     boardMainEl.hidden = show;
     archiveViewEl.hidden = !show;
     archiveBtn.classList.toggle('active', show);
-    archiveBtn.textContent = show ? '◀ Board' : '🗄 Archive';
+    Icons.set(archiveBtn, show ? 'left' : 'archive', show ? 'Board' : 'Archive');
     if (show) {
+      // the list is only repainted when something archives or purges, so a
+      // task archived since the board opened would be missing until a filter
+      // fired
+      renderArchiveList();
       stopDictation(); // the form is hidden without going through showForm
       formWasOpenBeforeArchive = !formEl.hidden;
       formEl.hidden = true;

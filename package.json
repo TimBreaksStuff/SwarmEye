@@ -1,7 +1,7 @@
 {
   "name": "swarmeye",
   "productName": "SwarmEye",
-  "version": "1.35.1",
+  "version": "1.44.0",
   "description": "Parallel Claude Code session cockpit",
   "main": "main/main.js",
   "private": true,
@@ -11,6 +11,8 @@
     "dist:mac": "electron-builder --mac",
     "setup:stt": "bash scripts/setup-stt.sh",
     "setup:stt:win": "wsl.exe -e bash scripts/setup-stt.sh",
+    "setup:tts": "bash scripts/setup-tts.sh",
+    "setup:tts:win": "wsl.exe -e bash scripts/setup-tts.sh",
     "publish:github": "bash scripts/publish-github.sh",
     "publish:github:win": "wsl.exe -e bash scripts/publish-github.sh",
     "publish:release": "bash scripts/publish-release.sh",

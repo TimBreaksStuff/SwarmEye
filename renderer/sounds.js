@@ -44,6 +44,36 @@ const Sounds = (() => {
     } catch { /* audio unavailable — never block notifications on this */ }
   }
 
-  return { OPTIONS, play };
+  /* Spoken notifications. Main hands back base64 16-bit mono PCM from the
+   * local Piper voice (no audio device on its side of the WSL boundary), which
+   * plays through the same AudioContext the tones use — a blob: or data: URL
+   * on an <audio> would be blocked by the page's CSP, and WebAudio isn't a
+   * fetch, so it isn't. */
+  let voice = null; // the utterance currently playing
+
+  async function speak(text) {
+    const res = await window.swarm.ttsSpeak(text);
+    if (!res || !res.ok) return res;
+    try {
+      const ac = getCtx();
+      const bytes = Uint8Array.from(atob(res.pcm), (c) => c.charCodeAt(0));
+      const pcm = new Int16Array(bytes.buffer, 0, bytes.length >> 1);
+      const buf = ac.createBuffer(1, pcm.length, res.rate);
+      const chan = buf.getChannelData(0);
+      for (let i = 0; i < pcm.length; i++) chan[i] = pcm[i] / 32768;
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      src.connect(ac.destination);
+      // whoever finished last is the one worth hearing — cut the previous line
+      // off rather than talking over it
+      if (voice) { try { voice.stop(); } catch { /* already ended */ } }
+      voice = src;
+      src.onended = () => { if (voice === src) voice = null; };
+      src.start();
+      return { ok: true };
+    } catch { return { ok: false, reason: 'audio' }; }
+  }
+
+  return { OPTIONS, play, speak };
 })();
 window.Sounds = Sounds;

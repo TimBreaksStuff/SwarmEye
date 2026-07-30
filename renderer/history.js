@@ -151,7 +151,7 @@ const History = (() => {
 
     const resume = document.createElement('button');
     resume.className = 'hist-resume';
-    resume.textContent = '▶ Resume';
+    Icons.set(resume, 'play', 'Resume');
     resume.dataset.tip = 'Open this conversation in a new agent pane (claude --resume)';
     resume.addEventListener('click', async (e) => {
       e.stopPropagation(); // the row itself opens the transcript
@@ -162,7 +162,7 @@ const History = (() => {
 
     const copy = document.createElement('button');
     copy.className = 'hist-copy';
-    copy.textContent = '📋';
+    Icons.set(copy, 'copy');
     copy.dataset.tip = 'Copy the session id';
     copy.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -172,7 +172,7 @@ const History = (() => {
 
     const dl = document.createElement('button');
     dl.className = 'hist-copy';
-    dl.textContent = '⭳';
+    Icons.set(dl, 'download');
     dl.dataset.tip = 'Save this conversation as a text file';
     dl.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -196,7 +196,7 @@ const History = (() => {
     headTitleEl.textContent = archiveShown ? 'Archived ' : 'Recent ';
     headCountEl.textContent = inSection.length || '';
     deleteAllBtn.disabled = !listed.length;
-    deleteAllBtn.textContent = listed.length ? `🗑 Delete All (${listed.length})` : '🗑 Delete All';
+    Icons.set(deleteAllBtn, 'trash', listed.length ? `Delete all (${listed.length})` : 'Delete all');
     deleteAllBtn.dataset.tip = `Permanently delete the ${listed.length} conversation`
       + `${listed.length === 1 ? '' : 's'} listed here from ~/.claude/projects`
       + ' — a running agent\'s own conversation is kept (click twice)';
@@ -215,7 +215,7 @@ const History = (() => {
     Confirm.disarm(); // the same 🗑 element now stands for the other section
     archiveShown = show;
     archiveBtn.classList.toggle('active', show);
-    archiveBtn.textContent = show ? '◀ History' : '🗄 Archive';
+    Icons.set(archiveBtn, show ? 'left' : 'archive', show ? 'History' : 'Archive');
     render();
   }
 

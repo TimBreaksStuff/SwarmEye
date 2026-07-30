@@ -598,6 +598,7 @@
 .pane-effort,
 .pane-llm,
 .pane-git,
+.pane-collision,
 .pane-badge {
   font-family: var(--font-ui);
   font-size: 11px;
@@ -628,6 +629,179 @@
   color: var(--amber);
   border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
   background: color-mix(in srgb, var(--amber) 8%, transparent);
+}
+/* ---------- command palette ---------- */
+/* Sits high rather than centred — the list grows downward, and a box pinned to
+   the middle would walk up the screen as it filled. */
+#palette-pop {
+  position: fixed;
+  z-index: 70;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(680px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+#palette-pop[hidden] { display: none; }
+#palette-input {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 13px 16px;
+}
+#palette-input:focus-visible { outline: none; }
+#palette-list {
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border3) transparent;
+}
+.palette-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 16px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+.palette-row.sel { background: var(--hover); }
+.palette-row.sel .palette-label { color: var(--text); }
+/* the kind sits in a fixed column so the eye can scan one edge, not a ragged one */
+.palette-group {
+  flex: none;
+  width: 74px;
+  font-size: 10px;
+  color: var(--muted2);
+  text-transform: lowercase;
+}
+.palette-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-hint {
+  flex: none;
+  max-width: 42%;
+  font-size: 10.5px;
+  color: var(--muted2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-empty {
+  padding: 14px 16px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted2);
+}
+
+/* ---------- workspace notebook ---------- */
+/* A floating box rather than an inset:0 overlay: the popover closes on an
+   outside click, and a full-screen backdrop would contain every click there
+   is. Opaque surface, 12px radius, one border — the language #coord-modal-box
+   and the four views settled on, not msg-pop's older glass. */
+#notes-pop {
+  position: fixed;
+  z-index: 60;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(620px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+#notes-pop[hidden] { display: none; }
+.notes-head,
+.notes-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+#notes-text {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 160px;
+}
+#notes-text:focus-visible { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
+.notes-hint {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted2);
+}
+.notes-hint.warn { color: var(--amber); }
+/* the flyout's third button, sized like the 📌 and ✕ beside it */
+.rail-flyout-notes {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px;
+  border-radius: 6px;
+  opacity: 0.75;
+}
+.rail-flyout-notes:hover { opacity: 1; background: var(--hover); }
+
+/* the right-sizing offer: the one header control that changes what the agent
+   costs, so it reads as an action (accent, like the branch chip) rather than a
+   status. Armed, it commits to the colour of the tier it is moving to. */
+.pane-rightsize {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-text);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border2));
+  background: transparent;
+  border-radius: 6px;
+  padding: 2px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pane-rightsize:hover { background: var(--hover); border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
+.pane-rightsize.armed {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* two agents in one file: a warning about the swarm, not a fault in this pane,
+   so amber like the dirty branch chip rather than the badge's red */
+.pane-collision {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  white-space: nowrap;
 }
 /* the permission mode is a control, not a chip, but it reads on the same line */
 .pane-mode {
@@ -698,6 +872,7 @@
 }
 .pane-actions .pane-btn.restart { color: var(--accent-text); }
 .pane-actions .pane-btn.mic.listening { color: var(--err); border-color: transparent; }
+.pane-actions .pane-btn.mic.hands-free { color: var(--accent-text); border-color: transparent; }
 
 /* answering a live permission prompt is the one thing worth its own weight,
  * so the pair stays outside the cluster */
@@ -748,6 +923,428 @@
 .pane-btn:focus-visible,
 .pane-mode:focus-visible,
 .pane-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ============================== VIEWS ==============================
+ * Task Board, Skills, History and Swarm View were built before the chrome
+ * went flat: capsule mono-caps buttons, translucent blurred cards, an accent
+ * glow on anything selected and a mono uppercase page title in accent. All
+ * four share .board-head / .kbd-title / .pill, so one section retunes them
+ * into the language the top bar, the rail and the panes now speak.
+ * The swarm map itself (nodes, pulses, links, timeline) is data, not chrome —
+ * its colour and motion carry meaning, so it is left alone. */
+
+/* padding, and the flat background the hex wash is not part of: the four views
+ * sit above body::before (z-index 1), so left transparent they show the grid
+ * through every gap between their cards. They read as documents, not chassis. */
+#board,
+#skills-view,
+#history-view,
+#swarm-view {
+  padding: 16px 20px;
+  background: var(--bg);
+}
+
+/* --- the page header --- */
+.board-head {
+  gap: 12px;
+  min-height: 32px;
+  margin-bottom: 14px;
+}
+/* the view's name, not a section head: sentence case, UI face, no accent.
+ * The mono uppercase treatment is kept for the small heads *inside* a view,
+ * where it matches WORKSPACES and VIEWS in the rail. */
+.board-head .kbd-title,
+#hist-modal-head .kbd-title,
+#coord-modal-head .kbd-title {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+.board-head-actions { gap: 6px; }
+
+/* --- one button shape: the top bar's rectangle --- */
+.pill {
+  height: 28px;
+  padding: 0 11px;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text2);
+  background: transparent;
+  backdrop-filter: none;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+}
+.pill:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--border2);
+}
+/* one filled action per view */
+.pill-primary,
+.pill-primary:hover {
+  height: 28px;
+  font-weight: 600;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.pill-primary:hover { filter: brightness(1.08); }
+/* a toggle that is on reads as the top bar's accent chip, not as a second
+ * primary button — there is only ever one of those */
+.sv-seg .pill.active,
+#board-archive-btn.pill.active,
+#history-archive-btn.pill.active,
+#sv-preview-btn.pill.active,
+#sv-timeline-btn.pill.active,
+#sv-click-btn.pill.active {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border2));
+  box-shadow: none;
+}
+/* the ± pairs become one segmented control, like #topbar-actions. Neighbours
+ * overlap their 1px borders instead of one side dropping its border: dropping
+ * it left every button but the first 1px narrower than its neighbour and its
+ * label half a pixel off centre. */
+.sv-seg { gap: 0; align-items: center; }
+.sv-seg .pill { border-radius: 0; }
+.sv-seg .pill + .pill { margin-left: -1px; }
+.sv-seg .pill:first-of-type { border-radius: 8px 0 0 8px; }
+.sv-seg .pill:last-of-type { border-radius: 0 8px 8px 0; }
+/* the label the pair belongs to is not part of the control — gap: 0 above
+ * glued it to the − button */
+.sv-font-tag { margin-right: 6px; }
+/* − and + are different widths in the UI face, so an auto-width pair rendered
+ * two unequal cells. One fixed cell, glyph centred in it. */
+.sv-font-btn { width: 30px; padding: 0; justify-content: center; }
+
+/* --- icons instead of emoji: one 14px box, one stroke weight --- */
+#board button > svg,
+#skills-view button > svg,
+#history-view button > svg,
+#swarm-view button > svg,
+#hist-modal button > svg,
+#coord-modal button > svg,
+#session-view button > svg,
+#notif-panel button > svg,
+#board-category-pop button > svg,
+.skill-repo-chevron > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  display: block;
+}
+.board-del,
+.board-card-move,
+.board-card-start,
+.board-card-rerun,
+.board-card-session,
+.arch-del,
+.hist-copy,
+.hist-resume,
+.skill-update-btn,
+.skill-copy-btn,
+.skill-remove-btn,
+.skill-repo-remove-btn,
+.board-archive-delall,
+.sv-yes,
+.sv-no,
+#board-form-category-manage,
+#session-view-export,
+#session-view-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* --- surfaces: flat, opaque, no glow --- */
+.board-card,
+.skill-row,
+.skills-stat-card,
+.hist-row,
+#board-form,
+#skills-form,
+#board-stats,
+#hist-modal-box,
+#coord-modal-box,
+#session-view-box {
+  background: var(--surface);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+.board-card-active,
+.skill-row-state-active { box-shadow: none; }
+.board-card-completed,
+.skill-row-state-off { background: var(--surface); }
+#board-form,
+#skills-form,
+#board-stats,
+.skills-stat-card { border-radius: 10px; border-color: var(--border2); }
+#hist-modal-box,
+#coord-modal-box,
+#session-view-box { border-radius: 10px; }
+#board-new-btn:hover,
+#skills-add-btn:hover,
+#board-form-submit:not(:disabled):hover,
+.board-card-start:hover,
+.skill-update-btn:hover { box-shadow: none; }
+
+/* --- section heads inside a view: the rail's WORKSPACES treatment --- */
+.board-stats-title,
+.board-archive-title,
+.sv-panel-title,
+.skills-stat-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sv-panel-title { font-size: calc(10px * var(--sv-fs)); }
+.skills-stat-n { font-size: 20px; }
+
+/* --- the board's four columns --- */
+.board-col {
+  border-radius: 10px;
+  border-color: var(--border);
+}
+.board-col-head {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* the category colour moves off the container and onto the icon and the
+ * count — four differently-outlined boxes read as four unrelated widgets */
+.board-col-cat-manual,
+.board-col-cat-scheduled,
+.board-col-cat-active,
+.board-col-cat-completed { border-color: var(--border); }
+.board-col-cat-manual .board-col-head,
+.board-col-cat-scheduled .board-col-head,
+.board-col-cat-active .board-col-head,
+.board-col-cat-completed .board-col-head {
+  color: var(--text2);
+  border-bottom-color: var(--border);
+}
+.board-col-cat-manual .board-col-icon { color: var(--entry-dot); }
+.board-col-cat-scheduled .board-col-icon { color: var(--amber); }
+.board-col-cat-active .board-col-icon { color: var(--accent-text); }
+.board-col-cat-completed .board-col-icon { color: var(--tag); }
+.board-col-n { font-family: var(--font-mono); font-size: 11px; }
+
+/* --- cards and rows: one row language --- */
+.board-card,
+.skill-row,
+.hist-row { border-radius: 9px; }
+.board-card.jumpable:hover,
+.hist-row:hover {
+  background: var(--hover);
+  border-color: var(--border2);
+}
+.board-card-badge,
+.board-card-category,
+.board-card-agent,
+.board-card-branch,
+.skill-repo-badge {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  border-radius: 6px;
+}
+/* a category is a label, not a state — the priority chip beside it is the one
+ * that earns a colour */
+.board-card-category {
+  color: var(--text2);
+  border-color: var(--border2);
+  background: transparent;
+}
+/* small square actions, the pane cluster's shape */
+.board-del,
+.board-card-move,
+.board-card-rerun,
+.board-card-session,
+.arch-del,
+.hist-copy,
+.skill-copy-btn,
+.skill-remove-btn,
+#board-form-category-manage {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--text2);
+}
+.board-card-move:hover,
+.board-card-rerun:hover,
+.board-card-session:hover,
+.hist-copy:hover,
+.skill-copy-btn:hover,
+#board-form-category-manage:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--border2);
+}
+.board-card-start,
+.hist-resume,
+.skill-update-btn,
+.skill-repo-remove-btn,
+.board-archive-delall,
+.sv-yes,
+.sv-no {
+  height: 24px;
+  padding: 0 9px;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  border-radius: 6px;
+}
+.board-archive-delall,
+.skill-repo-remove-btn,
+.sv-yes,
+.sv-no { color: var(--text2); border-color: var(--border2); background: transparent; }
+.skill-update-btn {
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border2));
+}
+.skill-update-btn:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.board-card-start,
+.hist-resume {
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border2));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.board-card-start:hover,
+.hist-resume:hover {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border2));
+}
+/* destructive controls stay neutral until the cursor is on them — the same
+ * deal the pane's close button makes */
+.skill-remove-btn:hover,
+.skill-repo-remove-btn:hover,
+.board-del:hover,
+.arch-del:hover,
+.sv-no:hover,
+.board-archive-delall:hover {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 40%, var(--border2));
+  background: color-mix(in srgb, var(--err) 8%, transparent);
+}
+.board-archive-head { margin-bottom: 10px; }
+
+/* --- skills --- */
+/* the per-repo hue outlined the whole group and its divider: two repos read as
+ * two unrelated widgets. The source is already named in the header. */
+.skill-repo-group {
+  border-color: var(--border);
+  border-radius: 10px;
+}
+.skill-repo-header,
+.skill-repo-header:hover { border-bottom-color: var(--border); }
+.skill-repo-chevron {
+  color: var(--text2);
+  background: transparent;
+  border-color: var(--border2);
+  border-radius: 6px;
+}
+.skill-repo-header:hover .skill-repo-chevron { background: var(--hover); }
+.skill-repo-label {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+.skill-repo-count { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.skill-row-name { font-family: var(--font-ui); font-size: 12.5px; font-weight: 600; }
+.skill-row-meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+
+/* --- history --- */
+.hist-meta {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted);
+}
+.hist-turn { border-radius: 8px; }
+
+/* --- swarm view chrome (the dock and the header counts, not the map) --- */
+.sv-count { border-radius: 7px; }
+.sv-row-name { font-family: var(--font-ui); font-weight: 500; }
+.sv-menu-item { font-family: var(--font-ui); letter-spacing: 0; text-transform: none; }
+
+/* --- inputs: one field shape --- */
+#skills-search,
+#history-search,
+#board-archive-search,
+#skills-form-url,
+.board-filters select,
+.board-archive-filters select,
+#board-category-filter,
+#history-ws {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  height: 30px;
+  border-radius: 8px;
+  border-color: var(--border2);
+  background: transparent;
+  color: var(--text);
+}
+#history-search { flex: 1; }
+#skills-search:focus,
+#history-search:focus,
+#board-archive-search:focus,
+#skills-form-url:focus { border-color: var(--accent); outline: none; }
+.board-form-actions button {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  padding: 7px 14px;
+}
+
+/* --- keyboard focus, which the views had on one control --- */
+.pill:focus-visible,
+.board-card:focus-visible,
+.hist-row:focus-visible,
+.board-del:focus-visible,
+.board-card-move:focus-visible,
+.board-card-start:focus-visible,
+.board-card-rerun:focus-visible,
+.board-card-session:focus-visible,
+.hist-copy:focus-visible,
+.hist-resume:focus-visible,
+.skill-update-btn:focus-visible,
+.skill-copy-btn:focus-visible,
+.skill-remove-btn:focus-visible,
+.skill-repo-remove-btn:focus-visible,
+.board-archive-delall:focus-visible,
+.sv-yes:focus-visible,
+.sv-no:focus-visible,
+.sv-count:focus-visible,
+.board-form-actions button:focus-visible,
+#board-form-category-manage:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
