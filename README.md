@@ -41,7 +41,7 @@ No accounts, no backend, no telemetry. SwarmEye rides entirely on your existing 
 
 ## Requirements
 
-Both platforms need **Node.js 20+**, **Claude Code** installed and logged in with `claude` on the `PATH`, and **tmux** (strongly recommended — it's what lets agents survive an app restart; without it, quitting kills every running agent).
+Both platforms need **Node.js 20+** — preferably an even-numbered LTS line, since Electron's installer silently fails to unpack its binary under the newest majors — **Claude Code** installed and logged in with `claude` on the `PATH`, and **tmux** (strongly recommended — it's what lets agents survive an app restart; without it, quitting kills every running agent).
 
 | | Windows | macOS |
 |---|---|---|
@@ -90,27 +90,22 @@ Both platforms need **Node.js 20+**, **Claude Code** installed and logged in wit
 
 ### macOS
 
-1. **Install Claude Code** and log in:
-   ```
-   claude
-   ```
+One command does all of it:
 
-2. **Install tmux** (recommended):
-   ```
-   brew install tmux
-   ```
+```
+git clone https://github.com/TimBreaksStuff/SwarmEye.git
+cd SwarmEye
+bash scripts/setup-mac.sh
+```
 
-3. **Clone and install:**
-   ```
-   git clone https://github.com/TimBreaksStuff/SwarmEye.git
-   cd SwarmEye
-   npm install
-   ```
+`setup-mac.sh` is the whole install. It checks the Xcode command line tools, puts Homebrew on your `PATH` if its installer never did (the usual reason for `zsh: command not found: brew` on Apple Silicon), checks Node, warns if `tmux` or `claude` are missing, runs `npm install` — and then verifies the two things npm leaves half-done on a Mac. Downloading the Electron binary is a *postinstall script*, and modern npm defers those until you approve them, so a first install often leaves a hollow `node_modules/electron` whose only symptom is `Error: Electron failed to install correctly`; the script downloads it, and if that still fails it names your Node version as the cause. It also restores the exec bit on node-pty's `spawn-helper`, without which every agent dies with an opaque `posix_spawnp failed`.
 
-4. **Run** — or double-click `SwarmEye.command` (`chmod +x SwarmEye.command` once first):
-   ```
-   npm start
-   ```
+Nothing is installed with `sudo` on your behalf: anything that needs it — Homebrew itself, the command line tools, `tmux`, `claude` — is reported with the exact command to run. The script is safe to re-run at any time, and `npm run setup:mac` is the same thing once dependencies exist.
+
+Then **run** — or double-click `SwarmEye.command`, which repairs a half-finished install before launching:
+```
+npm start
+```
 
 macOS asks for microphone permission the first time you use dictation. The app is unsigned — if Gatekeeper blocks a built `.app`, right-click it and choose **Open** once.
 
