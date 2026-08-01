@@ -23,10 +23,10 @@ const STT_CHECK =
  * can't be mangled — and the renderer turns it into an AudioBuffer, so no
  * audio device is needed on the shell's side of the boundary. */
 const TTS_CMD =
-  'T="$HOME/.local/share/swarmeye/tts"; "$T/piper/piper" --model "$T/voice.onnx"'
-  + ' --espeak_data "$T/piper/espeak-ng-data" --output-raw 2>/dev/null | base64 | tr -d "\\n"';
+  'T="$HOME/.local/share/swarmeye/tts"; "$T/venv/bin/piper" --model "$T/voice.onnx"'
+  + ' --output-raw 2>/dev/null | base64 | tr -d "\\n"';
 const TTS_CHECK =
-  'test -x "$HOME/.local/share/swarmeye/tts/piper/piper" && test -f "$HOME/.local/share/swarmeye/tts/voice.onnx"';
+  'test -x "$HOME/.local/share/swarmeye/tts/venv/bin/piper" && test -f "$HOME/.local/share/swarmeye/tts/voice.onnx"';
 const TTS_RATE = 22050; // every "medium" voice is 22.05 kHz, and the installer pins the voice
 const TTS_MAX_CHARS = 300; // an announcement, not an audiobook
 

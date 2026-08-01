@@ -132,7 +132,7 @@
       <div id="grid"></div>
       <div id="empty-state">
         <div class="big">No agents here<span class="plus">_</span></div>
-        <div>select a workspace, then hit + agent</div>
+        <div class="empty-hint">select a workspace, then hit + agent</div>
       </div>
     </main>
 
@@ -499,6 +499,7 @@
     <div class="kbd-row kbd-opt"><span>SwarmEye version</span>
       <span class="opt-ctl">
         <span id="update-status" class="stt-status"></span>
+        <button id="update-check-btn" data-tip="Ask GitHub now whether a newer SwarmEye has been released, instead of waiting for the six-hourly check">Check</button>
         <button id="update-action-btn" hidden></button>
       </span>
     </div>
@@ -684,6 +685,7 @@
   <script src="speech.js"></script>
   <script src="pane.js"></script>
   <script src="grid.js"></script>
+  <script src="launcher.js"></script>
   <script src="topbar.js"></script>
   <script src="board.js"></script>
   <script src="skills.js"></script>

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Provision SwarmEye's local speech backend: the Piper binary plus one voice,
+# Provision SwarmEye's local speech backend: a Piper venv plus one voice,
 # installed to ~/.local/share/swarmeye/tts (inside WSL on Windows, or the local
-# home on macOS). Safe to re-run.
+# home on macOS). Safe to re-run; re-running replaces an older tarball install
+# in place.
 # Usage: setup-tts.sh [voice]   (default: en_US-hfc_female-medium, ~61 MB; any
 # voice from https://huggingface.co/rhasspy/piper-voices works, e.g.
 # "en_GB-alba-medium")
@@ -16,40 +17,56 @@ need() {
   exit 1
 }
 
-OS=$(uname -s)
-ARCH=$(uname -m)
-if [ "$OS" = "Darwin" ]; then
+if [ "$(uname -s)" = "Darwin" ]; then
+  FIX_PY='xcode-select --install    # Apple ships python3 with the command line tools'
   FIX_CURL='xcode-select --install    # or reinstall macOS command line tools'
-  case "$ARCH" in
-    arm64|aarch64) ASSET=piper_macos_aarch64.tar.gz ;;
-    *)             ASSET=piper_macos_x64.tar.gz ;;
-  esac
 else
+  FIX_PY='sudo apt update && sudo apt install -y python3 python3-venv'
   FIX_CURL='sudo apt update && sudo apt install -y curl'
-  case "$ARCH" in
-    aarch64|arm64) ASSET=piper_linux_aarch64.tar.gz ;;
-    armv7l)        ASSET=piper_linux_armv7l.tar.gz ;;
-    x86_64)        ASSET=piper_linux_x86_64.tar.gz ;;
-    *)             need "no Piper build for $ARCH" "run SwarmEye's agents on an x86_64 or arm64 machine" ;;
-  esac
 fi
 
+command -v python3 >/dev/null 2>&1 || need "python3 not found" "$FIX_PY"
+python3 -c 'import venv' >/dev/null 2>&1 || need "python3 has no venv module" "$FIX_PY"
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' \
+  || need "python3 is $(python3 -c 'import platform;print(platform.python_version())'), but piper-tts needs 3.9+" "$FIX_PY"
 command -v curl >/dev/null 2>&1 || need "curl not found" "$FIX_CURL"
-command -v tar >/dev/null 2>&1 || need "tar not found" "${FIX_CURL/curl/tar}"
 
 DIR="$HOME/.local/share/swarmeye/tts"
 VOICE="${1:-en_US-hfc_female-medium}"
-PIPER_RELEASE=2023.11.14-2
 
 mkdir -p "$DIR"
 
-if [ ! -x "$DIR/piper/piper" ]; then
-  echo "step: downloading the Piper engine ($ASSET)"
-  curl -fL --progress-bar -o "$DIR/piper.tgz" \
-    "https://github.com/rhasspy/piper/releases/download/$PIPER_RELEASE/$ASSET"
-  tar xzf "$DIR/piper.tgz" -C "$DIR"
-  rm -f "$DIR/piper.tgz"
+# The old rhasspy/piper 2023.11 tarballs are gone: the macOS aarch64 asset ships
+# an x86_64 binary, and neither macOS asset contains the dylibs that binary
+# links against — so it could never run on an Apple Silicon Mac. piper-tts on
+# PyPI is the maintained build and has real wheels for every platform we target.
+rm -rf "$DIR/piper"
+
+echo "step: creating venv"
+# Prefer ensurepip. Debian splits it into python3-venv, and there may be no
+# root to apt-install it — so fall back to --without-pip + get-pip.py there.
+if [ ! -x "$DIR/venv/bin/python" ]; then
+  if python3 -c 'import ensurepip' >/dev/null 2>&1; then
+    python3 -m venv "$DIR/venv"
+  else
+    python3 -m venv --without-pip "$DIR/venv"
+  fi
 fi
+if ! "$DIR/venv/bin/python" -m pip --version >/dev/null 2>&1; then
+  # get-pip.py's default URL dropped everything below 3.10, which includes the
+  # python3 macOS ships (3.9) — those need the version-pinned copy instead
+  PYMM=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+  case "$PYMM" in
+    3.9) GETPIP="https://bootstrap.pypa.io/pip/$PYMM/get-pip.py" ;;
+    *)   GETPIP="https://bootstrap.pypa.io/get-pip.py" ;;
+  esac
+  curl -fsSL "$GETPIP" | "$DIR/venv/bin/python"
+fi
+# not --quiet: pip's own progress is the only sign of life during a multi-
+# minute wheel download, and the in-app installer streams this straight into
+# its log box
+echo "step: installing piper-tts"
+"$DIR/venv/bin/python" -m pip install --upgrade piper-tts
 
 # en_US-hfc_female-medium -> en/en_US/hfc_female/medium/en_US-hfc_female-medium
 LOCALE=${VOICE%%-*}

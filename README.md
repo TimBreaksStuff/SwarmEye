@@ -33,9 +33,9 @@ No accounts, no backend, no telemetry. SwarmEye rides entirely on your existing 
 - **Usage widget** — the real 5-hour and weekly limits from Claude's own OAuth usage API, with a warning toast when a window crosses 75% or 90% so a swarm doesn't walk into the ceiling unannounced.
 - **Swarm map** — a compact status grid in the left rail, above the `Views` group: one slot per agent showing busy, needs attention, idle, or free at a glance across every workspace, each slot bordered in its workspace's colour. Click any lit slot to jump to that agent and focus its pane; hover for its name.
 - **Notifications that reach you** — the bell keeps the history, and while the window isn't focused an OS notification names the agent and what it did (finished its turn, or needs you). Clicking it brings SwarmEye back. On by default, off in `⚙` Options. Every notification — in the bell popover and the docked panel — carries `↗ Agent` to jump to that pane and `☰ Transcript` to read the agent's whole conversation in the History screen's reader, without leaving the view you are on. The panel's left edge drags to resize it, and the width is remembered.
-- **Spoken notifications** — turn them on in `⚙` Options and SwarmEye says which agent just finished, plus the first sentence of what it said last, whenever a turn ends while you aren't watching that pane. A local [Piper](https://github.com/rhasspy/piper) voice (~110 MB, installed from the same panel) does the speaking, so it works offline and nothing is uploaded. Off by default.
+- **Spoken notifications** — turn them on in `⚙` Options and SwarmEye says *"Bender finished in Payments API"* whenever a turn ends while you aren't watching that pane. A local [Piper](https://github.com/rhasspy/piper) voice (~110 MB, installed from the same panel) does the speaking, so it works offline and nothing is uploaded. Off by default.
 - **Quick permission responses** — approve or deny an agent's numbered permission prompt straight from its pane header or the notification bell, without switching workspaces or opening the pane. The `✓`/`✕` pair only appears while there is a yes/no menu actually on screen to answer.
-- **In-app updates** — the app checks GitHub Releases for new versions and offers a one-click download-and-restart update from `⚙` Options.
+- **In-app updates** — the app checks GitHub Releases for new versions and offers a one-click download-and-restart update from `⚙` Options, with a **Check** button to ask right now.
 
 ---
 
@@ -111,7 +111,7 @@ macOS asks for microphone permission the first time you use dictation. The app i
 
 ### First run
 
-Click the `+ Add workspace` row in the left rail to add your first workspace folder, then `+ Agent` in the top bar to spawn an agent in it.
+Click the `+ Add workspace` row in the left rail to add your first workspace folder. An empty workspace then shows a **launch card**: pick a swarm size — 1, 2, 4, 6, 8, 10, 12 — check the four settings the agents will start with (**Model · Effort · Focus · Permissions**, pre-filled from your ⚙ Options defaults), and `Launch N agents` opens them all at once. `+ Agent` in the top bar still adds them one at a time, with the role picker.
 
 ---
 
@@ -150,7 +150,7 @@ npm run publish:release       # macOS / WSL shell
 npm run publish:release:win   # Windows, runs the same script inside WSL
 ```
 
-Running apps check that release feed every few hours and offer a one-click download-and-restart update from `⚙` Options → **SwarmEye version**.
+Running apps check that release feed every few hours and offer a one-click download-and-restart update from `⚙` Options → **SwarmEye version**, where **Check** also asks on demand. Until that first release is published the feed is empty, and a check reports *no release published on GitHub yet* — the updater has nothing to find. `publish:release` needs the [GitHub CLI](https://cli.github.com) (`brew install gh`, then `gh auth login`).
 
 ---
 

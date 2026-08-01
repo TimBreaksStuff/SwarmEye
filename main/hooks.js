@@ -155,6 +155,7 @@ class HookMonitor {
     this.debugLog = debugLog;
     this.stateDir = path.join(app.getPath('userData'), 'hook-state');
     this.settingsFile = path.join(app.getPath('userData'), 'hook-settings.json');
+    this.usageFile = path.join(app.getPath('userData'), 'usage.json');
     this.seen = new Map(); // filename -> mtimeMs already processed
     this.models = new Map(); // sessionId -> last known model id (from the transcript)
     this.usage = new Map(); // sessionId -> accumulated transcript usage (see usageState)
@@ -190,7 +191,7 @@ class HookMonitor {
 
     // fs.watch for instant reaction, plus a slow sweep in case events get lost
     try {
-      this.watcher = fs.watch(this.stateDir, () => this.sweep());
+      this.watcher = fs.watch(this.stateDir, (_type, filename) => this.sweep(filename));
     } catch { /* sweep alone still works */ }
     this.sweepTimer = setInterval(() => this.sweep(), 3000);
     this.debugLog('[hooks] watching ' + this.stateDir);
@@ -207,9 +208,18 @@ class HookMonitor {
            `${baseCmd} --settings "${settings}"`;
   }
 
-  sweep() {
+  /* Just the file fs.watch named, or the whole directory when it named none.
+   * A busy swarm fires the watcher several times a second, and re-statting
+   * every agent's state file for one file's worth of news is O(agents) per
+   * event — the `.tmp` half of each atomic write included, which then matches
+   * nothing. The 3s timer passes no name and still does the full pass, so an
+   * event that arrived unnamed or not at all is late rather than lost. */
+  sweep(only) {
     let files;
-    try { files = fs.readdirSync(this.stateDir); } catch { return; }
+    if (only) files = [only];
+    else {
+      try { files = fs.readdirSync(this.stateDir); } catch { return; }
+    }
     for (const f of files) {
       if (!f.endsWith('.json')) continue; // skip .tmp mid-write files
       const full = path.join(this.stateDir, f);
@@ -372,13 +382,16 @@ class HookMonitor {
    * transcript offset rides along, which is what lets the next Stop pick up
    * from where this run stopped reading instead of re-counting the file. */
   persistUsage() {
-    // config.json carries the archived task logs and is well into six figures
-    // of bytes; a turn boundary for every agent is far too often to rewrite it,
-    // so writes are coalesced (and flushed on quit — see stop()).
+    // a turn boundary for every agent is still too often to write on, so the
+    // writes are coalesced (and flushed on quit — see stop()).
     if (this.persistTimer) return;
     this.persistTimer = setTimeout(() => this.flushUsage(), USAGE_PERSIST_MS);
   }
 
+  /* Its own file, not config.json — the runstate.json split in main.js, for the
+   * same reason. These totals are a few hundred bytes and change every few
+   * seconds, while config.json carries the 200 archived task logs and is six
+   * figures of bytes: writing them there sized every save by the archive. */
   flushUsage() {
     clearTimeout(this.persistTimer);
     this.persistTimer = null;
@@ -386,13 +399,17 @@ class HookMonitor {
     for (const [id, st] of this.usage) {
       out[id] = { ...this.snapshot(id), path: st.path, offset: st.offset };
     }
-    try { config.patch({ usage: out }); } catch (err) {
+    try { fs.writeFileSync(this.usageFile, JSON.stringify(out)); } catch (err) {
       this.debugLog('[hooks] usage persist failed: ' + err.message);
     }
   }
 
   restoreUsage() {
-    const saved = config.load().usage || {};
+    let saved = null;
+    try { saved = JSON.parse(fs.readFileSync(this.usageFile, 'utf8')); } catch { /* first run */ }
+    // totals written by a version that still kept them in config.json: taken
+    // over once, so upgrading doesn't blank a running agent's cost panel
+    if (!saved) saved = config.load().usage || {};
     for (const [id, s] of Object.entries(saved)) {
       if (!s || typeof s.path !== 'string') continue;
       this.usage.set(id, {

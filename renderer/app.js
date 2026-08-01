@@ -7,6 +7,8 @@ let autoUsageLimit = 85; // usage-% ceiling for auto-scheduled tasks — loaded 
 const grid = new GridController(document.getElementById('grid'));
 const gridWrapEl = document.getElementById('grid-wrap');
 const emptyState = document.getElementById('empty-state');
+Launcher.init(emptyState, emptyState.querySelector('.big'), emptyState.querySelector('.empty-hint'),
+  (n, settings) => spawnAgents(n, settings));
 const toastEl = document.getElementById('toast');
 // the swarm view's own wiring lives further down, but renderSwarmView() is
 // reached from renderNotifs() while this file is still evaluating — these two
@@ -86,6 +88,10 @@ function syncChromeNow() {
   Topbar.updateAgentCap(liveAgentCount(), maxAgents);
   renderSwarmView(); // same coalesced beat as the rest of the chrome
   emptyState.style.display = grid.panes.length ? 'none' : '';
+  Launcher.sync({
+    workspace: !!state.selectedWorkspaceId,
+    free: Math.max(0, maxAgents - liveAgentCount()),
+  });
   reattachAllBtn.hidden = ![...state.panes.values()].some((p) => p.detached);
 }
 
@@ -864,84 +870,33 @@ document.getElementById('voice-notif-toggle').addEventListener('change', (e) => 
   if (e.target.checked) Sounds.speak('Spoken notifications on');
 });
 
-/* The agent's closing message lands a beat after the Stop that ended the turn
- * — the transcript read behind it is async (see applyTaskSummary) — so a
- * finished agent is armed here and announced by whichever comes first: its
- * summary, or this timer, which says the name alone. */
-const pendingSpeech = new Map(); // sessionId -> { name, timer }
-const SPEAK_SUMMARY_WAIT_MS = 2500;
-
-function armSpeech(pane) {
-  if (!notifSpeech) return;
-  const id = pane.session.id;
-  const prev = pendingSpeech.get(id);
-  if (prev) clearTimeout(prev.timer);
-  // the name is copied, not the pane: a task with 'close on complete' takes
-  // its pane down before the summary arrives
-  pendingSpeech.set(id, {
-    name: pane.session.agentName,
-    timer: setTimeout(() => sayDone(id, null), SPEAK_SUMMARY_WAIT_MS),
-  });
-}
-
-function sayDone(id, line) {
-  const entry = pendingSpeech.get(id);
-  if (!entry) return; // no finished turn waiting on a voice — mid-turn summaries pass through
-  pendingSpeech.delete(id);
-  clearTimeout(entry.timer);
-  Sounds.speak(line ? `${entry.name} finished. ${line}` : `${entry.name} finished its turn.`);
-}
-
-/* What actually gets said. The closing message is markdown written for the eye
- * — headings, inline identifiers, commit hashes, file paths — and read out
- * verbatim it is gibberish ("one point three nine point one, five one six six
- * nine c b"). So the syntax and the unspeakable tokens come out first, and
- * then the first fragment that is really a sentence is picked: anything that
- * is mostly symbols, a bare version or a heading is skipped rather than
- * announced. An opener too short to say anything on its own ("Fixed and
- * shipped.") takes the sentence after it along. */
-const SPEECH_MAX = 200; // ~12 seconds — an update, not a reading
-const SPEECH_SHORT = 45; // an opener under this is joined with the next sentence
-const SPEECH_HOLE = '\u0000'; // marks where an unsayable identifier was taken out
-
-function speechClean(text) {
-  return text
-    .replace(/```[\s\S]*?```/g, ' ') // a code block read aloud is noise
-    // a plain-word code span stays — a filename reads better than a gap; one
-    // carrying symbols can't be said at all and leaves a hole behind instead
-    .replace(/`([^`]*)`/g, (m, code) => (/^[\w.\-/]{1,24}$/.test(code) ? code : SPEECH_HOLE))
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1') // a link says its text, not its URL
-    .replace(/\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b/gi, ' ') // commit hashes
-    .replace(/\S*\/\S+/g, (t) => t.split('/').filter(Boolean).pop() || ' ') // a path says its file
-    .replace(/[*_#>|~[\]()]/g, ' ')
-    .replace(/^[-•*\d.)\s]+(?=[A-Za-z])/gm, '') // list markers, not words
-    .replace(/[^\S\n]+([.,!?;:])/g, '$1') // don't strand the punctuation the split needs
-    .replace(/[^\S\n]+/g, ' ') // collapse spaces but keep the line breaks
-    .replace(/\n+/g, '\n')
+/* A workspace name is a folder name, not a phrase, and it is the only free
+ * text left in the announcement — so the two shapes that actually turn up get
+ * fixed before it is read out: a sort prefix ("03 - SwarmEye" is said as "zero
+ * three dash SwarmEye") and a camelCase run ("DisruptiveNegotiations" comes
+ * out as one mangled word). Deliberately not a second speechClean: everything
+ * else a folder can be called reads well enough as-is. */
+function sayableName(name) {
+  return String(name || '')
+    .replace(/^\W*\d+\W+/, '') // leading "03 - ", "1. ", "04 -  "
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2') // DisruptiveNegotiations
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-/* Worth saying: several real words, and not mostly digits and symbols. */
-function speakableSentence(s) {
-  if (s.split(' ').filter((w) => /[A-Za-z]{2,}/.test(w)).length < 4) return false;
-  return (s.match(/[A-Za-z ]/g) || []).length / s.length > 0.6;
-}
-
-function speechLine(text) {
-  const sentences = speechClean(text)
-    .split(/(?<=[.!?])\s+|\n/)
-    .map((s) => s.trim())
-    // "the check used <hole> instead of <hole>" is worse than saying nothing:
-    // a sentence built around an identifier that can't be spoken is dropped
-    .filter((s) => !s.includes(SPEECH_HOLE))
-    .filter(speakableSentence);
-  if (!sentences.length) return null;
-  let line = sentences[0];
-  // a heading or bullet carries no full stop of its own, so give it one before
-  // the next sentence runs into it
-  if (line.length < SPEECH_SHORT && sentences[1]) line = `${line.replace(/[^.!?]$/, '$&.')} ${sentences[1]}`;
-  // cut on a word boundary — half a word is worse than a shorter sentence
-  return line.length > SPEECH_MAX ? `${line.slice(0, SPEECH_MAX).replace(/\s+\S*$/, '')}…` : line;
+/* One fixed sentence: who finished, and where. Nothing waits for the agent's
+ * closing message, so a finished turn is announced on the Stop that ended it
+ * rather than a beat later. Kept short on purpose — "Agent … in workspace … is
+ * finished" was 4.7 seconds of audio, five words of it carrying nothing, and a
+ * busy swarm cuts one announcement off with the next. A session with no
+ * workspace name says the agent alone. */
+function speakDone(pane) {
+  if (!notifSpeech) return;
+  const where = sayableName(pane.session.workspaceName);
+  Sounds.speak(where
+    ? `${pane.session.agentName} finished in ${where}`
+    : `${pane.session.agentName} finished`);
 }
 
 /* local engine installers — the ⌨ popover's dictation and voice rows. Neither
@@ -1048,6 +1003,7 @@ for (const { id, table, key, optionText, onApply } of DEFAULT_PICKERS) {
     sel.value = name;
     localStorage.setItem('swarmeye.' + key, name);
     Board.setDefaults({ [key]: name });
+    Launcher.setDefaults({ [key]: name }); // the empty-workspace card opens on these too
     if (onApply) onApply(name);
   };
   applyDefault[key] = apply;
@@ -1059,6 +1015,7 @@ for (const { id, table, key, optionText, onApply } of DEFAULT_PICKERS) {
  * few lines instead of bending the table above around one odd case */
 const applyDefaultFocus = boolOption('default-focus-toggle', 'defaultFocus', false, (on) => {
   Board.setDefaults({ defaultFocus: on });
+  Launcher.setDefaults({ defaultFocus: on });
 });
 
 /* reset to default — restores every setting in the Options popover. Two
@@ -1110,6 +1067,7 @@ const skillInjectAttempted = new Set(); // sessionId — every new session gets 
 // the task text has even been typed.
 const awaitingTaskTurn = new Set();
 const manualStartRun = new Set(); // sessionId — manually-added agents run their startup sequence (skills, then default mode) once
+const manualLaunchOpts = new Map(); // sessionId -> the empty-workspace card's picks for this launch, read once by startManualSession
 const sessionStarted = new Set(); // sessionId — its SessionStart hook has arrived, i.e. claude's CLI is really up
 let usageSnapshot = null;
 let schedulerRunning = false;
@@ -1206,26 +1164,57 @@ async function tryInjectSkills(sessionId) {
  * setMode is then still retried: it steers by reading claude's footer, which
  * may not have drawn yet, and the very first use of auto mode on a machine
  * lands on the bypass-permissions warning that swallows the keys — the gap
- * between laps is when the pane's own autoAcceptDialogs clears it. */
+ * between laps is when the pane's own autoAcceptDialogs clears it.
+ *
+ * An agent launched from the empty-workspace card also carries that card's
+ * effort and focus picks (manualLaunchOpts), typed after the mode is settled
+ * the same way tryInjectPrompt does it for a task. + Agent and Ctrl+N are
+ * deliberately unchanged: they still apply the model and the permission mode
+ * only, so a plain agent costs no extra startup turns. */
 async function startManualSession(sessionId) {
   if (manualStartRun.has(sessionId) || pendingTaskStarts.has(sessionId)) return;
   const pane = state.panes.get(sessionId);
   if (!pane || pane.exited) return;
   manualStartRun.add(sessionId);
   await tryInjectSkills(sessionId);
-  const startMode = localStorage.getItem('swarmeye.defaultStartMode') || 'default';
-  if (startMode === 'default') return;
+  const launch = manualLaunchOpts.get(sessionId);
+  const startMode = launch ? launch.startMode : (localStorage.getItem('swarmeye.defaultStartMode') || 'default');
+  const effort = launch && launch.effort !== 'default' ? launch.effort : null;
+  const wantFocus = launch ? launch.focus : null;
+  if (startMode === 'default' && !effort && wantFocus === null) return;
   for (let waited = 0; !sessionStarted.has(sessionId) && waited < CLAUDE_READY_TIMEOUT_MS; waited += 500) {
     if (pane.exited) return;
     await new Promise((r) => setTimeout(r, 500));
   }
-  for (let attempt = 0; attempt < DEFAULT_MODE_TRIES; attempt++) {
-    if (pane.exited) return;
-    // only the final lap may complain — the earlier ones are expected to fail
-    // on a CLI that is still drawing its first screen
-    if (await pane.setMode(startMode, { quiet: attempt < DEFAULT_MODE_TRIES - 1 })) return;
-    await new Promise((r) => setTimeout(r, DEFAULT_MODE_RETRY_MS));
+  if (startMode !== 'default') {
+    for (let attempt = 0; attempt < DEFAULT_MODE_TRIES; attempt++) {
+      if (pane.exited) return;
+      // only the final lap may complain — the earlier ones are expected to fail
+      // on a CLI that is still drawing its first screen
+      if (await pane.setMode(startMode, { quiet: attempt < DEFAULT_MODE_TRIES - 1 })) break;
+      await new Promise((r) => setTimeout(r, DEFAULT_MODE_RETRY_MS));
+    }
   }
+  if (effort) {
+    if (pane.exited) return;
+    pane.setEffort(effort); // the buffer scan catches it too, but only while the confirmation is still on screen
+    await typeCommand(sessionId, '/effort ' + effort);
+  }
+  // `/focus` is a toggle and claude doesn't always start with it off, so send
+  // it only when the footer disagrees — that turns it on when wanted and off
+  // when claude carried it over from a previous session
+  if (wantFocus !== null && !pane.exited && wantFocus !== pane.detectFocus()) {
+    await typeCommand(sessionId, '/focus');
+  }
+}
+
+/* one slash command into a live session: the text, then Enter as its own
+ * keystroke, then a beat for claude's confirmation line to print */
+async function typeCommand(sessionId, text) {
+  window.swarm.writeSession(sessionId, text);
+  await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
+  window.swarm.writeSession(sessionId, '\r');
+  await new Promise((r) => setTimeout(r, TASK_MODEL_SETTLE_MS));
 }
 
 function renderBoard() {
@@ -1925,7 +1914,7 @@ const paneHandlers = {
         notifyOS(pane, 'finished its turn'); // taskbar flash + OS toast; the bell below carries the detail
         pushNotif(pane, 'done', 'finished its turn');
         Sounds.play(notifSound);
-        armSpeech(pane); // spoken once its summary lands, or 2.5s from now
+        speakDone(pane); // "Agent X in workspace Y is finished"
       }
       // a Stop that lands before the task's prompt is in (or before its turn
       // has started) belongs to a startup injection, not to the task
@@ -2061,7 +2050,9 @@ function mountPane(session, { managed = false, refPane, direction } = {}) {
 // keepView: the caller is showing a full view (the map) and wants to stay
 // there, so leave the grid hidden and don't hand keyboard focus to a terminal
 // nobody can see.
-async function addAgent({ refPane, direction, role, keepView } = {}) {
+// launch: the empty-workspace card's picks for this one launch — model here,
+// the rest handed to startManualSession (see manualLaunchOpts).
+async function addAgent({ refPane, direction, role, keepView, launch } = {}) {
   if (!state.selectedWorkspaceId) {
     toast('add and select a workspace first');
     return;
@@ -2074,18 +2065,28 @@ async function addAgent({ refPane, direction, role, keepView } = {}) {
   // flag so it can't bleed into Claude's own saved default (see startTask).
   // A role brings its own model (main/sessions.js ROLES) — sending the default
   // as well would override it, so a picked role means "let the role decide".
-  const defaultModel = localStorage.getItem('swarmeye.defaultModel');
+  const defaultModel = launch ? launch.model : localStorage.getItem('swarmeye.defaultModel');
   const modelArg = !role && defaultModel && defaultModel !== 'default' ? defaultModel : undefined;
   const res = await window.swarm.createSession(state.selectedWorkspaceId, 100, 30, modelArg, undefined, role);
   if (!res.ok) {
     toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not start session: ' + res.reason);
     return;
   }
+  if (launch) manualLaunchOpts.set(res.session.id, launch);
   if (!keepView) toggleBoard(false);
   const pane = mountPane(res.session, { refPane, direction });
   if (!keepView) pane.focus();
   setTimeout(() => startManualSession(res.session.id), TASK_INJECT_FALLBACK_MS);
   return pane;
+}
+
+/* the empty workspace's launch card. Sequential, so main's session cap sees
+ * each one and a refusal stops the run; only the first takes focus. */
+async function spawnAgents(n, launch) {
+  for (let i = 0; i < n; i++) {
+    const pane = await addAgent({ keepView: i > 0, launch });
+    if (!pane) return; // cap reached or spawn failed — addAgent has toasted
+  }
 }
 
 window.swarm.onSessionData(({ id, data }) => {
@@ -2122,6 +2123,7 @@ window.swarm.onSessionExit(({ id, exitCode, detached }) => {
   awaitingTaskTurn.delete(id);
   skillInjectAttempted.delete(id);
   manualStartRun.delete(id);
+  manualLaunchOpts.delete(id);
   sessionStarted.delete(id);
   if (orphanedTask) {
     orphanedTask.status = 'pending';
@@ -2136,10 +2138,9 @@ window.swarm.onSessionExit(({ id, exitCode, detached }) => {
 window.swarm.onSessionState((payload) => {
   const pane = state.panes.get(payload.id);
   if (pane) pane.applyHookEvent(payload);
-  if (payload.summary) {
-    applyTaskSummary(payload.id, payload.summary);
-    sayDone(payload.id, speechLine(payload.summary)); // no-op unless this session just finished
-  }
+  // the closing message still lands on the task card; the voice no longer
+  // waits for it (see speakDone)
+  if (payload.summary) applyTaskSummary(payload.id, payload.summary);
   // the task's own turn has begun — from here a Stop is its completion. Every
   // event but Stop (and SessionStart, which precedes the prompt) says the
   // agent is live on the prompt we just sent it.
@@ -2260,10 +2261,27 @@ reattachAllBtn.addEventListener('click', async () => {
 const updatePillEl = document.getElementById('update-pill');
 const updateStatusEl = document.getElementById('update-status');
 const updateActionBtn = document.getElementById('update-action-btn');
+const updateCheckBtn = document.getElementById('update-check-btn');
 let pendingUpdate = null; // { version, releaseUrl }
+let appVersion = '';
 
 window.swarm.getAppVersion().then((version) => {
+  appVersion = version;
   if (!pendingUpdate) updateStatusEl.textContent = `v${version} — up to date`;
+});
+
+/* The background check is silent by design, so a failing one (no release
+ * published, offline, rate-limited) used to leave the row reading "up to
+ * date". Asking by hand reports what actually came back. */
+updateCheckBtn.addEventListener('click', async () => {
+  updateCheckBtn.disabled = true;
+  updateStatusEl.textContent = 'checking GitHub…';
+  const res = await window.swarm.checkUpdate();
+  updateCheckBtn.disabled = false;
+  if (res.state === 'available') return; // onUpdateAvailable already repainted the row
+  updateStatusEl.textContent = res.state === 'current'
+    ? `v${appVersion} — up to date`
+    : `v${appVersion} — check failed: ${res.error}`;
 });
 
 updateActionBtn.addEventListener('click', () => {

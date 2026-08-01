@@ -19,7 +19,7 @@ const DEFAULTS = {
   windowBounds: null,
   maxAgents: 10,
   sessions: {},
-  usage: {}, // sessionId -> persisted cost/context totals (see hooks.js)
+  usage: {}, // pre-1.45.1 cost/context totals; hooks.js reads these once and writes usage.json from then on
   tasks: [],
   archivedTasks: [],
   skills: [],

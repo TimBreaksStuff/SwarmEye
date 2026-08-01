@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('swarm', {
   onGitUpdate: (cb) => ipcRenderer.on('git:update', (e, p) => cb(p)),
   onHealthUpdate: (cb) => ipcRenderer.on('health:update', (e, p) => cb(p)),
   getAppVersion: () => ipcRenderer.invoke('app:version'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   onUpdateAvailable: (cb) => ipcRenderer.on('update:available', (e, p) => cb(p)),

@@ -747,6 +747,7 @@ function registerIpc() {
 
   ipcMain.handle('app:version', () => app.getVersion());
 
+  ipcMain.handle('update:check', () => updates.tick());
   ipcMain.handle('update:download', () => updates.download());
   ipcMain.handle('update:install', () => updates.install());
 

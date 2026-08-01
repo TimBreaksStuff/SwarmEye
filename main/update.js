@@ -49,15 +49,19 @@ class UpdateChecker {
     clearInterval(this.timer);
   }
 
+  /* Returns why it found nothing, so a hand-triggered check can say so. The
+   * background timer ignores the result and stays as silent as before — a
+   * 404 (no release ever published) must not read as "up to date". */
   async tick() {
     try {
       const res = await fetch(LATEST_RELEASE_URL, { signal: AbortSignal.timeout(10000) });
-      if (!res.ok) return;
+      if (res.status === 404) return { state: 'error', error: 'no release published on GitHub yet' };
+      if (!res.ok) return { state: 'error', error: 'GitHub returned ' + res.status };
       const release = await res.json();
       const version = String(release.tag_name || '').replace(/^v/, '');
-      if (!version || !isNewer(version, this.current)) return;
+      if (!version || !isNewer(version, this.current)) return { state: 'current' };
       const asset = (release.assets || []).find((a) => a.name === ASSET_NAME);
-      if (!asset) return;
+      if (!asset) return { state: 'error', error: version + ' has no ' + ASSET_NAME + ' asset' };
       this.latest = {
         version,
         assetUrl: asset.browser_download_url,
@@ -65,11 +69,20 @@ class UpdateChecker {
       };
       this.debugLog('[update] ' + version + ' available (running ' + this.current + ')');
       this.onAvailable(this.latest);
-    } catch { /* offline/rate-limited — never bother the user */ }
+      return { state: 'available', version };
+    } catch (err) {
+      return { state: 'error', error: String(err.message || err) };
+    }
   }
 
   async download() {
     if (!this.latest) return;
+    // checked before the download, not after it — otherwise a dev build pulls
+    // the whole archive down and only then admits it cannot install it
+    if (!app.isPackaged) {
+      this.onError('cannot self-update in a dev build — get it from ' + this.latest.releaseUrl);
+      return;
+    }
     const dest = path.join(app.getPath('temp'), ASSET_NAME);
     try {
       const res = await fetch(this.latest.assetUrl);
@@ -93,10 +106,6 @@ class UpdateChecker {
 
   install() {
     if (!this.downloadedPath) return;
-    if (!app.isPackaged) {
-      this.onError('cannot self-update in a dev build');
-      return;
-    }
     const result = platformInstallUpdate(this.downloadedPath);
     if (!result.ok) {
       this.onError(result.error);
