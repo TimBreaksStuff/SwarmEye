@@ -105,6 +105,14 @@ const Palette = (() => {
     inputEl.focus();
   }
 
+  /* Put text in the box as if it had been typed — how the top bar's mic
+   * dictates into the palette. Opens it first if it isn't up. */
+  function setQuery(text) {
+    if (popEl.hidden) open();
+    inputEl.value = text;
+    refilter();
+  }
+
   function close() {
     if (popEl.hidden) return;
     popEl.hidden = true;
@@ -124,11 +132,13 @@ const Palette = (() => {
       else if (e.key === 'Escape') { e.preventDefault(); close(); }
     });
     document.addEventListener('click', (e) => {
-      if (!popEl.hidden && !popEl.contains(e.target)) close();
+      // [data-palette-keep] opts out: the top bar's mic opens the palette and
+      // its own click would otherwise close it again on the way back up
+      if (!popEl.hidden && !popEl.contains(e.target) && !e.target.closest('[data-palette-keep]')) close();
     });
   }
 
-  return { init, open, close, toggle: () => (popEl.hidden ? open() : close()), isOpen: () => !popEl.hidden };
+  return { init, open, close, setQuery, toggle: () => (popEl.hidden ? open() : close()), isOpen: () => !popEl.hidden };
 })();
 
 window.Palette = Palette;

@@ -33,6 +33,9 @@ const Speech = (() => {
 
   function stop() {
     if (!active) return;
+    // a press-and-hold can be released before getUserMedia has even resolved —
+    // the flag makes that late stream tear itself down instead of staying hot
+    active.stopped = true;
     teardownAudio(active); // release the mic immediately, don't wait for the backend
     window.swarm.speechStop(); // backend flushes the final phrase, then speech:end fires
   }
@@ -65,7 +68,7 @@ const Speech = (() => {
   async function start(opts) {
     if (!supported) return null;
     finishActive();
-    const session = { id: nextId++, opts, stream: null, ctx: null };
+    const session = { id: nextId++, opts, stream: null, ctx: null, stopped: false };
     active = session;
 
     const res = await window.swarm.speechStart(session.id);
@@ -89,7 +92,7 @@ const Speech = (() => {
       }
       return null;
     }
-    if (session !== active) { teardownAudio(session); return null; }
+    if (session !== active || session.stopped) { teardownAudio(session); return null; }
 
     // AudioContext resamples the mic to the recognizer's 16 kHz for us
     session.ctx = new AudioContext({ sampleRate: 16000 });
@@ -116,8 +119,10 @@ const Speech = (() => {
    * .listening class, and turn the two user-facing failures into the same two
    * toasts. Only the interim flag and what to do with the text ever differed.
    *
-   * opts: { interim, onStart, onResult, onEnd, onDouble }  — onStart runs just
-   * before the mic opens, for a caller that needs to snapshot state first (the
+   * opts: { interim, hold, onStart, onResult, onEnd, onDouble }  — `hold`
+   * makes the button push-to-talk (open while held) instead of a click
+   * toggle, which is how the app-wide mic in the top bar works. onStart runs
+   * just before the mic opens, for a caller that needs to snapshot state first (the
    * task form remembers what was already typed); onEnd when it closes, however
    * it closed. A caller that passes onDouble also gets double-click: the
    * single-click toggle is then held back by DOUBLE_CLICK_MS so a second click
@@ -153,6 +158,21 @@ const Speech = (() => {
         },
       });
     };
+    // push-to-talk: the mic is open only while the button is held. pointerup
+    // is watched on the window, so releasing after the cursor has slid off the
+    // button still closes it rather than leaving the mic hot.
+    if (opts.hold) {
+      btn.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!dictating) toggle(); });
+      window.addEventListener('pointerup', () => {
+        if (!dictating) return;
+        stop();
+        // drop the red on release rather than when the backend finishes
+        // flushing the last phrase a moment later — the button is not held any
+        // more, and `dictating` still guards a second start until then
+        btn.classList.remove('listening');
+      });
+      return { toggle, stop: () => { if (dictating) stop(); } };
+    }
     let clickTimer = null;
     btn.addEventListener('click', () => {
       if (!opts.onDouble) { toggle(); return; }

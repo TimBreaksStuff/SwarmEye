@@ -561,6 +561,27 @@ notifBtnEl.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   if (!notifPopEl.hidden && !notifPopEl.contains(e.target)) closeNotifPop();
 });
+
+/* Double-click the bell to mute — kills the OS toasts, the chime and the
+ * spoken announcements without touching either option in the ⌨ popover, so the
+ * settings you chose are still there when you unmute. The bell itself, the
+ * panel and the taskbar flash stay: this silences what interrupts you, not
+ * the history of what happened. */
+let notifMuted = localStorage.getItem('swarmeye.notifMuted') === '1';
+function syncMuted() {
+  notifBtnEl.classList.toggle('muted', notifMuted);
+  notifBtnEl.dataset.tip = notifMuted
+    ? 'Notifications muted — double-click to unmute'
+    : 'Notifications — what your agents did (double-click to mute)';
+}
+notifBtnEl.addEventListener('dblclick', (e) => {
+  e.stopPropagation();
+  notifMuted = !notifMuted;
+  localStorage.setItem('swarmeye.notifMuted', notifMuted ? '1' : '0');
+  syncMuted();
+  closeNotifPop(); // the two clicks that got us here left it open or shut at random
+});
+syncMuted();
 renderNotifs();
 
 const leftbarEl = document.getElementById('leftbar'); // also drives the rail's expand/hover states below
@@ -745,6 +766,10 @@ const applyShowInitialCommand = boolOption('show-initial-cmd-toggle', 'showIniti
   for (const p of state.panes.values()) p.syncInitialCommandHeader();
 });
 
+/* "Remember prompt history" — on by default; what the palette offers back
+ * (see prompts.js). Off only stops recording — nothing stored is lost. */
+const applyPromptHistory = boolOption('prompt-history-toggle', 'promptHistory', true, (on) => Prompts.setEnabled(on));
+
 /* "Show cost & context panel" — off by default; the panel eats two rows of
  * every pane's terminal, so opening it re-fits each one */
 const applyUsagePanel = boolOption('usage-panel-toggle', 'usagePanel', false, (on) => {
@@ -833,7 +858,7 @@ function notifyOS(pane, text) {
   window.swarm.notify({
     title: `${pane.session.agentName} · ${pane.session.workspaceName}`,
     body: text,
-    desktop: desktopNotifs,
+    desktop: desktopNotifs && !notifMuted,
   });
 }
 
@@ -892,7 +917,7 @@ function sayableName(name) {
  * busy swarm cuts one announcement off with the next. A session with no
  * workspace name says the agent alone. */
 function speakDone(pane) {
-  if (!notifSpeech) return;
+  if (!notifSpeech || notifMuted) return;
   const where = sayableName(pane.session.workspaceName);
   Sounds.speak(where
     ? `${pane.session.agentName} finished in ${where}`
@@ -1036,6 +1061,7 @@ async function resetOptions() {
   await applyAutoUsageLimit(85);
   applySkipPermissions(false);
   applyShowInitialCommand(false);
+  applyPromptHistory(true);
   applyUsagePanel(false);
   applyFixedPaneActions(false);
   applyAutoOrganize(true);
@@ -1886,6 +1912,8 @@ const paneHandlers = {
   },
   setLastCommand(pane, cmd) {
     window.swarm.setLastCommand(pane.session.id, cmd);
+    // the same line, kept per workspace for the palette to offer back
+    Prompts.record(pane.session.workspaceId, cmd);
   },
   onFocus(pane) {
     // also un-focus the previous holder here: panes in non-selected workspaces
@@ -1913,7 +1941,7 @@ const paneHandlers = {
       if (!watching) {
         notifyOS(pane, 'finished its turn'); // taskbar flash + OS toast; the bell below carries the detail
         pushNotif(pane, 'done', 'finished its turn');
-        Sounds.play(notifSound);
+        if (!notifMuted) Sounds.play(notifSound);
         speakDone(pane); // "Agent X in workspace Y is finished"
       }
       // a Stop that lands before the task's prompt is in (or before its turn
@@ -2357,6 +2385,34 @@ Palette.init({
         hint: `${pane.session.workspaceName} · ${pane.status}`,
         run: () => notifHandlers.onOpen(pane.session.id), // swaps workspace and view too
       });
+      // the two verbs that would otherwise mean finding the pane first. Restart
+      // goes through the same handler as ↻ (which arms) — from here the palette
+      // entry *is* the deliberate act, so it fires straight away.
+      out.push({
+        group: 'restart',
+        label: 'Restart ' + pane.session.agentName,
+        hint: 'keeps the conversation',
+        run: () => paneHandlers.onRestart(pane, { resume: true }),
+      });
+      out.push({
+        group: 'close',
+        label: 'Close ' + pane.session.agentName,
+        hint: pane.session.workspaceName,
+        run: () => paneHandlers.onClose(pane),
+      });
+    }
+
+    const idle = [...state.panes.values()].filter((p) => !p.exited && p.status === 'idle');
+    if (idle.length) {
+      out.push({
+        group: 'action',
+        label: `Close ${idle.length} idle agent${idle.length === 1 ? '' : 's'}`,
+        hint: idle.map((p) => p.session.agentName).join(', ').slice(0, 60),
+        run: () => {
+          idle.forEach((p) => paneHandlers.onClose(p));
+          toast(`closed ${idle.length} idle agent${idle.length === 1 ? '' : 's'}`);
+        },
+      });
     }
 
     for (const ws of state.workspaces) {
@@ -2378,6 +2434,32 @@ Palette.init({
         hint: `${t.status} · ${wsName(t.workspaceId)}`,
         run: () => toggleBoard(true),
       });
+      // "run task Y" — anything not already running can be started from here
+      // instead of finding its card and pressing ▶
+      if (t.status !== 'active') {
+        out.push({
+          group: 'run task',
+          label: 'Run now · ' + t.text.replace(/\s+/g, ' ').slice(0, 80),
+          hint: wsName(t.workspaceId),
+          run: () => startTask(t, { notify: true }),
+        });
+      }
+    }
+
+    // prompts you have typed at agents in this workspace — chosen, one types
+    // into the focused agent without submitting, so it can still be edited
+    for (const text of Prompts.list(state.selectedWorkspaceId)) {
+      out.push({
+        group: 'prompt',
+        label: text.replace(/\s+/g, ' ').slice(0, 90),
+        hint: 'type into the focused agent',
+        run: () => {
+          const pane = focusedPane();
+          if (!pane || pane.exited) { toast('no agent focused'); return; }
+          window.swarm.writeSession(pane.session.id, text);
+          pane.focus();
+        },
+      });
     }
 
     for (const s of Skills.installed()) {
@@ -2393,11 +2475,37 @@ Palette.init({
     ];
     for (const [label, run] of views) out.push({ group: 'view', label, hint: 'open', run });
 
+    for (const dot of themeDots) {
+      out.push({ group: 'theme', label: dot.dataset.tip, hint: 'switch theme', run: () => applyTheme(dot.dataset.theme) });
+    }
+
+    if (state.selectedWorkspaceId && Prompts.list(state.selectedWorkspaceId).length) {
+      out.push({
+        group: 'action',
+        label: 'Clear prompt history here',
+        hint: wsName(state.selectedWorkspaceId),
+        run: () => { Prompts.clear(state.selectedWorkspaceId); toast('prompt history cleared'); },
+      });
+    }
+
     out.push({ group: 'action', label: 'Message agents', hint: 'Ctrl+Shift+E', run: () => Messenger.open() });
     out.push({ group: 'action', label: 'Search across all agents', hint: 'Ctrl+Shift+G', run: () => toggleGlobalSearch(true) });
     out.push({ group: 'action', label: 'Options & shortcuts', hint: 'gear', run: () => kbdHelpBtn.click() });
     return out;
   },
+});
+
+/* The top bar's mic: dictation for the app itself rather than for one agent.
+ * It fills the palette's box, so speech reaches every verb the palette already
+ * has without a second intent layer — hold it, say "task board", release, press
+ * Enter. Push-to-talk rather than a toggle: an app-wide mic left open listens
+ * to the room. Interim results are shown as they arrive; the top match is never
+ * run for you, since a mishearing would otherwise spawn or close an agent. */
+window.Speech.wire(document.getElementById('voice-btn'), {
+  interim: true,
+  hold: true, // push-to-talk — open only while the button is held down
+  onStart: () => Palette.open(),
+  onResult: (text) => Palette.setQuery(text),
 });
 
 Messenger.init({

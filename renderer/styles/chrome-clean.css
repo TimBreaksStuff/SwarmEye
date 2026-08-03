@@ -115,6 +115,10 @@
 }
 #topbar-actions > button svg { width: 15px; height: 15px; display: block; }
 
+/* the app-wide mic goes red while it is listening, same signal as a pane's */
+#topbar-actions > #voice-btn.listening,
+#topbar-actions > #voice-btn.listening:hover { color: var(--err); }
+
 /* Options lives in the cluster now — no name, no rail tile look */
 #topbar-actions > #kbd-help .rail-tile-name { display: none !important; }
 
@@ -131,6 +135,19 @@
   animation: none;
   box-shadow: none;
 }
+/* muted (double-clicked): the bell greys out and wears a slash — still counts,
+ * just doesn't interrupt */
+#topbar-actions > #notif-btn.muted,
+#topbar-actions > #notif-btn.muted.unread { color: var(--text3); background: transparent; }
+#topbar-actions > #notif-btn.muted::after {
+  content: '';
+  position: absolute;
+  left: 20%; right: 20%; top: 50%;
+  border-top: 1.6px solid currentColor;
+  transform: rotate(-45deg);
+  pointer-events: none;
+}
+
 #notif-n {
   top: -4px; right: -1px;
   min-width: 15px; height: 15px;
@@ -1578,4 +1595,73 @@
 @media (max-width: 720px) {
   .launch-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .launcher-card { padding: 40px 22px; gap: 28px; }
+}
+
+/* ── Options popover sections ────────────────────────────────────────────
+ * 26 flat rows was a wall; the rows now sit in <details> groups so only the
+ * one you came for is open. Native disclosure, no JS — and because the
+ * popover is only hidden rather than rebuilt, which groups you left open
+ * survive until the app restarts. */
+.kbd-sect > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding: 12px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+.kbd-sect > summary::-webkit-details-marker { display: none; }
+.kbd-sect > summary::after {
+  content: '›';
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: var(--muted);
+  transition: transform 0.12s ease;
+}
+.kbd-sect[open] > summary::after { transform: rotate(90deg); }
+.kbd-sect > summary:hover { color: var(--text); }
+.kbd-sect > summary:hover::after { color: var(--accent-text); }
+.kbd-sect:first-of-type > summary { border-top: none; margin-top: 0; padding-top: 4px; }
+/* the swatch row keeps its stacked layout but no longer needs its own divider,
+ * now that the section heading above it draws one */
+#kbd-pop .kbd-opt-theme { border-top: none; margin-top: 0; padding-top: 6px; }
+/* one height for every option row. Left to itself each row sized to whatever
+ * control it carries — a 23px checkbox, a 24px stepper, a 27px select — and
+ * the list stepped between 34, 36 and 39.5px down the panel. */
+#kbd-pop .kbd-opt {
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 2px 0;
+}
+#kbd-pop .kbd-opt-theme { min-height: 0; } /* stacked, sizes to its swatch rows */
+/* and one width for every select, so the four of them line up on both edges
+ * instead of each sizing to its longest option */
+#kbd-pop .kbd-opt select { width: 132px; }
+/* the version row is the widest thing in the panel — label, version string,
+ * Check, and Download once an update exists — and used to push 22px past the
+ * popover edge. The version string is what gives way. */
+#kbd-pop .kbd-opt .opt-ctl { min-width: 0; }
+#update-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Check carries a word, so it can't stay in .opt-ctl button's 24x24 stepper
+ * box the way a - or + does — it was being clipped to a quarter of its label. */
+#update-check-btn {
+  width: auto;
+  height: auto;
+  padding: 5px 10px;
+  font-size: 11px;
 }

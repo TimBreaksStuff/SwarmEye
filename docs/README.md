@@ -60,7 +60,7 @@ Each pane header carries:
 - **Mode dropdown** — `manual` (Claude asks before edits), `accept edits`, `plan`, `auto` (bypass permissions). Claude has no set-mode command for a running session, so SwarmEye reads the mode from Claude's own footer and taps `Shift+Tab` through the cycle until yours is active; it stays in sync if you switch modes by hand. `auto` requires the Options toggle below.
 - **Model chip** — which model the agent is actually replying with (`Sonnet 5`, `Opus 4.8`, …), read from the session transcript after each turn. A `/model` switch you run yourself shows up instantly.
 - **Git chip** — the folder's branch (`⎇ main`), amber with a dot when there are uncommitted changes. Refreshed every 15s. Click it and the popover opens with a **`git diff --stat` summary of the working tree** — staged and unstaged together, which is what "dirty" on the chip actually means — followed by a count of untracked files, which no diff reports. Under that is the branch list (local + remote, fetched fresh from the workspace's git remote): pick one to check it out, or `+ new branch…` to create one off the current HEAD; checkout errors (e.g. uncommitted changes in the way) show as a toast. The diff is read in parallel with the branch fetch, so it is up long before the network call finishes, and a long stat is elided in the middle with git's own "N files changed" line always kept.
-- **Buttons** — `↻` restart · `⤓` export transcript · `⌕` in-pane search · mic (dictation) · `−`/`+` text size · `⛶` maximize · `→`/`↓` place a new agent beside/below (only with auto-organize off) · `✕` close (click twice while running).
+- **Buttons** — `↻` restart (on a running agent it arms first — click twice) · `⤓` export transcript · `⌕` in-pane search · mic (dictation) · `−`/`+` text size · `⛶` maximize · `→`/`↓` place a new agent beside/below (only with auto-organize off) · `✕` close (click twice while running).
 - **Quick-respond** — while a pane is waiting on a numbered permission prompt (Claude's `1. Yes` / `2. No` style), it grows `✓` approve and `✕` deny buttons right next to the status text — no need to click into the terminal. Shift-click `✓` prefers a "don't ask again" / "allow all" option over a plain yes, if the prompt offers one. The same two buttons show up on `waiting` entries in the notification bell and its docked panel, and on the swarm view's nodes, rows and preview cards. They appear only while a yes/no menu is genuinely on screen: an agent that is merely waiting for you to type something — the commonest kind of `waiting`, and the only kind there is in bypass-permissions mode — says so without offering buttons that have nothing to answer. If the prompt is answered elsewhere between the buttons being drawn and clicked, nothing is sent and a toast says so instead of guessing.
 **Opening a workspace with no agents in it** shows the **launch card** over a honeycomb field instead of an empty grid. Pick a swarm size on the tiles — 1, 2, 4, 6, 8, 10, 12 — and `Launch N agents` opens that many panes at once. Tiles are keyboard-first: Tab into the group, arrows move between the ones still selectable, and `Ctrl`/`⌘` plus a size picks it outright.
 
@@ -114,6 +114,26 @@ With ten panes across five workspaces, the rail plus `Tab` cycling is the bottle
 - **Tasks** still open, and **installed skills** — both open the screen that owns them.
 - **Views** — the grid, Task Board, Swarm View, History, Skills.
 - **Verbs** — Notes, Message agents, Search across all agents, Options.
+- **Acting on an agent** — **Restart \<name\>** and **Close \<name\>** per live agent, plus **Close N idle agents** in one row when any are idle. The palette entry *is* the deliberate act, so unlike the pane's `↻` it fires straight away.
+- **Running a task** — **Run now · \<task\>** starts any queued task without finding its card.
+- **Themes** — one row per theme, so switching doesn't mean opening Options.
+- **Prompts** — the lines you have submitted to agents in the selected workspace (see below).
+
+### Prompt history
+
+Every line you submit to an agent is remembered per workspace — the last 50, newest first, duplicates moved up rather than repeated — and offered back in the palette under **prompt**. Choosing one **types it into the focused agent without submitting**, so you can edit it first.
+
+It is a palette list rather than a key: a pane is a raw terminal and Claude Code already owns `↑`/`↓` inside it, so a second history layered on those keys would fight the first.
+
+The history is stored in the app, never in the workspace, and costs no IPC. **Remember prompt history** in `⚙` Options turns the recording off; what is already stored stays until **Clear prompt history here** — also a palette entry — removes it for that workspace.
+
+### Speaking to the app
+
+The mic in the top bar's action cluster is dictation for SwarmEye itself rather than for one agent: it opens the command palette and fills its box as you speak, so speech reaches every verb the palette already has. Hold the button, say *"task board"*, release, then `Enter`.
+
+It is **push-to-talk** — the mic is open only while the button is held, and releasing it anywhere on screen closes it. A mic for the whole app is not one to leave running: a click-to-toggle button forgotten in the on state listens to the room.
+
+Nothing is run for you — the top match is only selected, since a mishearing would otherwise spawn or close an agent. It needs the same locally-installed dictation engine the pane mics use, and the button is hidden when that isn't available.
 
 Matching is fuzzy, and scored the way people type: hits at the start of a word and runs of adjacent characters count for more, so initials work (`tb` → Task Board) and `swar` puts Swarm View above a workspace that merely contains those letters.
 
@@ -215,7 +235,7 @@ Newest 60 per workspace. On Windows the transcripts are read from inside WSL thr
 
 Agents run inside a dedicated tmux server (socket `swarmeye`, its own config at `~/.config/swarmeye/tmux.conf` — your `~/.tmux.conf` is never loaded). Closing SwarmEye only **detaches**; on next launch surviving agents are reattached automatically. Pane `✕` kills an agent for real.
 
-An **exited** agent stays visible and dimmed so you can read its scrollback; `↻` restarts it in the same folder continuing the last conversation (`claude --continue`), shift-click starts fresh. If only the connection died while the agent survived, the badge says **detached** and `↻` reconnects without restarting — with a `⟳ reattach all` button in the top bar when several are detached. On Windows, if WSL itself stops answering, a red `⚠ WSL unreachable` banner shows until it's back.
+`↻` is on every pane, not only a dead one: on a **running** agent it asks for a second click before it throws the session away (continuing the last conversation, shift-click for a fresh one). An **exited** agent stays visible and dimmed so you can read its scrollback; there `↻` is a single click and restarts it in the same folder continuing the last conversation (`claude --continue`), shift-click starts fresh. If only the connection died while the agent survived, the badge says **detached** and `↻` reconnects without restarting — with a `⟳ reattach all` button in the top bar when several are detached. On Windows, if WSL itself stops answering, a red `⚠ WSL unreachable` banner shows until it's back.
 
 ### Notification center
 
@@ -226,6 +246,8 @@ The bell in the top bar keeps a history of agent events — turn finished, waiti
 A short synthesized sound plays with a "turn finished" notification (configurable — see Options).
 
 **Desktop notifications** (on by default) go one step further: while the SwarmEye window isn't focused, an agent finishing its turn or blocking on you raises a real OS notification naming the agent, its workspace and what happened — the thing that reaches you with SwarmEye minimized behind an editor, which neither the bell nor the taskbar flash can do. Clicking it restores and focuses the window. The OS toast is deliberately silent, since SwarmEye already plays the sound you picked; and the `attention` event that always precedes a `done` is suppressed, so a finished turn produces one notification rather than two. Turn it off with **Desktop notifications** in `⚙` Options.
+
+**Double-clicking the bell mutes it** — no OS notifications and no spoken announcements until you double-click it again. It is a temporary silence, not a setting: both options in `⚙` Options are left exactly as you had them, so unmuting restores them. The bell greys out and wears a slash while muted, and the state survives a restart. Everything that doesn't interrupt stays on — the unread count, the notification panel, the taskbar flash and the sound.
 
 ### Messages between agents
 
@@ -241,6 +263,8 @@ Delivery is the same channel a task's prompt uses: the text, a beat, then `Enter
 ### Preview dock
 
 The monitor button in the top bar docks a browser to the right of the grid: URL bar, `‹` `›` back/forward, `⟳` reload, `↗` open in your usual browser, `✕` close. Drag its left edge to resize (remembered), and each **workspace keeps its own address**, so switching to the API repo doesn't leave the web app's page up. Typing a bare port is enough — `3000` becomes `http://localhost:3000`.
+
+**It starts the dev server for you.** Opening the dock doesn't assume anything is already running: the main process probes the address this workspace last had up, then the usual dev ports (3000, 5173, 8080, 4200, 8000, 1420), and loads the first one that answers. Only if none do does it start the workspace's own dev server — `npm run dev`, or `start`, or `serve`, whichever `package.json` has first — in its own tmux session (`swarmeye_preview_<workspace>`) on the same tmux server as the agents. It then watches that pane for the address the server prints and loads it, which is what makes a Vite that hopped to the next free port still work. Probing before starting is the point: an agent that already ran the dev server in its pane keeps it, and the dock never launches a second copy. That session outlives the app like any agent's does; a workspace with no dev script, or a server that prints no address within ~15s, says so in the dock, and typing an address by hand always overrides all of this.
 
 It is deliberately **local-only**. The URL box refuses anything that isn't `localhost` / `127.0.0.1`, and the main process enforces the same rule twice more — at attach, and on the top-level document request of any navigation the page starts on its own — in the webview's own session partition, so nothing else in the app is filtered. A page that fails to load says so ("is the dev server running?") rather than showing a browser error page. Subresources are left alone: a local page can still pull a font or a script from wherever it normally would.
 
@@ -369,6 +393,8 @@ Synthesis runs locally and takes about a third of a second per announcement; not
 
 The `⚙` tile at the bottom of the icon rail opens the Options panel. `↺ Reset` in its header restores every option below to its default in one click.
 
+The panel is grouped into five collapsible sections — **Appearance**, **Agents & panes**, **Defaults for new tasks**, **Notifications** and **Setup** — with only Appearance open when the panel first appears. **Setup** holds the things you touch once rather than tune: the version check and the dictation and voice engine installers. Whichever sections you leave open stay open for the rest of the session. The table below lists every option regardless of section.
+
 | Option | Default | What it does |
 |---|---|---|
 | **SwarmEye version** | — | The running version, and a **Check** button that asks GitHub for the latest release right away instead of waiting for the six-hourly background check. When a newer release exists, the row grows a **Download** button (then **Restart & Update**) and a matching pill appears in the top bar. A check that fails says why — *no release published on GitHub yet*, a rate-limit status, or the missing per-platform asset — rather than falling back to "up to date". Downloading is only possible from a packaged build; running from source it says so immediately and links the release page. |
@@ -379,6 +405,7 @@ The `⚙` tile at the bottom of the icon rail opens the Options panel. `↺ Rese
 | **Max simultaneous agents** | 10 | Cap on running agents — raise it as high as you want, there is no upper limit. The task scheduler respects it too. |
 | **Auto-start usage limit** | 85% | The ceiling an **auto** task waits for, on the 5-hour session usage window. 1–100%. |
 | **Allow auto mode (bypass permissions)** | off | Launches agents with `--allow-dangerously-skip-permissions` so `auto` becomes selectable in the mode cycle — *without* starting them in bypass mode. Also auto-accepts the one-time "Do you trust the files in this folder?" and "Running in Bypass Permissions mode" dialogs, since neither is covered by the flag itself. Picking `auto` as the default permission below turns this on automatically, as it's a hard prerequisite. |
+| **Remember prompt history** | on | Records every line you submit to an agent, per workspace, and offers the last 50 back in the command palette — see [Prompt history](#prompt-history). Off stops recording; nothing already stored is lost. |
 | **Show cost & context panel** | off | Adds a two-row footer to every Claude pane — context fullness, spend, cache hit rate, tokens per turn, turn timer, share of the 5-hour limit and the last tools run. See [Cost & context panel](#cost--context-panel). Costs two rows of terminal height per pane. |
 | **Show initial command in pane header** | off | Adds a permanent second header row to every pane: the task prompt for a task-started agent, or the first line you typed for a manual one (best-effort — reconstructed from your keystrokes). |
 | **Auto-organize agent windows** | on | On: new agents are laid out into the automatic square-ish grid. Off: every pane grows `→` / `↓` buttons that place the next agent beside or below it, and the layout keeps the shape you built. |
@@ -392,7 +419,7 @@ The `⚙` tile at the bottom of the icon rail opens the Options panel. `↺ Rese
 | **Spoken notifications** | off | Says which agent just finished and the workspace it was in, for turns that end while you aren't watching that pane. Needs the voice engine below; see [Spoken notifications](#spoken-notifications). |
 | **Dictation engine** | not installed | Shows install state and installs the local Whisper engine — see [Voice dictation](#voice-dictation). Deliberately **not** part of `↺ Reset`: an install isn't a preference. |
 | **Voice engine** | not installed | Shows install state and installs the local Piper voice used by spoken notifications (~110 MB) — see [Spoken notifications](#spoken-notifications). Deliberately **not** part of `↺ Reset`: an install isn't a preference. |
-| **Colour theme** | Dark | Restyles the whole cockpit *and* every terminal's ANSI palette. Three themes: Dark, Light and Orange. |
+| **Colour theme** | Dark | Restyles the whole cockpit *and* every terminal's ANSI palette. Six themes: Dark, Light, Orange and three light variants that change only the accent hue — Light Blue, Light Neoblue and Light Purple. |
 | **Theme background overlay** | on | The selected theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, pane and terminal surfaces — stays the default dark shade, and only the theme's own colours (borders, text, accents, terminal ramp) still follow the theme. Light swaps to a light-on-dark ramp when it is off, so its near-black text stays readable. |
 
 ---

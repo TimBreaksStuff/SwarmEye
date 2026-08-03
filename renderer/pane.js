@@ -5,8 +5,8 @@
  * The two dark themes (dark/orange) are one house ANSI ramp re-tinted: each
  * spreads ANSI_RAMP and then overrides only the hues that carry its identity.
  * Every field below a `...ANSI_RAMP` is therefore a deliberate difference from
- * the house ramp, not an incidental copy. `light` ships a complete ramp of its
- * own and stays spelled out in full. */
+ * the house ramp, not an incidental copy. The light themes share LIGHT_RAMP, a
+ * complete ramp of their own, and differ only in cursor and selection. */
 const ANSI_RAMP = {
   red: '#ff5a5a',
   green: '#a3e635',
@@ -22,6 +22,31 @@ const ANSI_RAMP = {
   brightCyan: '#93ece4',
 };
 
+/* the light page's complete ramp, shared by `light` and its accent variants */
+const LIGHT_RAMP = {
+  background: '#ffffff',
+  foreground: '#1b1e23',
+  cursor: '#3f6212',
+  cursorAccent: '#ffffff',
+  selectionBackground: 'rgba(71, 109, 10, 0.25)',
+  black: '#1b1e23',
+  red: '#d92f2f',
+  green: '#4d7c0f',
+  yellow: '#c07c00',
+  blue: '#2563eb',
+  magenta: '#7c3aed',
+  cyan: '#0e7490',
+  white: '#e5e7eb',
+  brightBlack: '#70767f',
+  brightRed: '#ef4444',
+  brightGreen: '#65a30d',
+  brightYellow: '#d97706',
+  brightBlue: '#3b82f6',
+  brightMagenta: '#8b5cf6',
+  brightCyan: '#0891b2',
+  brightWhite: '#f9fafb',
+};
+
 const XTERM_THEMES = {
   dark: {
     background: '#0c0e11',
@@ -35,28 +60,23 @@ const XTERM_THEMES = {
     brightWhite: '#ffffff',
     ...ANSI_RAMP,
   },
-  light: {
-    background: '#ffffff',
-    foreground: '#1b1e23',
-    cursor: '#3f6212',
-    cursorAccent: '#ffffff',
-    selectionBackground: 'rgba(71, 109, 10, 0.25)',
-    black: '#1b1e23',
-    red: '#d92f2f',
-    green: '#4d7c0f',
-    yellow: '#c07c00',
-    blue: '#2563eb',
-    magenta: '#7c3aed',
-    cyan: '#0e7490',
-    white: '#e5e7eb',
-    brightBlack: '#70767f',
-    brightRed: '#ef4444',
-    brightGreen: '#65a30d',
-    brightYellow: '#d97706',
-    brightBlue: '#3b82f6',
-    brightMagenta: '#8b5cf6',
-    brightCyan: '#0891b2',
-    brightWhite: '#f9fafb',
+  light: LIGHT_RAMP,
+  /* the three accent variants of `light` — same page, same ramp, only the
+   * cursor and selection follow the accent */
+  blue: {
+    ...LIGHT_RAMP,
+    cursor: '#1e40af',
+    selectionBackground: 'rgba(29, 78, 216, 0.25)',
+  },
+  neoblue: {
+    ...LIGHT_RAMP,
+    cursor: '#0043c7',
+    selectionBackground: 'rgba(0, 87, 255, 0.25)',
+  },
+  purple: {
+    ...LIGHT_RAMP,
+    cursor: '#5b21b6',
+    selectionBackground: 'rgba(109, 40, 217, 0.25)',
   },
   orange: {
     background: '#0f0c09',
@@ -106,12 +126,15 @@ function glassTheme(palette, bgHex = palette.background) {
  * block the TUI paints (input box, selected row, diff gutter) into near-black
  * *with near-black text on it*. Hence the option, not a palette rewrite. */
 /* must match the overlay-off selector list in app.css */
-const LIGHT_THEMES = new Set(['light']);
+const LIGHT_THEMES = new Set(['light', 'blue', 'neoblue', 'purple']);
 /* What .pane-term resolves to for it — term-bg at 45% over the pane's 55%
  * surface over --bg (see app.css). xterm needs the real backdrop to measure
  * against, not the palette's nominal `background`, which the CSS covers up. */
 const LIGHT_PANE_BG = {
   light: '#f8f9fb',
+  blue: '#f8f9fb',
+  neoblue: '#f8f9fb',
+  purple: '#f8f9fb',
 };
 /* and what app.css pins that same stack to while the overlay is off */
 const FLAT_PANE_BG = '#0b0d10';
@@ -127,6 +150,11 @@ const MIN_CONTRAST = 4.5;
 
 let activeXtermTheme = glassTheme(XTERM_THEMES.dark);
 let activeMinContrast = 1;
+
+// ↻ says something different depending on whether the agent is still running:
+// on a live one it throws away a session, so it asks for a second click first
+const LIVE_RESTART_TIP = 'Restart this agent — click twice to confirm. Continues the last conversation (shift-click: fresh session)';
+const DEAD_RESTART_TIP = 'Restart & continue last conversation (shift-click: fresh session)';
 
 const DEFAULT_FONT_SIZE = 13;
 // last font size the user picked (MOD+/- or the pane buttons) — persists
@@ -530,10 +558,18 @@ class Pane {
 
     this.btnRestart = document.createElement('button');
     this.btnRestart.className = 'pane-btn restart';
-    this.btnRestart.dataset.tip = 'Restart & continue last conversation (shift-click: fresh session)';
+    this.btnRestart.dataset.tip = LIVE_RESTART_TIP;
     this.btnRestart.innerHTML = icon('<path d="M20.5 9.5A8.5 8.5 0 1 0 21 14"/><path d="M21 4v5.5h-5.5"/>');
-    this.btnRestart.style.display = 'none';
-    this.btnRestart.addEventListener('click', (e) => handlers.onRestart(this, { resume: !e.shiftKey }));
+    // A live agent's restart is destructive — it replaces a running session —
+    // so it arms first. An exited or detached one has nothing to lose and
+    // stays a single click, which is what ↻ has always meant there.
+    this.btnRestart.addEventListener('click', (e) => {
+      const fresh = e.shiftKey;
+      if (this.exited) { handlers.onRestart(this, { resume: !fresh }); return; }
+      Confirm.armOrFire(this.btnRestart, 'restart:' + this.session.id, () => {
+        handlers.onRestart(this, { resume: !fresh });
+      });
+    });
 
     // /clear — only shown once the agent is idle (finished a turn); wipes its
     // conversation context without restarting the process.
@@ -1884,10 +1920,7 @@ class Pane {
     this.el.classList.toggle('detached', this.detached);
     this.badge.textContent = this.detached ? 'detached' : 'exited (' + exitCode + ')';
     this.badge.style.display = '';
-    this.btnRestart.dataset.tip = this.detached
-      ? 'Reconnect to the running agent'
-      : 'Restart & continue last conversation (shift-click: fresh session)';
-    this.btnRestart.style.display = '';
+    this.btnRestart.dataset.tip = this.detached ? 'Reconnect to the running agent' : DEAD_RESTART_TIP;
     this.disarmClose();
     this.syncStatus();
   }
@@ -1900,8 +1933,7 @@ class Pane {
     this.modeSel.disabled = false;
     this.el.classList.remove('exited', 'detached');
     this.badge.style.display = 'none';
-    this.btnRestart.style.display = 'none';
-    this.btnRestart.dataset.tip = 'Restart & continue last conversation (shift-click: fresh session)';
+    this.btnRestart.dataset.tip = LIVE_RESTART_TIP;
     this.syncStatus();
     requestAnimationFrame(() => this.refit());
   }

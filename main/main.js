@@ -13,6 +13,7 @@ const { UpdateChecker } = require('./update');
 const { SpeechBridge } = require('./speech');
 const { SkillsManager } = require('./skills');
 const coordinator = require('./coordinator');
+const preview = require('./preview');
 
 let win = null;
 let ptys = null;
@@ -321,6 +322,15 @@ function registerIpc() {
       return { ok: false, reason: err.message };
     }
   });
+
+  // the preview dock asks where its dev server is; main probes, then starts one
+  ipcMain.handle('preview:resolve', (e, { workspaceId, preferred }) => {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return { ok: false, reason: 'no-workspace' };
+    return preview.resolve(ws.path, workspaceId, preferred);
+  });
+
+  ipcMain.handle('preview:stop', (e, { workspaceId }) => preview.stop(workspaceId).then(() => ({ ok: true })));
 
   // removing a workspace archives it (the folder ref, not the agents),
   // so it can be restored from the 🗃 popover later

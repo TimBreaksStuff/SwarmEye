@@ -95,6 +95,63 @@
   --entry-dot: #2563eb;
 }
 
+/* Three more light themes — the same white page and neutral ramp as "light",
+ * with only the accent hue swapped. Each --accent still has to clear 4.5:1
+ * against --bg *and* carry white text as a fill, so they are picked, not
+ * hue-rotated. Everything not listed inherits the light block above, which
+ * they extend by also matching its selector (:root[data-theme="light"] does
+ * not, so the shared values are repeated via a grouped selector). */
+:root[data-theme="blue"],
+:root[data-theme="neoblue"],
+:root[data-theme="purple"] {
+  --bg: #eef0f3;
+  --surface: #f7f8fa;
+  --hover: #e7eaee;
+  --border: #d7dbe1;
+  --border2: #cbd0d8;
+  --border3: #bdc3cc;
+  --border-hover: #a8afb9;
+
+  --text: #1b1e23;
+  --text2: #4d545c;
+  --muted: #646a75;
+  --muted2: #6b7280;
+  --faint: #8b919a;
+
+  --on-accent: #ffffff;
+
+  --header-bg: rgba(247, 248, 250, 0.85);
+  --grid-line: rgba(0, 0, 0, 0.16);
+  --glass: rgba(255, 255, 255, 0.5);
+
+  --tag: #7c3aed;
+  --amber: #8f5c00;
+  --err: #c62828;
+  --term-bg: #ffffff;
+  --entry-dot: #2563eb;
+}
+
+:root[data-theme="blue"] {
+  --accent: #1d4ed8;
+  --accent-text: #1e40af;
+  --accent-glow: rgba(29, 78, 216, 0.35);
+  --pill-hover: rgba(29, 78, 216, 0.1);
+}
+
+:root[data-theme="neoblue"] {
+  --accent: #0057ff;
+  --accent-text: #0043c7;
+  --accent-glow: rgba(0, 87, 255, 0.35);
+  --pill-hover: rgba(0, 87, 255, 0.1);
+}
+
+:root[data-theme="purple"] {
+  --accent: #6d28d9;
+  --accent-text: #5b21b6;
+  --accent-glow: rgba(109, 40, 217, 0.35);
+  --pill-hover: rgba(109, 40, 217, 0.1);
+}
+
 :root[data-theme="orange"] {
   --bg: #0d0b08;
   --surface: #110e0b;

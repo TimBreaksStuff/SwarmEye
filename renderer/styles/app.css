@@ -57,7 +57,10 @@ body::before {
  * it darkens it for a light page. (The matching terminal-palette flip lives
  * in pane.js — see setXtermTheme, whose LIGHT_THEMES set must list exactly
  * the themes selected here.) */
-:root[data-theme-overlay="off"][data-theme="light"] {
+:root[data-theme-overlay="off"][data-theme="light"],
+:root[data-theme-overlay="off"][data-theme="blue"],
+:root[data-theme-overlay="off"][data-theme="neoblue"],
+:root[data-theme-overlay="off"][data-theme="purple"] {
   --border: #1a1c20;
   --border2: #22252b;
   --border3: #2b2e34;
@@ -1971,6 +1974,9 @@ body::before {
 .theme-dot[data-theme="dark"]   { background: linear-gradient(135deg, #0a0b0d 55%, #d6ff4b 55%); }
 .theme-dot[data-theme="light"]  { background: linear-gradient(135deg, #f2f3f5 55%, #476d0a 55%); }
 .theme-dot[data-theme="orange"] { background: linear-gradient(135deg, #0d0b08 55%, #ff9d2e 55%); }
+.theme-dot[data-theme="blue"]    { background: linear-gradient(135deg, #f2f3f5 55%, #1d4ed8 55%); }
+.theme-dot[data-theme="neoblue"] { background: linear-gradient(135deg, #f2f3f5 55%, #0057ff 55%); }
+.theme-dot[data-theme="purple"]  { background: linear-gradient(135deg, #f2f3f5 55%, #6d28d9 55%); }
 .theme-dot.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-glow);

@@ -19,6 +19,7 @@ const Preview = (() => {
   let workspaceId = null;
   let loaded = false; // the webview only loads a real page once the dock is opened
   let ready = false; // the guest is attached and can take a loadURL
+  let resolving = false; // a probe/start is in flight — don't launch a second
 
   /* Never through the src attribute: its own handler logs every rejected load
    * to the console, and a load superseded by the next address typed rejects as
@@ -67,6 +68,28 @@ const Preview = (() => {
     load(url);
   }
 
+  /* opening the dock shouldn't require having started the dev server by hand:
+   * main probes the usual ports, and only starts `npm run dev` if none answer */
+  const REASONS = {
+    'no-workspace': 'open a workspace first',
+    'no-script': 'no dev/start/serve script in package.json — type an address above',
+    unreachable: 'this workspace folder is not reachable from the shell',
+    'no-url': 'the dev server printed no address — type its port above',
+  };
+
+  async function autoStart() {
+    if (resolving) return;
+    resolving = true;
+    setMessage('looking for a dev server…');
+    try {
+      const r = await window.swarm.resolvePreview(workspaceId, storedUrl());
+      if (r && r.ok) navigate(r.url);
+      else setMessage((r && REASONS[r.reason]) || 'no dev server found');
+    } finally {
+      resolving = false;
+    }
+  }
+
   function storedUrl() {
     return localStorage.getItem(urlKey(workspaceId)) || DEFAULT_URL;
   }
@@ -76,7 +99,7 @@ const Preview = (() => {
     btnEl.classList.toggle('active', show);
     if (!show) return;
     urlEl.value = storedUrl();
-    if (!loaded) navigate(urlEl.value);
+    if (!loaded) autoStart();
   }
 
   /* the dock follows the workspace: each one remembers its own address, so
@@ -86,7 +109,7 @@ const Preview = (() => {
     workspaceId = id;
     const next = storedUrl();
     urlEl.value = next;
-    if (!el.hidden) navigate(next);
+    if (!el.hidden) { loaded = false; autoStart(); }
     else loaded = false; // load it when the dock is next opened
   }
 
@@ -124,7 +147,7 @@ const Preview = (() => {
     document.getElementById('preview-close').addEventListener('click', () => toggle(false));
     document.getElementById('preview-reload').addEventListener('click', () => {
       if (loaded) webEl.reload();
-      else navigate(urlEl.value);
+      else autoStart();
     });
     document.getElementById('preview-back').addEventListener('click', () => {
       if (webEl.canGoBack && webEl.canGoBack()) webEl.goBack();

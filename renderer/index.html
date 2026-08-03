@@ -33,6 +33,9 @@
       <button id="gsearch-btn" aria-label="Search across all agents" data-tip="Search across all agents (Ctrl+Shift+G)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
       </button>
+      <button id="voice-btn" data-palette-keep aria-label="Speak to the app" data-tip="Hold to speak to the app — dictation fills the command palette (Ctrl+K) while you hold the button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
+      </button>
       <button id="msg-btn" aria-label="Message agents" data-tip="Message agents — @name, or @all to broadcast (Ctrl+Shift+E)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m3.6 7.2 8.4 6 8.4-6"/></svg>
       </button>
@@ -496,13 +499,7 @@
       <div class="kbd-title">Options</div>
       <button id="options-reset-btn" data-tip="Restore every option below to its default value (click twice)">↺ Reset</button>
     </div>
-    <div class="kbd-row kbd-opt"><span>SwarmEye version</span>
-      <span class="opt-ctl">
-        <span id="update-status" class="stt-status"></span>
-        <button id="update-check-btn" data-tip="Ask GitHub now whether a newer SwarmEye has been released, instead of waiting for the six-hourly check">Check</button>
-        <button id="update-action-btn" hidden></button>
-      </span>
-    </div>
+    <details class="kbd-sect" open><summary>Appearance</summary>
     <div class="kbd-row kbd-opt"><span>Small left menu</span>
       <span class="opt-ctl">
         <input type="checkbox" id="leftbar-small-toggle" data-tip="Collapses the left menu to icons only, hover to preview the expanded view (workspace names and usage gauges).">
@@ -536,6 +533,24 @@
         <button id="agent-weight-up" data-tip="Thicker agent text — the light themes draw dark on light, which reads thinner">+</button>
       </span>
     </div>
+    <div class="kbd-row kbd-opt"><span>Theme background overlay</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="theme-overlay-toggle" data-tip="On: the theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, agent panes — stays the default dark shade; only the theme's colours (borders, text, accents, terminal) follow the theme.">
+      </span>
+    </div>
+    <div class="kbd-row kbd-opt kbd-opt-theme"><span>Colour theme</span>
+      <span class="opt-ctl" id="theme-opts">
+        <button class="theme-dot" data-theme="dark" data-tip="Dark"></button>
+        <button class="theme-dot" data-theme="light" data-tip="Light"></button>
+        <button class="theme-dot" data-theme="orange" data-tip="Orange"></button>
+        <button class="theme-dot" data-theme="blue" data-tip="Light Blue"></button>
+        <button class="theme-dot" data-theme="neoblue" data-tip="Light Neoblue"></button>
+        <button class="theme-dot" data-theme="purple" data-tip="Light Purple"></button>
+      </span>
+    </div>
+    </details>
+
+    <details class="kbd-sect"><summary>Agents &amp; panes</summary>
     <div class="kbd-row kbd-opt"><span>Max simultaneous agents</span>
       <span class="opt-ctl">
         <button id="max-agents-down" data-tip="Allow fewer agents">−</button>
@@ -560,6 +575,11 @@
         <input type="checkbox" id="show-initial-cmd-toggle" data-tip="Shows a second header row under every pane's title with the most recently submitted command — a task's launch prompt until you type a new line, which then takes over.">
       </span>
     </div>
+    <div class="kbd-row kbd-opt"><span>Remember prompt history</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="prompt-history-toggle" data-tip="Remembers the lines you submit to agents, per workspace, and offers the last 50 in the command palette (Ctrl+K). Choosing one types it into the focused agent without submitting. Off stops recording; what is already stored stays until you clear it from the palette.">
+      </span>
+    </div>
     <div class="kbd-row kbd-opt"><span>Show cost &amp; context panel</span>
       <span class="opt-ctl">
         <input type="checkbox" id="usage-panel-toggle" data-tip="Adds a panel to the bottom of every Claude pane: how full its context window is, what it has spent, cache hit rate, tokens per turn, how long the current turn has run, its share of the 5-hour limit and the last tools it used. Costs two rows of terminal height per pane.">
@@ -580,6 +600,9 @@
         <input type="checkbox" id="agent-padding-toggle" data-tip="On: panes have a small gap and draggable divider between them, with room around the edges. Off: panes sit flush against each other and the window edges with no gap.">
       </span>
     </div>
+    </details>
+
+    <details class="kbd-sect"><summary>Defaults for new tasks</summary>
     <div class="kbd-row kbd-opt"><span>Default agent permissions</span>
       <span class="opt-ctl">
         <select id="default-startmode-sel" data-tip="Preset new tasks' starting Claude permission mode"></select>
@@ -605,6 +628,9 @@
         <input type="checkbox" id="task-summary-toggle" data-tip="Puts the agent's closing message on the task card when a task finishes, read from its own transcript — so the Completed column says what came of a task without opening its transcript.">
       </span>
     </div>
+    </details>
+
+    <details class="kbd-sect"><summary>Notifications</summary>
     <div class="kbd-row kbd-opt"><span>Desktop notifications</span>
       <span class="opt-ctl">
         <input type="checkbox" id="desktop-notif-toggle" data-tip="Raises a real OS notification — naming the agent and what it did — when an agent finishes a turn or needs you while the SwarmEye window isn't focused. Clicking it brings the window back.">
@@ -618,6 +644,16 @@
     <div class="kbd-row kbd-opt"><span>Spoken notifications</span>
       <span class="opt-ctl">
         <input type="checkbox" id="voice-notif-toggle" data-tip="Says out loud which agent just finished — and the first sentence of its closing message, once that has landed — for turns that end while you aren't watching that pane. Needs the voice engine below.">
+      </span>
+    </div>
+    </details>
+
+    <details class="kbd-sect"><summary>Setup</summary>
+    <div class="kbd-row kbd-opt"><span>SwarmEye version</span>
+      <span class="opt-ctl">
+        <span id="update-status" class="stt-status"></span>
+        <button id="update-check-btn" data-tip="Ask GitHub now whether a newer SwarmEye has been released, instead of waiting for the six-hourly check">Check</button>
+        <button id="update-action-btn" hidden></button>
       </span>
     </div>
     <div class="kbd-row kbd-opt"><span>Dictation engine</span>
@@ -634,18 +670,8 @@
       </span>
     </div>
     <pre id="tts-log" hidden></pre>
-    <div class="kbd-row kbd-opt kbd-opt-theme"><span>Colour theme</span>
-      <span class="opt-ctl" id="theme-opts">
-        <button class="theme-dot" data-theme="dark" data-tip="Dark"></button>
-        <button class="theme-dot" data-theme="light" data-tip="Light"></button>
-        <button class="theme-dot" data-theme="orange" data-tip="Orange"></button>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Theme background overlay</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="theme-overlay-toggle" data-tip="On: the theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, agent panes — stays the default dark shade; only the theme's colours (borders, text, accents, terminal) follow the theme.">
-      </span>
-    </div>
+    </details>
+
     <button type="button" id="kbd-shortcuts-btn" class="kbd-row kbd-opt kbd-submenu-btn kbd-title-mid">
       <span>Keyboard shortcuts</span><span class="kbd-submenu-arrow">›</span>
     </button>
@@ -696,6 +722,7 @@
   <script src="message.js"></script>
   <script src="notes.js"></script>
   <script src="palette.js"></script>
+  <script src="prompts.js"></script>
   <script src="preview.js"></script>
   <script src="sounds.js"></script>
   <script src="app.js"></script>

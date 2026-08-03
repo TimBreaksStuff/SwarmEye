@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('swarm', {
   // the workspace notebook — main resolves the file from the id
   readNotes: (workspaceId) => ipcRenderer.invoke('notes:read', { workspaceId }),
   writeNotes: (workspaceId, text) => ipcRenderer.invoke('notes:write', { workspaceId, text }),
+  resolvePreview: (workspaceId, preferred) => ipcRenderer.invoke('preview:resolve', { workspaceId, preferred }),
+  stopPreview: (workspaceId) => ipcRenderer.invoke('preview:stop', { workspaceId }),
   setAutoUsageLimit: (n) => ipcRenderer.invoke('config:set-auto-usage-limit', n),
   setSkipPermissions: (on) => ipcRenderer.invoke('config:set-skip-permissions', on),
 
