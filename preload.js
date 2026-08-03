@@ -33,8 +33,8 @@ contextBridge.exposeInMainWorld('swarm', {
   splitTask: (text, workspaceId) => ipcRenderer.invoke('coordinator:split', { text, workspaceId }),
 
   listSessions: () => ipcRenderer.invoke('session:list'),
-  createSession: (workspaceId, cols, rows, model, resumeId, role) =>
-    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, resumeId, role }),
+  createSession: (workspaceId, cols, rows, model, resumeId, role, effort) =>
+    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, resumeId, role, effort }),
   listRoles: () => ipcRenderer.invoke('roles:list'),
   listHistory: (workspaceId) => ipcRenderer.invoke('history:list', workspaceId),
   readHistory: (workspaceId, id) => ipcRenderer.invoke('history:read', { workspaceId, id }),

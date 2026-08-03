@@ -1205,7 +1205,9 @@ async function startManualSession(sessionId) {
   await tryInjectSkills(sessionId);
   const launch = manualLaunchOpts.get(sessionId);
   const startMode = launch ? launch.startMode : (localStorage.getItem('swarmeye.defaultStartMode') || 'default');
-  const effort = launch && launch.effort !== 'default' ? launch.effort : null;
+  // named levels already went in as a --effort launch flag (addAgent) —
+  // only ultracode/auto, which the flag can't express, are typed here
+  const effort = launch && (launch.effort === 'ultracode' || launch.effort === 'auto') ? launch.effort : null;
   const wantFocus = launch ? launch.focus : null;
   if (startMode === 'default' && !effort && wantFocus === null) return;
   for (let waited = 0; !sessionStarted.has(sessionId) && waited < CLAUDE_READY_TIMEOUT_MS; waited += 500) {
@@ -1314,6 +1316,18 @@ async function runScheduler() {
   }
 }
 
+/* Resolves an effort pick to what the `--effort` launch flag can carry:
+ * 'default' (or nothing) falls back to the Options "Default task effort",
+ * and only the five named levels qualify — ultracode/auto have no flag
+ * spelling and are still typed as a `/effort` command after start. */
+const EFFORT_FLAG_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+function effortFlagValue(pick) {
+  const effective = pick && pick !== 'default'
+    ? pick
+    : (localStorage.getItem('swarmeye.defaultEffort') || 'default');
+  return EFFORT_FLAG_LEVELS.includes(effective) ? effective : undefined;
+}
+
 /* shared by "start now", manual retry, and the scheduler. notify is only
  * true for user-initiated starts — the scheduler stays silent on failure.
  * Starting a task never jumps the view; it stays wherever the user is
@@ -1332,7 +1346,11 @@ async function startTask(task, { notify = false } = {}) {
     // A role brings its own model tier, so an unset model means "let the role
     // decide" rather than "send the default" — the same rule addAgent uses.
     const modelArg = task.model && task.model !== 'default' ? task.model : undefined;
-    const res = await window.swarm.createSession(task.workspaceId, 100, 30, modelArg, undefined, task.role || undefined);
+    // effort rides the same launch-flag path as model (see claudeBase): a
+    // typed `/effort` now saves as the user's CLI default and bleeds into
+    // every later agent. 'default' falls back to the Options default effort.
+    const effortArg = effortFlagValue(task.effort);
+    const res = await window.swarm.createSession(task.workspaceId, 100, 30, modelArg, undefined, task.role || undefined, effortArg);
     if (!res.ok) {
       if (notify) {
         toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached — task left pending` : 'could not start task: ' + res.reason);
@@ -1340,6 +1358,7 @@ async function startTask(task, { notify = false } = {}) {
       return null; // stays pending either way
     }
     const pane = mountPane(res.session, { managed: true });
+    if (effortArg) pane.setEffort(effortArg); // launched via --effort, so no confirmation line for the buffer scan to catch
     task.status = 'active';
     task.paneId = res.session.id;
     task.startedAt = Date.now();
@@ -1369,13 +1388,24 @@ async function tryInjectPrompt(sessionId) {
   const task = state.tasks.find((t) => t.id === entry.taskId);
   if (!pane || !task || pane.exited) { pendingTaskStarts.delete(sessionId); return; }
   entry.injected = true;
+  // the 5s fallback can fire before claude's CLI is even up (cold WSL) —
+  // typing skills and the prompt into a terminal it isn't reading yet lands
+  // everything as one buffered chunk once it wakes. Wait for SessionStart the
+  // same way startManualSession does; hookless sessions fall through after
+  // the same timeout instead of never.
+  for (let waited = 0; !sessionStarted.has(sessionId) && waited < CLAUDE_READY_TIMEOUT_MS; waited += 500) {
+    if (pane.exited) { pendingTaskStarts.delete(sessionId); return; }
+    await new Promise((r) => setTimeout(r, 500));
+  }
   let typedCommands = await tryInjectSkills(sessionId); // active skills before anything task-specific
   // set the starting permission mode before the prompt lands, so the first
   // tool call in e.g. bypass mode isn't blocked on a manual approval
   if (task.startMode !== 'default') await pane.setMode(task.startMode);
   // model is applied as a --model launch flag in startTask, not here — see
   // the comment there for why a typed `/model` command isn't used
-  if (task.effort && task.effort !== 'default') {
+  // the five named levels went in as a --effort launch flag (startTask) —
+  // only ultracode/auto, which the flag can't express, are typed here
+  if (task.effort === 'ultracode' || task.effort === 'auto') {
     pane.setEffort(task.effort); // the buffer scan catches it too, but only while the confirmation is still on screen
     window.swarm.writeSession(sessionId, '/effort ' + task.effort);
     await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
@@ -2095,7 +2125,10 @@ async function addAgent({ refPane, direction, role, keepView, launch } = {}) {
   // as well would override it, so a picked role means "let the role decide".
   const defaultModel = launch ? launch.model : localStorage.getItem('swarmeye.defaultModel');
   const modelArg = !role && defaultModel && defaultModel !== 'default' ? defaultModel : undefined;
-  const res = await window.swarm.createSession(state.selectedWorkspaceId, 100, 30, modelArg, undefined, role);
+  // effort costs no startup turn as a launch flag, so unlike the typed-command
+  // era every agent — + Agent and Ctrl+N included — gets the Options default
+  const effortArg = effortFlagValue(launch ? launch.effort : undefined);
+  const res = await window.swarm.createSession(state.selectedWorkspaceId, 100, 30, modelArg, undefined, role, effortArg);
   if (!res.ok) {
     toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not start session: ' + res.reason);
     return;
@@ -2103,6 +2136,7 @@ async function addAgent({ refPane, direction, role, keepView, launch } = {}) {
   if (launch) manualLaunchOpts.set(res.session.id, launch);
   if (!keepView) toggleBoard(false);
   const pane = mountPane(res.session, { refPane, direction });
+  if (effortArg) pane.setEffort(effortArg); // launched via --effort, so no confirmation line for the buffer scan to catch
   if (!keepView) pane.focus();
   setTimeout(() => startManualSession(res.session.id), TASK_INJECT_FALLBACK_MS);
   return pane;

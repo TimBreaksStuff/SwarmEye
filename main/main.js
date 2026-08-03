@@ -627,7 +627,7 @@ function registerIpc() {
   // labels, so the two can never disagree about what a role means
   ipcMain.handle('roles:list', () => Object.entries(ROLES).map(([key, r]) => ({ key, label: r.label, model: r.model })));
 
-  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, resumeId, role }) => {
+  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, resumeId, role, effort }) => {
     await ptysReady;
     const cfg = config.load();
     const ws = cfg.workspaces.find((w) => w.id === workspaceId);
@@ -640,6 +640,7 @@ function registerIpc() {
         model,
         role: Object.hasOwn(ROLES, String(role || '')) ? role : undefined,
         resume: /^[A-Za-z0-9-]{8,64}$/.test(String(resumeId || '')) ? resumeId : undefined,
+        effort: /^(low|medium|high|xhigh|max)$/.test(String(effort || '')) ? effort : undefined,
       });
       debugLog('[session:create] ok ' + session.id + ' "' + session.agentName + '" in ' + ws.path);
       return { ok: true, session };

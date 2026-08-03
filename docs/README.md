@@ -69,7 +69,7 @@ Under the divider are the four settings those agents start with, each **pre-fill
 | Field | Options row | How it reaches the agent |
 |---|---|---|
 | **Model** | Default model | a `--model` launch flag, so it can't bleed into Claude's own saved default |
-| **Effort** | Default task effort | `/effort <level>` typed once the session is up |
+| **Effort** | Default task effort | an `--effort` launch flag, same reasoning as model (`ultracode`/`auto`, which the flag can't express, are typed as `/effort` once the session is up) |
 | **Focus** | Default focus mode | `/focus` typed — but only when Claude's footer disagrees, since it's a toggle |
 | **Permissions** | Default start mode | the same `Shift+Tab` cycling the Options default already used |
 
@@ -300,7 +300,7 @@ The board opens straight into the new-task form (`+ New Task` reopens it). A tas
 - **Workspace** — which folder its agent runs in.
 - **Starting permission mode** — `default` / `accept edits` / `plan` / `auto`.
 - **Model** — `default`, Sonnet, Opus, Haiku, Fable. A non-default pick is passed as a `--model` launch flag, so it's scoped to that one agent. (Claude's own `/model` command saves as your default for every future session — a per-task choice must not do that.)
-- **Reasoning effort** — `default`, low, medium, high, xhigh, max, ultracode, auto. Sent as `/effort <value>` right after the agent starts.
+- **Reasoning effort** — `default`, low, medium, high, xhigh, max, ultracode, auto. The five named levels are passed as an `--effort` launch flag, scoped to that one agent for the same reason model is (a typed `/effort` saves as your CLI default and would bleed into every later session); `ultracode`/`auto` have no flag spelling and are typed as `/effort <value>` right after the agent starts. `default` uses the Options "Default task effort".
 - **Focus mode** — optional, sent as `/focus`.
 - **Priority** — low / **medium** / high / critical, shown as a colour-tinted chip.
 - **Category** — **maintenance** / bugfix / features by default; the `⚙` beside the picker adds or removes categories per workspace.
@@ -411,7 +411,7 @@ The panel is grouped into five collapsible sections — **Appearance**, **Agents
 | **Auto-organize agent windows** | on | On: new agents are laid out into the automatic square-ish grid. Off: every pane grows `→` / `↓` buttons that place the next agent beside or below it, and the layout keeps the shape you built. |
 | **Default agent permissions** | manual | Presets the new-task form's mode picker, *and* is applied directly to agents started with `+ Coding Agent` / `Ctrl+N`. |
 | **Default model** | default | Presets the new-task form's model picker, *and* is applied directly to agents started with `+ Coding Agent` / `Ctrl+N`. |
-| **Default task effort** | default | Presets the new-task form's effort picker. |
+| **Default task effort** | default | Presets the new-task form's effort picker, *and* is applied directly to agents started with `+ Coding Agent` / `Ctrl+N`. |
 | **Default focus mode** | off | Presets the new-task form's focus checkbox. |
 | **Task summary on completion** | on | Puts the agent's closing message on the task card when a task finishes, read from its own transcript on the pass that already records the turn's cost. Off leaves Completed cards as they were. |
 | **Desktop notifications** | on | Raises a real OS notification — naming the agent, its workspace and what happened — when an agent finishes a turn or needs you while the SwarmEye window isn't focused. Clicking it brings the window back. See [Notification center](#notification-center). |

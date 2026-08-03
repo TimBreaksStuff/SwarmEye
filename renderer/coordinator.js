@@ -134,6 +134,9 @@ const Coordinator = (() => {
         text: row.text.trim(),
         workspaceId: ctx.workspaceId,
         mode: 'auto',
+        // same Options default the task composer pre-fills — without it every
+        // coordinator subtask launched in manual-approval mode
+        startMode: localStorage.getItem('swarmeye.defaultStartMode') || 'default',
         model: row.model,
         role: row.role,
       });

@@ -176,13 +176,18 @@ function hasNotes(cwd) {
  * every agent started afterward. `--model` only affects this one process.
  * Already whitelisted server-side (main.js task:create) — re-checked here
  * since it lands directly in a shell command line. */
-function claudeBase({ model, resume, role, notes } = {}) {
+function claudeBase({ model, resume, role, notes, effort } = {}) {
   let cmd = config.load().skipPermissions ? 'claude --allow-dangerously-skip-permissions' : 'claude';
   const preset = ROLES[role];
   // the role's model is a default, not an override — an explicit pick (the
   // task's own model select, or the Options default) still wins
   const effectiveModel = model || (preset && preset.model);
   if (effectiveModel && /^[a-zA-Z0-9._-]+$/.test(effectiveModel)) cmd += ' --model ' + effectiveModel;
+  // effort is a launch flag for the same reason model is: a typed `/effort
+  // <level>` saves as the user's default for new sessions (CLI 2.1.x), so one
+  // low-effort task would bleed into every agent started afterward. The flag
+  // only knows the five named levels — ultracode/auto still go in typed.
+  if (effort && /^(low|medium|high|xhigh|max)$/.test(effort)) cmd += ' --effort ' + effort;
   // roles are a launch flag rather than a typed first message: --append-system-prompt
   // costs no turn and cannot collide with the task board's own prompt injection.
   // The texts below are ours and contain no shell metacharacters — that is what
