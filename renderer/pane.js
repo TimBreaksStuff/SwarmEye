@@ -161,7 +161,10 @@ const DEFAULT_FONT_SIZE = 13;
 // across restarts so reopened agent panes come back at the same text size
 let activeFontSize = Number(localStorage.getItem('swarmeye.paneFontSize')) || DEFAULT_FONT_SIZE;
 
-const DEFAULT_FONT_WEIGHT = 400;
+// Windows starts a step heavier: DirectWrite rasterizes stems lighter than
+// macOS's Skia/CoreText, so the same 400 that looks right on a Mac reads thin
+// and washed out there. Still just a default — the Options knob overrides it.
+const DEFAULT_FONT_WEIGHT = window.swarm.isMac ? 400 : 500;
 // "Agent pane text weight" option in ⌨ Options — the light themes draw dark
 // text on a near-white pane, which reads thinner than the dark themes'
 // light-on-dark, so the weight is a knob rather than a constant. Capped at 600
