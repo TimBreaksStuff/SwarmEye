@@ -133,35 +133,6 @@ Both routes run the same script, both are safe to re-run, and both install into 
 
 ---
 
-## Building a release
-
-```
-npm run dist       # Windows → dist/SwarmEye-portable.exe (single portable executable)
-npm run dist:mac   # macOS   → dist/SwarmEye-mac.zip
-```
-
-Build each on its own platform. To make the build available to the in-app updater, publish it as a GitHub release afterwards:
-
-```
-npm run publish:release       # macOS / WSL shell
-npm run publish:release:win   # Windows, runs the same script inside WSL
-```
-
-Running apps check that release feed every few hours and offer a one-click download-and-restart update from `⚙` Options → **SwarmEye version**, where **Check** also asks on demand. Until that first release is published the feed is empty, and a check reports *no release published on GitHub yet* — the updater has nothing to find. `publish:release` needs the [GitHub CLI](https://cli.github.com) (`brew install gh`, then `gh auth login`).
-
----
-
-## Publishing the public mirror
-
-```
-npm run publish:github       # macOS / WSL shell
-npm run publish:github:win   # Windows, runs the same script inside WSL
-```
-
-Pushes a curated copy of this repo — everything needed to install and run SwarmEye, plus this README, the changelog and the docs/screenshot — to the public GitHub mirror. Internal-only files and dev tooling stay in the private source repository.
-
----
-
 ## License
 
 [PolyForm Noncommercial 1.0.0](LICENSE) — free for anyone to use, copy, modify and share for any noncommercial purpose. Selling SwarmEye or using it in a commercial product is not permitted.
