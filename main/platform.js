@@ -16,7 +16,19 @@ const path = require('path');
 const { execFile, execFileSync, spawn } = require('child_process');
 
 const IS_WIN = process.platform === 'win32';
-const SHELL = process.env.SHELL || '/bin/zsh';
+
+/* macOS: $SHELL can be stale (GUI-launched apps inherit whatever login shell was
+ * cached at last login, which may since have been uninstalled/changed) — a
+ * nonexistent path here makes every exec() fail with an opaque ENOENT, so fall
+ * back to a shell that's actually on disk rather than trusting the env var
+ * blindly. sessions.js hands the same value to node-pty. */
+function resolveShell() {
+  for (const candidate of [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh']) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+  return '/bin/sh';
+}
+const SHELL = resolveShell();
 
 /* argv that runs `cmd` in a POSIX shell. Windows goes through WSL's bash;
  * macOS uses a login shell so the user's PATH (homebrew, nvm, pyenv) is the
@@ -133,6 +145,7 @@ function installUpdate(downloadedPath) {
 
 module.exports = {
   IS_WIN,
+  SHELL,
   exec,
   spawnShell,
   spawnScript,

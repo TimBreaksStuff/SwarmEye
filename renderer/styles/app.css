@@ -3513,8 +3513,11 @@ body::before {
 #sv-links line {
   stroke-width: 0.18;
   stroke-dasharray: 1.2 1.2;
-  animation: sv-dash 3s linear infinite;
 }
+/* only a busy agent's link flows: stroke-dashoffset isn't compositable, so an
+   animated line repaints the SVG layer every frame — an idle map must not pay
+   60fps of paint for decoration */
+#sv-links line.sv-link-busy { animation: sv-dash 3s linear infinite; }
 #sv-empty {
   position: absolute;
   inset: 0;

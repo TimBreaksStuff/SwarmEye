@@ -86,7 +86,7 @@ const Topbar = (() => {
     // stay reachable as the list grows past a screenful
     const pin = document.createElement('button');
     pin.className = 'rail-flyout-pin' + (ws.pinned ? ' on' : '');
-    pin.textContent = '📌';
+    Icons.set(pin, 'pin');
     pin.dataset.tip = ws.pinned ? 'Unpin — back to drag order' : 'Pin to the top of the rail';
     pin.addEventListener('click', () => {
       hideFlyout();
@@ -96,7 +96,7 @@ const Topbar = (() => {
     // the workspace notebook — what agents started here are told to read
     const notes = document.createElement('button');
     notes.className = 'rail-flyout-notes';
-    notes.textContent = '📝';
+    Icons.set(notes, 'note');
     notes.dataset.tip = 'Workspace notes — every agent started here is pointed at them';
     notes.addEventListener('click', (e) => {
       e.stopPropagation(); // the popover's own outside-click handler would shut it again
@@ -108,7 +108,7 @@ const Topbar = (() => {
     x.className = 'rail-flyout-x';
     x.textContent = '✕';
     x.dataset.tip = 'Remove workspace';
-    x.addEventListener('click', () => handlers.onRemove(ws.id));
+    x.addEventListener('click', () => handlers.onRemove(ws.id, x)); // the button, so removal can arm on it (Confirm)
 
     flyout.append(infoEl, notes, pin, x);
     flyout.hidden = false;
@@ -171,7 +171,7 @@ const Topbar = (() => {
       if (ws.pinned) {
         const pin = document.createElement('span');
         pin.className = 'ws-pin';
-        pin.textContent = '📌';
+        Icons.set(pin, 'pin');
         tile.appendChild(pin);
       }
       tileById.set(ws.id, tile);
@@ -359,6 +359,13 @@ const Topbar = (() => {
     notifBadge.hidden = unread === 0;
     notifBadge.textContent = unread > 99 ? '99+' : unread;
 
+    // the badge above is what a closed popover still needs; the list below is
+    // up to 50 rows with their own listeners, rebuilt on every agent event —
+    // only worth building while it is on screen (app.js renders it on open).
+    // Rebuilding it hidden also resets the scroll position and orphans the
+    // tooltip of whatever row the cursor was resting on.
+    if (notifPop.hidden) return;
+
     notifPop.innerHTML = '';
     const head = document.createElement('div');
     head.className = 'notif-head';
@@ -440,6 +447,7 @@ const Topbar = (() => {
 
   /* notification panel: right-side docked view (same slot pattern as the
    * left icon rail) — full, untruncated detail for every event, no cap. */
+  const notifPanel = document.getElementById('notif-panel');
   const notifPanelList = document.getElementById('notif-panel-list');
 
   function fmtFull(t) {
@@ -464,6 +472,7 @@ const Topbar = (() => {
   }
 
   function renderNotifPanel(notifs, handlers) {
+    if (notifPanel.hidden) return; // same reason as the popover above
     notifPanelList.innerHTML = '';
     if (!notifs.length) {
       const empty = document.createElement('div');
@@ -530,6 +539,8 @@ const Topbar = (() => {
    * still gets a slot rather than being silently hidden. */
   const swarmMapGrid = document.getElementById('swarm-map-grid');
   const swarmMapFooter = document.getElementById('swarm-map-footer');
+  // latest onOpen, read by the per-slot click handlers installed at creation
+  let swarmMapOnOpen = null;
 
   function renderSwarmMap(panes, totalSlots, onOpen, wsColor = {}) {
     const live = panes.filter((p) => !p.exited);
@@ -551,9 +562,18 @@ const Topbar = (() => {
     // cursor is resting on — Chromium fires no mouseout for a removed node, so
     // its hover tooltip would orphan and never hide. Reusing nodes keeps the
     // hovered slot alive (and its tooltip fresh) across re-renders.
+    // This runs on every chrome beat — write only on change (a same-value
+    // textContent/dataset write still replaces the text node / fires attribute
+    // bookkeeping), and the click handler is installed once per slot rather
+    // than a fresh closure per beat.
+    swarmMapOnOpen = onOpen;
     while (swarmMapGrid.children.length > slotCount) swarmMapGrid.lastChild.remove();
     while (swarmMapGrid.children.length < slotCount) {
-      swarmMapGrid.appendChild(document.createElement('span'));
+      const span = document.createElement('span');
+      span.addEventListener('click', () => {
+        if (span.dataset.sid && swarmMapOnOpen) swarmMapOnOpen(span.dataset.sid);
+      });
+      swarmMapGrid.appendChild(span);
     }
     for (let i = 0; i < slotCount; i++) {
       const pane = live[i];
@@ -562,21 +582,27 @@ const Topbar = (() => {
         : pane.status === 'attention' ? 'attn'
         : 'idle';
       const slot = swarmMapGrid.children[i];
-      slot.className = 'swarm-map-slot' + (cls ? ' ' + cls : '') + (pane ? ' clickable' : '');
+      const className = 'swarm-map-slot' + (cls ? ' ' + cls : '') + (pane ? ' clickable' : '');
+      // the slot's border carries its workspace's identity colour
+      const bc = pane ? (wsColor[pane.session.workspaceId] || '') : '';
+      // last input the agent received — its most recently submitted command,
+      // shown after a vertical rule in the hover tooltip (see tooltip.js)
+      const cmd = (pane && pane.initialCommandText) || '';
+      // one signature per slot: nothing below is written unless something moved
+      const sig = pane ? `${className}|${pane.session.id}|${pane.session.agentName}|${cmd}|${bc}` : className;
+      if (slot.dataset.sig === sig) continue;
+      slot.dataset.sig = sig;
+      slot.className = className;
+      slot.style.borderColor = bc;
       if (pane) {
+        slot.dataset.sid = pane.session.id;
         slot.dataset.tip = pane.session.agentName;
-        // last input the agent received — its most recently submitted command,
-        // shown after a vertical rule in the hover tooltip (see tooltip.js)
-        if (pane.initialCommandText) slot.dataset.tipSecondary = pane.initialCommandText;
+        if (cmd) slot.dataset.tipSecondary = cmd;
         else delete slot.dataset.tipSecondary;
-        // the slot's border carries its workspace's identity colour
-        slot.style.borderColor = wsColor[pane.session.workspaceId] || '';
-        slot.onclick = () => onOpen(pane.session.id);
       } else {
+        delete slot.dataset.sid;
         delete slot.dataset.tip;
         delete slot.dataset.tipSecondary;
-        slot.style.borderColor = '';
-        slot.onclick = null;
       }
     }
 
@@ -587,16 +613,19 @@ const Topbar = (() => {
     if (busyCount) parts.push(`${busyCount} busy`);
     if (attnCount) parts.push(`${attnCount} waiting`);
     if (idleCount) parts.push(`${idleCount} idle`);
-    swarmMapFooter.textContent = parts.join(' · ');
+    const foot = parts.join(' · ');
+    if (swarmMapFooter.textContent !== foot) swarmMapFooter.textContent = foot;
   }
 
   // the count itself reads in the rail (per-workspace badges + the swarm head);
   // all the top bar still needs from it is whether the cap is reached
   function updateAgentCap(total, max) {
-    addAgentBtn.disabled = total >= max;
-    addAgentBtn.dataset.tip = total >= max
+    const capped = total >= max;
+    if (addAgentBtn.disabled !== capped) addAgentBtn.disabled = capped;
+    const tip = capped
       ? `Agent cap reached — ${total}/${max} running`
       : `Start a plain agent or a role preset in the selected workspace — ${total}/${max} running`;
+    if (addAgentBtn.dataset.tip !== tip) addAgentBtn.dataset.tip = tip;
   }
 
   // time remaining rounds up, so a countdown never shows "0m" while it still
@@ -681,7 +710,7 @@ const Topbar = (() => {
 
   const setWorkspaceColors = (colors) => { WS_COLORS = colors || []; };
 
-  return { renderWorkspaces, renderNotifications, renderNotifPanel, updateAgentCap, renderUsage, renderSwarmMap, openWorkspaceFlyout, setWorkspaceColors, fmtIn };
+  return { renderWorkspaces, renderNotifications, renderNotifPanel, updateAgentCap, renderUsage, renderSwarmMap, openWorkspaceFlyout, setWorkspaceColors, fmtIn, fmtClock };
 })();
 
 window.Topbar = Topbar;

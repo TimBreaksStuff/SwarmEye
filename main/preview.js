@@ -9,9 +9,10 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { exec, toShellPath } = require('./platform');
-
-const TMUX = 'tmux -f ~/.config/swarmeye/tmux.conf -L swarmeye';
+const { exec, toShellPath, shQuote } = require('./platform');
+// same tmux server as the agents — the socket/conf must never drift apart,
+// or preview sessions stop being reconciled and killed with the rest
+const { TMUX } = require('./sessions');
 const PORTS = [3000, 5173, 8080, 4200, 8000, 1420];
 const PROBE_MS = 400;
 const START_TRIES = 30; // ~15s: a cold vite is fast, a cold next is not
@@ -48,20 +49,38 @@ function devScript(dir) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/* Bumped by stop(): the ~15s poll below is otherwise uncancellable, so closing
+ * the dock left it spawning shell probes into a session that no longer exists
+ * — and the renderer's `resolving` flag stayed up until it finished, blocking
+ * the next workspace's preview. workspaceId -> generation. */
+const generations = new Map();
+
 async function start(dir, workspaceId) {
   const script = devScript(dir);
   if (!script) return { ok: false, reason: 'no-script' };
   const cwd = toShellPath(dir);
   if (!cwd) return { ok: false, reason: 'unreachable' };
 
+  const gen = generations.get(workspaceId) || 0;
   const name = sessionName(workspaceId);
+  // the session name is sanitised above and the script is one of three
+  // literals, but the workspace path is whatever the user picked
   await exec(`${TMUX} has-session -t '=${name}' 2>/dev/null`
-    + ` || ${TMUX} new-session -d -s ${name} -c '${cwd}' 'npm run ${script}'`);
+    + ` || ${TMUX} new-session -d -s ${name} -c ${shQuote(cwd)} 'npm run ${script}'`);
+
+  // a stop() that landed while the exec above was in flight killed a session
+  // that didn't exist yet — the dev server just created would run (and survive
+  // restarts) with nothing left pointing at it. Kill it now instead.
+  if ((generations.get(workspaceId) || 0) !== gen) {
+    await exec(`${TMUX} kill-session -t '=${name}' 2>/dev/null; true`);
+    return { ok: false, reason: 'stopped', script };
+  }
 
   // the server announces its own address; scraping the pane beats guessing,
   // since a taken port silently moves vite to the next one
   for (let i = 0; i < START_TRIES; i++) {
     await sleep(500);
+    if ((generations.get(workspaceId) || 0) !== gen) return { ok: false, reason: 'stopped', script };
     // a pane target, so no '=' exact-match prefix here — that is session syntax
     const out = await exec(`${TMUX} capture-pane -p -t ${name} 2>/dev/null; true`);
     const m = URL_RE.exec(out || '');
@@ -81,6 +100,7 @@ async function resolve(dir, workspaceId, preferred) {
 }
 
 async function stop(workspaceId) {
+  generations.set(workspaceId, (generations.get(workspaceId) || 0) + 1);
   await exec(`${TMUX} kill-session -t '=${sessionName(workspaceId)}' 2>/dev/null; true`);
 }
 

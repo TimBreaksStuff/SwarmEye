@@ -55,7 +55,9 @@ if ! "$DIR/venv/bin/python" -m pip --version >/dev/null 2>&1; then
     3.9) GETPIP="https://bootstrap.pypa.io/pip/$PYMM/get-pip.py" ;;
     *)   GETPIP="https://bootstrap.pypa.io/get-pip.py" ;;
   esac
-  curl -fsSL "$GETPIP" | "$DIR/venv/bin/python"
+  # every curl here is bounded: a stall would otherwise hang the in-app
+  # installer forever, and its one-install-at-a-time lock with it
+  curl -fsSL --retry 3 --max-time 120 "$GETPIP" | "$DIR/venv/bin/python"
 fi
 "$DIR/venv/bin/python" -m pip uninstall -y -q vosk >/dev/null 2>&1 || true
 # not --quiet: pip's own progress is the only sign of life during a multi-

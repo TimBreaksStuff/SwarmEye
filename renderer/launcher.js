@@ -115,11 +115,11 @@ const Launcher = {
     this.applyDefaults();
     this.select(LAUNCH_DEFAULT_COUNT);
 
-    // ⌘/Ctrl + a count picks that size. Windows Chromium reports the Windows
-    // key as metaKey, so accepting metaKey there would make Win+4 pick a swarm
-    // size — the same rule app.js's modHeld follows.
+    // ⌘/Ctrl + a count picks that size — through modHeld itself (app.js), not
+    // a restatement of it: Ctrl works on macOS like every other shortcut, and
+    // the Windows key still never counts.
     window.addEventListener('keydown', (e) => {
-      if (!(window.swarm.isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey) return;
+      if (!modHeld(e) || e.shiftKey || e.altKey) return;
       if (this.busy || !this.visible()) return;
       const tile = this.tiles.find((t) => t.n === Number(e.key) && !t.btn.disabled);
       if (!tile) return;
@@ -190,6 +190,11 @@ const Launcher = {
    * free: slots left under the agent cap, counted across all workspaces. */
   sync({ workspace, free }) {
     if (!this.el) return;
+    // runs on every chrome beat with almost always the same inputs — the
+    // hidden flips, tile loop and roving selection below are wasted work then
+    if (workspace === this._syncWs && free === this._syncFree) return;
+    this._syncWs = workspace;
+    this._syncFree = free;
     this.el.hidden = !workspace;
     this.headlineEl.hidden = !!workspace;
     this.hintEl.hidden = !!workspace;
@@ -203,7 +208,9 @@ const Launcher = {
     for (const { n, btn } of this.tiles) {
       const over = n > free;
       btn.disabled = over;
-      btn.title = over ? `only ${free} agent slot${free === 1 ? '' : 's'} left` : '';
+      // dataset.tip, not title: the one custom tooltip system (tooltip.js)
+      if (over) btn.dataset.tip = `only ${free} agent slot${free === 1 ? '' : 's'} left`;
+      else delete btn.dataset.tip;
     }
     // the cap may have swallowed whatever was selected — fall back to the
     // largest size that is still reachable

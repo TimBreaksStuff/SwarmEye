@@ -32,7 +32,7 @@ const Skills = (() => {
    * render() so the click is a single class flip, not a rebuild */
   const collapsedRepos = new Set();
 
-  const { armOrFire } = Confirm; // click-twice-to-confirm remove buttons
+  const { armOrFire, restoreArmed } = Confirm; // click-twice-to-confirm remove buttons
 
   function makeRow(skill) {
     const row = document.createElement('div');
@@ -163,6 +163,9 @@ const Skills = (() => {
         await refresh();
       });
     });
+    // a background skill-update result rebuilds this row mid-confirm — without
+    // this the armed look is lost and the next click deletes on the spot
+    restoreArmed(removeBtn, 'del:' + skill.id);
     actions.appendChild(removeBtn);
 
     foot.appendChild(actions);
@@ -258,6 +261,7 @@ const Skills = (() => {
           await refresh();
         });
       });
+      restoreArmed(removeAllBtn, 'delrepo:' + group.repoId);
       header.appendChild(removeAllBtn);
     }
 
@@ -360,8 +364,10 @@ const Skills = (() => {
     render();
   });
   // Esc clears the filter rather than closing the whole screen, as long as
-  // there is something to clear
+  // there is something to clear; every other key is kept off the document-level
+  // shortcut handler (bare Tab would move focus into a terminal mid-typing)
   searchEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') e.stopPropagation();
     if (e.key === 'Escape' && searchEl.value) {
       searchEl.value = '';
       query = '';

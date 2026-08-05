@@ -19,16 +19,25 @@ const STT_CHECK =
 /* The other direction: spoken notifications. Piper (provisioned by
  * scripts/setup-tts.sh into ~/.local/share/swarmeye/tts, inside WSL on
  * Windows) reads the line to say on stdin and writes raw 16-bit mono PCM on
- * stdout. That comes back base64'd — bytes crossing the WSL boundary as text
- * can't be mangled — and the renderer turns it into an AudioBuffer, so no
- * audio device is needed on the shell's side of the boundary. */
+ * stdout. It is base64'd here rather than by a `| base64` in the shell: a
+ * pipeline makes the shell fork, and then _killTts's signal lands on the
+ * shell while piper keeps the 61 MB voice model resident. `exec` — the same
+ * reason STT_CMD uses it — makes the spawned process *be* piper, so it can
+ * actually be killed. The renderer turns the base64 back into an AudioBuffer,
+ * so no audio device is needed on the shell's side of the boundary. */
 const TTS_CMD =
-  'T="$HOME/.local/share/swarmeye/tts"; "$T/venv/bin/piper" --model "$T/voice.onnx"'
-  + ' --output-raw 2>/dev/null | base64 | tr -d "\\n"';
+  'T="$HOME/.local/share/swarmeye/tts"; exec "$T/venv/bin/piper" --model "$T/voice.onnx"'
+  + ' --output-raw 2>/dev/null';
 const TTS_CHECK =
   'test -x "$HOME/.local/share/swarmeye/tts/venv/bin/piper" && test -f "$HOME/.local/share/swarmeye/tts/voice.onnx"';
 const TTS_RATE = 22050; // every "medium" voice is 22.05 kHz, and the installer pins the voice
 const TTS_MAX_CHARS = 300; // an announcement, not an audiobook
+
+/* Backstop for the one-install-at-a-time lock: the setup scripts' own curls
+ * carry --max-time, but anything else that wedges (a hung pip, a dead mirror)
+ * would otherwise leave both Install buttons dead until the app restarts.
+ * Generous — a slow link downloading the 465 MB whisper model is legitimate. */
+const INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
 
 class SpeechBridge {
   constructor({ send, debugLog }) {
@@ -88,14 +97,21 @@ class SpeechBridge {
         this.installing = false;
         return resolve({ ok: false, reason: 'path' });
       }
+      let watchdog = null;
       const done = (res) => {
         if (!this.installing) return;
         this.installing = false;
+        clearTimeout(watchdog);
         // a fresh install must be visible without an app restart, and a failed
         // one must not leave a cached false behind
         this[cacheKey] = res.ok ? Promise.resolve(true) : null;
         resolve(res);
       };
+      watchdog = setTimeout(() => {
+        this.send(channel, { line: 'setup is not making progress — giving up' });
+        try { proc.kill(); } catch { /* already gone */ }
+        done({ ok: false, reason: 'timeout' });
+      }, INSTALL_TIMEOUT_MS);
       // stderr carries the prereq "fix:" lines — the most useful output there
       // is — so both streams go to the same log
       for (const stream of [proc.stdout, proc.stderr]) {
@@ -131,6 +147,10 @@ class SpeechBridge {
     const sid = id;
     const proc = spawnShell(STT_CMD);
     this.proc = proc;
+    // a recognizer dying mid-stream turns the next stdin write into an EPIPE
+    // 'error' event, which unhandled is an uncaught exception; the close
+    // handler below already reports the crash itself
+    proc.stdin.on('error', () => {});
 
     let buf = '';
     proc.stdout.on('data', (d) => {
@@ -201,8 +221,9 @@ class SpeechBridge {
     return new Promise((resolve) => {
       const proc = spawnShell(TTS_CMD);
       this.tts = proc;
-      let out = '';
-      proc.stdout.on('data', (d) => { out += d.toString(); });
+      proc.stdin.on('error', () => {}); // same EPIPE guard as the recognizer above
+      const out = []; // raw PCM chunks — must stay Buffers, not strings
+      proc.stdout.on('data', (d) => { out.push(d); });
       proc.stderr.on('data', (d) => this.debugLog('[tts] ' + d));
       proc.on('error', (err) => {
         if (this.tts !== proc) return;
@@ -213,7 +234,8 @@ class SpeechBridge {
       proc.on('close', () => {
         if (this.tts !== proc) return resolve({ ok: false, reason: 'superseded' });
         this.tts = null;
-        resolve(out ? { ok: true, pcm: out, rate: TTS_RATE } : { ok: false, reason: 'no-audio' });
+        const pcm = Buffer.concat(out);
+        resolve(pcm.length ? { ok: true, pcm: pcm.toString('base64'), rate: TTS_RATE } : { ok: false, reason: 'no-audio' });
       });
       proc.stdin.end(line + '\n');
     });

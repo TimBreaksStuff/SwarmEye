@@ -159,7 +159,12 @@ class GridController {
   /* swap a pane for a new one in the same grid slot (used by restart) */
   replace(oldPane, newPane) {
     const i = this.panes.indexOf(oldPane);
-    if (i === -1) { this.add(newPane); return; }
+    // the old pane isn't on screen: it belongs to another workspace, so the
+    // new one must not be appended into the grid this one is showing. Dispose
+    // the old (nothing else will — its terminal, WebGL context, observer and
+    // timers would leak) and leave the new pane to the next syncGrid(), which
+    // mounts it from state.panes when its workspace is selected.
+    if (i === -1) { try { oldPane.dispose(); } catch { /* already gone */ } return; }
     const wasMax = this.maximized === oldPane;
     this.panes[i] = newPane;
     oldPane.el.replaceWith(newPane.el);

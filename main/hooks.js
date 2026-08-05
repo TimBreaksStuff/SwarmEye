@@ -192,6 +192,10 @@ class HookMonitor {
     // fs.watch for instant reaction, plus a slow sweep in case events get lost
     try {
       this.watcher = fs.watch(this.stateDir, (_type, filename) => this.sweep(filename));
+      // an EventEmitter 'error' with no listener is thrown, and this one would
+      // land outside the try above (it is emitted later, not at setup) and take
+      // the whole main process down — the sweep below carries on regardless
+      this.watcher.on('error', () => { /* sweep alone still works */ });
     } catch { /* sweep alone still works */ }
     this.sweepTimer = setInterval(() => this.sweep(), 3000);
     this.debugLog('[hooks] watching ' + this.stateDir);
@@ -218,7 +222,12 @@ class HookMonitor {
     let files;
     if (only) files = [only];
     else {
-      try { files = fs.readdirSync(this.stateDir); } catch { return; }
+      // gone (cleaned temp dir, manual delete): recreate it, or every running
+      // agent's hook writes keep failing for the rest of the session
+      try { files = fs.readdirSync(this.stateDir); } catch {
+        try { fs.mkdirSync(this.stateDir, { recursive: true }); } catch { /* ignore */ }
+        return;
+      }
     }
     for (const f of files) {
       if (!f.endsWith('.json')) continue; // skip .tmp mid-write files
@@ -331,6 +340,7 @@ class HookMonitor {
         path: transcriptPath,
         offset: 0,
         busy: false,
+        rearm: null, // pending re-read for a Stop that arrived mid-read (see refreshFromTranscript)
         partial: false, // true once a read had to skip bytes: totals are a lower bound
         input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
         cost: 0,
@@ -399,7 +409,13 @@ class HookMonitor {
     for (const [id, st] of this.usage) {
       out[id] = { ...this.snapshot(id), path: st.path, offset: st.offset };
     }
-    try { fs.writeFileSync(this.usageFile, JSON.stringify(out)); } catch (err) {
+    // tmp+rename like config.js: this fires every few seconds, and a torn file
+    // fails to parse at boot, which resets every agent's transcript offset to 0
+    // (a multi-MB re-read each) and loses its spend history
+    try {
+      fs.writeFileSync(this.usageFile + '.tmp', JSON.stringify(out));
+      fs.renameSync(this.usageFile + '.tmp', this.usageFile);
+    } catch (err) {
       this.debugLog('[hooks] usage persist failed: ' + err.message);
     }
   }
@@ -414,8 +430,12 @@ class HookMonitor {
       if (!s || typeof s.path !== 'string') continue;
       this.usage.set(id, {
         path: s.path,
-        offset: s.offset || 0,
+        // must be a number: on Windows the offset is interpolated into shell
+        // arithmetic (readNew), so a corrupt/hand-edited usage.json with a
+        // string here would land text on a command line
+        offset: Number.isFinite(s.offset) ? s.offset : 0,
         busy: false,
+        rearm: null,
         partial: !!s.partial,
         input: s.input || 0,
         output: s.output || 0,
@@ -462,7 +482,20 @@ class HookMonitor {
    * — the renderer's model chip and cost panel catch up a beat later. */
   async refreshFromTranscript(sessionId, transcriptPath) {
     const st = this.usageState(sessionId, transcriptPath);
-    if (st.busy) return; // two turns landing together must not read the same bytes twice
+    // two turns landing together must not read the same bytes twice — but the
+    // second one is re-armed rather than dropped: when it is the *last* Stop of
+    // a turn (a sidechain's Stop and the final one inside one slow read),
+    // dropping it loses that turn's tokens and its closing summary for good.
+    // One pending re-arm per session, and only while the session still exists.
+    if (st.busy) {
+      if (!st.rearm) {
+        st.rearm = setTimeout(() => {
+          st.rearm = null;
+          if (this.usage.get(sessionId) === st) this.refreshFromTranscript(sessionId, transcriptPath);
+        }, 1000);
+      }
+      return;
+    }
     st.busy = true;
     try {
       const res = await readNew(transcriptPath, st.offset, USAGE_MAX_READ);
@@ -563,6 +596,7 @@ class HookMonitor {
     this.seen.delete(sessionId + '.json');
     this.models.delete(sessionId);
     this.usage.delete(sessionId);
+    this.transcripts.delete(sessionId); // otherwise one entry per killed session for the app's lifetime
     this.forgetTouches(sessionId);
     this.persistUsage();
     try { fs.unlinkSync(path.join(this.stateDir, sessionId + '.json')); } catch { /* ignore */ }

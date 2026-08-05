@@ -277,7 +277,7 @@ const Board = (() => {
   // which this module doesn't own.
   formEl.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') e.stopPropagation();
-    if ((e.ctrlKey || (window.swarm.isMac && e.metaKey)) && e.key === 'Enter' && !submitBtn.disabled) {
+    if (modHeld(e) && e.key === 'Enter' && !submitBtn.disabled) { // modHeld: app.js's one modifier rule
       e.preventDefault();
       submitBtn.click();
     }
@@ -446,6 +446,15 @@ const Board = (() => {
     sessionViewTitleEl.textContent = [agentName, ws && ws.name].filter(Boolean).join(' — ') || 'session';
     sessionViewBodyEl.textContent = task.sessionLog || '';
     sessionViewEl.hidden = false;
+    // an archived task arrives from config:get without its log — main keeps it
+    // out of the boot payload and hands it over one id at a time
+    if (!task.sessionLog && task.hasSessionLog) {
+      window.swarm.archivedTaskLog(task.id).then((r) => {
+        if (sessionViewTask !== task) return;
+        task.sessionLog = (r && r.sessionLog) || '';
+        sessionViewBodyEl.textContent = task.sessionLog;
+      });
+    }
   }
 
   function closeSessionView() {
@@ -593,9 +602,11 @@ const Board = (() => {
         branchEl.className = 'board-card-branch';
         branchEl.textContent = '⎇ ' + git.branch;
         branchEl.classList.toggle('dirty', !!git.dirty);
-        branchEl.dataset.tip = git.dirty
-          ? `branch ${git.branch} — uncommitted changes`
-          : `branch ${git.branch} — clean`;
+        branchEl.dataset.tip = git.dirty === null
+          ? `branch ${git.branch} — could not read status`
+          : git.dirty
+            ? `branch ${git.branch} — uncommitted changes`
+            : `branch ${git.branch} — clean`;
         meta.appendChild(branchEl);
       }
       card.appendChild(meta);
@@ -641,7 +652,7 @@ const Board = (() => {
   // sessionLog (captured by app.js when the task finishes), so this quietly
   // no-ops for every other status
   function addSessionButton(actions, task, workspaces, handlers) {
-    if (!task.sessionLog) return;
+    if (!task.sessionLog && !task.hasSessionLog) return;
     const viewBtn = document.createElement('button');
     viewBtn.className = 'board-card-session';
     viewBtn.dataset.tip = 'View agent session transcript';
@@ -837,6 +848,26 @@ const Board = (() => {
     return card;
   }
 
+  /* Everything the four columns draw, in one string. renderCols runs on every
+   * git poll and hook event whether or not a card changed, and a rebuild
+   * scrolls the Completed column back to the top and orphans the tooltip of
+   * whatever card the cursor is on — so an unchanged signature means no
+   * rebuild at all. */
+  function colsSig(tasks, categoryFilter) {
+    const parts = [categoryFilter];
+    for (const t of tasks) {
+      const ws = lastWorkspaces.find((w) => w.id === t.workspaceId);
+      const git = lastHandlers && lastHandlers.getGit(t.workspaceId);
+      parts.push([t.id, t.status, t.stopped, t.createdAt, t.mode, t.startMode, t.priority,
+        t.category, t.repeat, t.nextRunAt, (t.chain || []).length, t.text, t.summary,
+        !!(t.sessionLog || t.hasSessionLog), lastHandlers && lastHandlers.getPaneAgentName(t.paneId),
+        ws && ws.name, ((ws && ws.categories) || []).join('+'),
+        git && git.branch, git && git.dirty].join('\u0001'));
+    }
+    return parts.join('\u0002');
+  }
+  let lastColsSig = null;
+
   function renderCols() {
     // renders arrive on git polls and hook events — rebuilding the cards
     // mid-interaction would yank the dragged card out from under the cursor
@@ -847,6 +878,9 @@ const Board = (() => {
 
     const categoryFilter = categoryFilterEl.value;
     const filtered = categoryFilter ? lastTasks.filter((t) => (t.category || '') === categoryFilter) : lastTasks;
+    const sig = colsSig(filtered, categoryFilter);
+    if (sig === lastColsSig) return;
+    lastColsSig = sig;
     const byStatus = { manual: [], pending: [], active: [], completed: [] };
     for (const t of filtered) (byStatus[t.status] || byStatus.pending).push(t);
 
@@ -872,6 +906,11 @@ const Board = (() => {
     lastTasks = tasks;
     lastArchivedTasks = archivedTasks;
     lastWorkspaces = workspaces;
+    // renders arrive from every task-lifecycle event whether or not the board
+    // is on screen — the state assignments above must still run (other paths
+    // read them), but the DOM work below is wasted on a hidden view.
+    // toggleBoard(true) re-renders on open, so nothing goes stale.
+    if (document.getElementById('board').hidden) return;
     if (!formEl.hidden) { updateAutoHint(); renderStats(); }
 
     // refresh the pickers (not user-typed state, safe to rebuild) — unless
@@ -932,6 +971,11 @@ const Board = (() => {
   }
 
   archiveSearchEl.addEventListener('input', renderArchiveList);
+  // same reason as formEl above: typed keys must not reach the document-level
+  // shortcut handler, and Escape is left to bubble up to app.js
+  archiveSearchEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') e.stopPropagation();
+  });
   archivePriorityFilterEl.addEventListener('change', renderArchiveList);
   archiveCategoryFilterEl.addEventListener('change', renderArchiveList);
 
@@ -958,9 +1002,10 @@ const Board = (() => {
   archiveBtn.addEventListener('click', () => toggleArchive(!archiveShown));
   archiveDeleteAllBtn.addEventListener('click', () => {
     if (!lastHandlers) return;
-    if (archiveDeleteAllBtn.classList.contains('armed')) { lastHandlers.onPurgeAll(); return; }
-    archiveDeleteAllBtn.classList.add('armed');
-    setTimeout(() => archiveDeleteAllBtn.classList.remove('armed'), 3000);
+    // through Confirm like every other destructive control: its own arm/fire
+    // was invisible to the app-wide single-arm rule, so an arm left behind
+    // here survived the board closing and fired on the first click back in
+    armOrFire(archiveDeleteAllBtn, 'purge-all', () => lastHandlers.onPurgeAll());
   });
 
   function setDefaults(patch) {

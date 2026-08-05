@@ -16,7 +16,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { exec, shQuote, toShellPath } = require('./platform');
-const { ROLES } = require('./sessions');
+const { ROLES, MODELS } = require('./sessions');
 
 // a bad split must not be able to queue fifty agents
 const MAX_SUBTASKS = 8;
@@ -24,7 +24,6 @@ const MAX_TEXT = 4000;
 // a real split is one turn on haiku (~2s of API time), but the CLI boots a
 // whole session around it and the default 20s exec timeout is not enough
 const SPLIT_TIMEOUT_MS = 180000;
-const MODELS = ['sonnet', 'opus', 'haiku', 'fable'];
 
 /* The role menu the splitter picks from, built from ROLES rather than
  * restated here — the same reason roles:list hands the renderer main's own
@@ -121,8 +120,13 @@ async function split(text, workspaceName) {
     // on macOS ($SHELL -lc) but not on Windows (wsl.exe -e bash -c), where
     // the command would otherwise fail with nothing but a null. Agents don't
     // hit this — tmux starts their shell as a login shell itself.
-    const run = `cd /tmp && claude -p --model haiku --output-format json < ${shQuote(shellFile)}`;
-    out = await exec(`bash -lc ${shQuote(run)}`, SPLIT_TIMEOUT_MS, { maxBuffer: 4 * 1024 * 1024 });
+    //
+    // Both `exec`s matter: they collapse outer shell -> bash -> claude onto
+    // one pid, so the SIGTERM exec()'s timeout sends lands on claude itself.
+    // Without them it kills only the shell, and a stalled split keeps running
+    // and billing after we've already told the user no-claude.
+    const run = `cd /tmp && exec claude -p --model haiku --output-format json < ${shQuote(shellFile)}`;
+    out = await exec(`exec bash -lc ${shQuote(run)}`, SPLIT_TIMEOUT_MS, { maxBuffer: 4 * 1024 * 1024 });
   } finally {
     try { fs.unlinkSync(file); } catch { /* ignore */ }
   }

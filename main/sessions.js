@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { IS_WIN, exec, toShellPath } = require('./platform');
+const { IS_WIN, SHELL, exec, toShellPath } = require('./platform');
 
 /* macOS: node-pty's darwin prebuild execs a separate `spawn-helper` binary
  * to set up the pty before exec'ing the real command. Some zip
@@ -29,20 +29,15 @@ const { pickName } = require('./names');
  * macOS. If tmux is missing we fall back
  * to spawning claude directly (sessions then die with the app). */
 
-/* macOS: $SHELL can be stale (GUI-launched apps inherit whatever login shell was
- * cached at last login, which may since have been uninstalled/changed) — a
- * nonexistent path here makes node-pty's posix_spawn fail immediately with
- * an opaque "posix_spawnp failed", so fall back to a shell that's actually
- * on disk rather than trusting the env var blindly. */
-function resolveShell() {
-  for (const candidate of [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh']) {
-    if (candidate && fs.existsSync(candidate)) return candidate;
-  }
-  return '/bin/sh';
-}
-const SHELL = resolveShell();
 const TMUX_CONF = '~/.config/swarmeye/tmux.conf';
 const TMUX = `tmux -f ${TMUX_CONF} -L swarmeye`;
+
+/* Whitelists shared with main.js so a new tier/level/id-shape is one edit.
+ * The *checks* stay at every shell boundary on purpose — only the values
+ * live here. */
+const MODELS = ['sonnet', 'opus', 'haiku', 'fable'];
+const EFFORT_FLAGS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const SESSION_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 
 /* Wheel-scroll. Mouse reporting is on, but the only mouse tmux ever sees is
  * the wheel: pane.js still swallows xterm's own mouse-reporting requests, so
@@ -187,7 +182,7 @@ function claudeBase({ model, resume, role, notes, effort } = {}) {
   // <level>` saves as the user's default for new sessions (CLI 2.1.x), so one
   // low-effort task would bleed into every agent started afterward. The flag
   // only knows the five named levels — ultracode/auto still go in typed.
-  if (effort && /^(low|medium|high|xhigh|max)$/.test(effort)) cmd += ' --effort ' + effort;
+  if (effort && EFFORT_FLAGS.includes(effort)) cmd += ' --effort ' + effort;
   // roles are a launch flag rather than a typed first message: --append-system-prompt
   // costs no turn and cannot collide with the task board's own prompt injection.
   // The texts below are ours and contain no shell metacharacters — that is what
@@ -200,7 +195,7 @@ function claudeBase({ model, resume, role, notes, effort } = {}) {
   // a conversation id picked from the History screen. Claude Code names its
   // transcripts after the session uuid, so the id is what --resume takes;
   // re-validated here since it lands in a shell command line.
-  if (resume && /^[A-Za-z0-9-]{8,64}$/.test(resume)) cmd += ' --resume ' + resume;
+  if (resume && SESSION_ID_RE.test(resume)) cmd += ' --resume ' + resume;
   return cmd;
 }
 
@@ -214,6 +209,8 @@ class PtyManager {
     this.sessions = new Map(); // id -> { proc, session }
     this.counter = 0;
     this.tmuxOk = false;
+    this.shellOk = false; // did the init probe's shell answer at all?
+    this.probeFailed = false; // last attachExisting couldn't reach tmux — its [] is not ground truth
     this.shuttingDown = false;
   }
 
@@ -222,10 +219,15 @@ class PtyManager {
    * can be reattached, so both halves are one round trip rather than seven:
    * presence and version together, then the whole config in a single script. */
   async init() {
-    const ver = await exec('command -v tmux >/dev/null && tmux -V');
-    this.tmuxOk = !!(ver && ver.trim());
+    // `echo probe` separates "shell unreachable" (exec null — cold WSL, timeout)
+    // from "shell fine, tmux missing" (probe echoed, no version line): the two
+    // must not be conflated, or a slow boot reads as a no-tmux install and every
+    // consumer treats the surviving agents as gone.
+    const ver = await exec('echo probe; command -v tmux >/dev/null && tmux -V; true');
+    this.shellOk = !!(ver && ver.includes('probe'));
+    const m = /(\d+)\.(\d+)/.exec(ver || '');
+    this.tmuxOk = !!m;
     if (this.tmuxOk) {
-      const m = /(\d+)\.(\d+)/.exec(ver);
       const hyperlinksOk = !!m && (+m[1] > 3 || (+m[1] === 3 && +m[2] >= 4));
       const lines = hyperlinksOk ? CONF_LINES.concat(HYPERLINKS_LINE) : CONF_LINES;
       const conf = lines.map((l) => `'${l}'`).join(' ');
@@ -242,7 +244,9 @@ class PtyManager {
       }
       await exec(script.join('; '));
     }
-    this.debugLog('[ptys] tmux ' + (this.tmuxOk ? 'available' : 'MISSING — sessions will not survive restarts'));
+    this.debugLog('[ptys] tmux ' + (this.tmuxOk ? 'available'
+      : this.shellOk ? 'MISSING — sessions will not survive restarts'
+        : 'probe UNANSWERED — shell unreachable, keeping session metadata'));
     return this.tmuxOk;
   }
 
@@ -250,12 +254,26 @@ class PtyManager {
   async attachExisting() {
     const cfg = config.load();
     const known = cfg.sessions || {};
+    // "tmux didn't answer" is not "the agents are gone": exec() resolves null
+    // identically for a missing tmux, a timeout and an unreachable shell, and a
+    // cold WSL boot hits the latter two. Keep the metadata — the dead[] pass
+    // below prunes it once tmux actually answers. probeFailed tells session:list
+    // that this [] is "couldn't tell", so usage pruning and the renderer's
+    // orphan-task recovery don't treat it as ground truth.
     if (!this.tmuxOk) {
-      if (Object.keys(known).length) config.patch({ sessions: {} });
+      this.probeFailed = !this.shellOk;
       return [];
     }
+    // `; true` pins the exit code, so null here can only mean the shell itself
+    // never answered — same class of failure as the init probe above.
     const out = await exec(`${TMUX} list-sessions -F '#{session_name}' 2>/dev/null; true`);
-    const alive = new Set((out || '').split('\n').map((s) => s.trim()).filter(Boolean));
+    if (out == null) {
+      this.probeFailed = true;
+      this.debugLog('[ptys] list-sessions unanswered — keeping session metadata');
+      return [];
+    }
+    this.probeFailed = false;
+    const alive = new Set(out.split('\n').map((s) => s.trim()).filter(Boolean));
 
     const restored = [];
     const dead = [];
@@ -270,8 +288,15 @@ class PtyManager {
         restored.push(live.session);
         this.counter = Math.max(this.counter, meta.num || 0);
       } else if (alive.has(meta.tmuxName) && restored.length < this.maxSessions) {
-        restored.push(this._launch(meta, 100, 30, null));
-        this.counter = Math.max(this.counter, meta.num || 0);
+        // pty.spawn throws synchronously (deleted workspace folder, say) — one
+        // bad session must not brick the whole boot, and its tmux session is
+        // still alive, so keep the metadata and just skip the pane
+        try {
+          restored.push(this._launch(meta, 100, 30, null));
+          this.counter = Math.max(this.counter, meta.num || 0);
+        } catch (err) {
+          this.debugLog(`[ptys] reattach launch failed ${meta.id}: ${err.message}`);
+        }
       } else {
         dead.push(meta.id);
       }
@@ -373,20 +398,31 @@ class PtyManager {
     const meta = (config.load().sessions || {})[id];
     if (!meta || !this.tmuxOk) throw new Error('unknown-session');
     const out = await exec(`${TMUX} has-session -t =${meta.tmuxName} 2>/dev/null && echo alive; true`);
-    if (!out || !out.includes('alive')) {
+    // null = the shell never answered (WSL hiccup) — the agent may be fine, so
+    // the metadata must survive for a retry; only a real "no such session"
+    // answer drops it (the same distinction _handleExit makes).
+    if (out == null) throw new Error('tmux unreachable — try again');
+    if (!out.includes('alive')) {
       this._dropMeta(id);
       throw new Error('gone');
     }
+    // the only launch path that had no cap check — a pane reattached by hand
+    // counts against maxSessions exactly like a spawn() or a restart()
+    if (this.sessions.size >= this.maxSessions) throw new Error('cap');
     return this._launch(meta, cols, rows, null);
   }
 
-  /* Spawn the pty in the workspace directory. new-session -A attaches when
-   * the session already exists, so one script covers create and reattach. */
+  /* Spawn the pty in the workspace directory. A null `cmd` means "reattach to a
+   * session that is already running" — that attaches and nothing else, since
+   * new-session -A would silently *create* a bare `claude` (no hook settings,
+   * no --model, no role prompt) for a session that died since the probe. */
   _launch(meta, cols, rows, cmd) {
     cols = toDim(cols, 100, 500);
     rows = toDim(rows, 30, 300);
     const script = this.tmuxOk
-      ? `exec ${TMUX} new-session -A -s ${meta.tmuxName} -x ${cols} -y ${rows} '${cmd || 'claude'}'`
+      ? (cmd
+        ? `exec ${TMUX} new-session -A -s ${meta.tmuxName} -x ${cols} -y ${rows} '${cmd}'`
+        : `exec ${TMUX} attach-session -t =${meta.tmuxName}`)
       : `exec ${cmd || 'claude'}`;
     // Windows reaches the agent through WSL, which takes the working
     // directory as a flag rather than a spawn option; macOS spawns the login
@@ -458,6 +494,9 @@ class PtyManager {
    * reattached from tmux, everything else in memory lost) can still show it —
    * see Pane.captureInitialCommand / syncInitialCommandHeader. */
   setLastCommand(id, cmd) {
+    // capped like every other user string that lands in config.json — a pasted
+    // wall of text would be re-serialised on every subsequent write
+    cmd = String(cmd || '').slice(0, 200);
     const s = this.sessions.get(id);
     if (s) s.session.lastCommand = cmd;
     const cfg = config.load();
@@ -501,11 +540,13 @@ class PtyManager {
     const s = this.sessions.get(id);
     const cfg = config.load();
     const meta = s ? s.session : (cfg.sessions || {})[id];
-    // Metadata is dropped only after the kill is actually issued — dropping
-    // it first would let a crash/force-quit in between forget a tmux session
-    // that's still alive, orphaning it with no reattach path.
+    // Metadata is dropped only after the kill is confirmed delivered — `echo
+    // done` proves the shell ran; a null (WSL down, timeout) means the agent is
+    // still alive in tmux, so keep the metadata and report failure rather than
+    // orphaning a running agent with no reattach path.
     if (this.tmuxOk && meta && meta.tmuxName) {
-      await exec(`${TMUX} kill-session -t =${meta.tmuxName} 2>/dev/null; true`);
+      const out = await exec(`${TMUX} kill-session -t =${meta.tmuxName} 2>/dev/null; echo done; true`);
+      if (out == null || !out.includes('done')) throw new Error('tmux unreachable — agent not killed');
     }
     if (s) {
       try { s.proc.kill(); } catch { /* already gone */ }
@@ -533,4 +574,4 @@ class PtyManager {
   }
 }
 
-module.exports = { PtyManager, claudeProjectDirName, ROLES, NOTES_REL };
+module.exports = { PtyManager, claudeProjectDirName, ROLES, NOTES_REL, TMUX, MODELS, EFFORT_FLAGS, SESSION_ID_RE };

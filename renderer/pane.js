@@ -347,7 +347,6 @@ const EFFORTS = [
 ];
 const SHIFT_TAB = '\x1b[Z';
 const MODE_STEP_MS = 300; // redraw grace between Shift+Tab presses
-const CLOSE_ARM_MS = 5000;
 // rows of `git diff --stat` the git chip's popover shows before eliding the
 // middle (git's own "N files changed" summary line is always kept)
 const DIFF_STAT_MAX_LINES = 14;
@@ -412,8 +411,10 @@ class Pane {
     this.statusText = ''; // what the hooks say the agent is doing right now (tool name / 'vibing...' / 'done'), mirrored for the swarm view
     this.lastInputAt = 0; // last keystroke/mouse report — its echo must not read as agent activity
     this.idleTimer = null;
-    this.closeArmTimer = null;
     this.bufferTextCache = null; // memoized getBufferText result
+    this.writeSeq = 0; // bumped on every buffer change, so consumers (swarm view tails) can memoize reads
+    this.screenEl = null; // .xterm-screen and its rect, memoized for the wheel path (rowAtY)
+    this.screenRect = null;
 
     // cost & context panel state — usage arrives per turn from the hooks'
     // transcript read (UsageUpdate); the rest is derived from hook events.
@@ -796,6 +797,12 @@ class Pane {
     this.syncUsagePanel();
 
     this.term = new Terminal({
+      // the pty is spawned at 100×30 (see createSession / _launch), and refit()
+      // can't correct that until the pane is on screen — an agent started in a
+      // workspace nobody is looking at would otherwise take 100-column rows
+      // into xterm's 80×24 default and mangle its buffer for good
+      cols: 100,
+      rows: 30,
       theme: activeXtermTheme,
       // per-cell readability on the light themes — see the pass above
       minimumContrastRatio: activeMinContrast,
@@ -993,11 +1000,15 @@ class Pane {
 
   /* ---- wheel scrolling (see the wheel listener above) ---- */
 
-  /* 0-based terminal row under a viewport y coordinate */
+  /* 0-based terminal row under a viewport y coordinate. Both the screen
+   * element and its rect are cached: this runs once per wheel notch — around a
+   * hundred a second on a trackpad flick — and getBoundingClientRect forces a
+   * layout flush. refit() drops the rect, which covers everything that moves
+   * or resizes the terminal. */
   rowAtY(y) {
-    const screen = this.termEl.querySelector('.xterm-screen');
+    const screen = this.screenEl || (this.screenEl = this.termEl.querySelector('.xterm-screen'));
     if (!screen) return 0;
-    const r = screen.getBoundingClientRect();
+    const r = this.screenRect || (this.screenRect = screen.getBoundingClientRect());
     const row = Math.floor((y - r.top) / (r.height / this.term.rows));
     return Math.min(this.term.rows - 1, Math.max(0, row));
   }
@@ -1325,7 +1336,10 @@ class Pane {
   }
 
   renderUsagePanel() {
-    if (this.usageEl.style.display === 'none') return;
+    // display is the option flag, not visibility: a pane in a workspace nobody
+    // is looking at is detached from the DOM, and its 1s tick would still sum
+    // windowTokens() over every live pane for a panel that isn't on screen
+    if (!this.el.isConnected || this.usageEl.style.display === 'none') return;
     const u = this.usage;
     if (!u) {
       // no turn counted yet — either a brand-new agent or one just /clear'ed,
@@ -1497,9 +1511,12 @@ class Pane {
     this.gitEl.style.display = '';
     this.gitEl.textContent = '⎇ ' + info.branch;
     this.gitEl.classList.toggle('dirty', !!info.dirty);
-    this.gitEl.dataset.tip = (info.dirty
-      ? `branch ${info.branch} — uncommitted changes`
-      : `branch ${info.branch} — clean`) + ' · click for the diff and to switch branch';
+    // dirty is null when the status check timed out — saying "clean" there is a lie
+    this.gitEl.dataset.tip = (info.dirty === null
+      ? `branch ${info.branch} — could not read status`
+      : info.dirty
+        ? `branch ${info.branch} — uncommitted changes`
+        : `branch ${info.branch} — clean`) + ' · click for the diff and to switch branch';
   }
 
   /* Fill the popover's top section with what the workspace has changed since
@@ -1840,20 +1857,24 @@ class Pane {
   /* ---- close with confirm ---- */
 
   requestClose() {
-    if (this.exited || this.btnClose.classList.contains('armed')) {
-      clearTimeout(this.closeArmTimer);
+    if (this.exited) {
       this.handlers.onClose(this);
       return;
     }
-    this.btnClose.classList.add('armed');
-    this.btnClose.dataset.tip = 'Click again to kill this agent';
-    if (window.toast) toast(`click ✕ again to kill ${this.session.agentName}`);
-    this.closeArmTimer = setTimeout(() => this.disarmClose(), CLOSE_ARM_MS);
+    // the app-wide Confirm, like ↻ and → Haiku above: arming this ✕ disarms
+    // any other armed control, and one arm window everywhere
+    const fired = Confirm.armOrFire(this.btnClose, 'close:' + this.session.id, () => {
+      this.handlers.onClose(this);
+    });
+    if (!fired) {
+      this.btnClose.dataset.tip = 'Click again to kill this agent';
+      if (window.toast) toast(`click ✕ again to kill ${this.session.agentName}`);
+    }
   }
 
   disarmClose() {
-    clearTimeout(this.closeArmTimer);
-    this.btnClose.classList.remove('armed');
+    // only if this pane's ✕ is what is armed — Confirm tracks one arm app-wide
+    if (this.btnClose.classList.contains('armed')) Confirm.disarm();
     this.btnClose.dataset.tip = 'Close session';
   }
 
@@ -1876,8 +1897,10 @@ class Pane {
   }
 
   refit() {
+    this.screenRect = null; // the terminal moved or resized — see rowAtY
     if (!this.el.isConnected) return;
     this.bufferTextCache = null; // a resize reflows/rewraps the buffer
+    this.writeSeq++;
     try {
       this.fit.fit();
       if (!this.exited) {
@@ -1888,6 +1911,7 @@ class Pane {
 
   write(data) {
     this.bufferTextCache = null; // new output invalidates getBufferText's memo
+    this.writeSeq++;
     this.term.write(data);
     this.noteActivity();
     // keep the mode dropdown (and model chip) honest once output settles —
@@ -1993,7 +2017,6 @@ class Pane {
     this.closeActionTray();
     if (this.stopDictation) this.stopDictation();
     clearTimeout(this.idleTimer);
-    clearTimeout(this.closeArmTimer);
     clearTimeout(this.modeTimer);
     clearTimeout(this.collisionTimer);
     clearInterval(this.usageTimer);
@@ -2082,5 +2105,6 @@ Pane.setUsageWindow = (win) => {
 Pane.MODES = MODES;
 Pane.MODELS = MODELS;
 Pane.EFFORTS = EFFORTS;
+Pane.fmtDuration = fmtDuration; // shared with the swarm view's age labels — one formatter, not two copies
 
 window.Pane = Pane;

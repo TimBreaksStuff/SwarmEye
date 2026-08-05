@@ -1665,3 +1665,27 @@
   padding: 5px 10px;
   font-size: 11px;
 }
+
+/* ---- flat popovers, the stragglers ----
+ * chrome-clean is "no glass or blur", and backdrop-filter is also a real
+ * per-frame GPU cost: while any of these floats over streaming terminals the
+ * compositor re-blurs its backdrop on every frame the panes repaint. Same
+ * opaque-surface treatment #notes-pop already got. */
+#notif-pop,
+.gs-box,
+#msg-pop,
+#kbd-pop,
+#kbd-shortcuts-pop,
+.branch-menu,
+.app-tooltip,
+#rail-flyout,
+#board-category-pop {
+  background: var(--surface);
+  backdrop-filter: none;
+}
+
+/* the flyout's pin/notes buttons and the rail's pinned marker are stroke SVGs
+ * from icons.js now, not emoji — the one icon set, sized like its neighbours */
+.rail-flyout-pin svg,
+.rail-flyout-notes svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
+.rail-tile .ws-pin svg { width: 9px; height: 9px; display: block; }

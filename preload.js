@@ -8,8 +8,6 @@ contextBridge.exposeInMainWorld('swarm', {
   setMaxAgents: (n) => ipcRenderer.invoke('config:set-max-agents', n),
   addWorkspace: () => ipcRenderer.invoke('workspace:add'),
   removeWorkspace: (id) => ipcRenderer.invoke('workspace:remove', id),
-  restoreWorkspace: (id) => ipcRenderer.invoke('workspace:restore', id),
-  purgeWorkspace: (id) => ipcRenderer.invoke('workspace:purge', id),
   reorderWorkspaces: (ids) => ipcRenderer.invoke('workspace:reorder', ids),
   renameWorkspace: (id, name) => ipcRenderer.invoke('workspace:rename', { id, name }),
   setWorkspaceColor: (id, color) => ipcRenderer.invoke('workspace:set-color', { id, color }),
@@ -30,6 +28,7 @@ contextBridge.exposeInMainWorld('swarm', {
   deleteTask: (id) => ipcRenderer.invoke('task:delete', id),
   purgeTask: (id) => ipcRenderer.invoke('task:purge', id),
   purgeAllTasks: () => ipcRenderer.invoke('task:purge-all'),
+  archivedTaskLog: (id) => ipcRenderer.invoke('task:archived-log', id),
   splitTask: (text, workspaceId) => ipcRenderer.invoke('coordinator:split', { text, workspaceId }),
 
   listSessions: () => ipcRenderer.invoke('session:list'),

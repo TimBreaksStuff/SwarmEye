@@ -27,6 +27,8 @@ const Icons = (() => {
     cursor: '<path d="M6 4.2 18.5 11l-5.4 1.4L11 18 6 4.2Z"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M4.9 7.5l1.9 1.1M17.2 15.4l1.9 1.1M4.9 16.5l1.9-1.1M17.2 8.6l1.9-1.1"/>',
     view: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7.5 9h9M7.5 12.5h9M7.5 16h5"/>',
+    pin: '<path d="M9 3.5h6M12 3.5V9M8 9h8l1.5 5h-11L8 9Z"/><path d="M12 14v6"/>',
+    note: '<path d="M6 3.5h9.5L19 7v12a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1-1.5Z"/><path d="M15 3.5V7h4"/><path d="M8.5 12h7M8.5 15.5h5"/>',
   };
 
   const markup = (name) => svg(PATHS[name] || '');

@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Notification, crashRep
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
-const { PtyManager, ROLES, NOTES_REL } = require('./sessions');
+const { PtyManager, ROLES, NOTES_REL, MODELS, EFFORT_FLAGS, SESSION_ID_RE } = require('./sessions');
 const { UsageMonitor } = require('./usage');
 const { HookMonitor } = require('./hooks');
 const { GitMonitor, listBranches, checkoutBranch, diffStat } = require('./git');
@@ -24,7 +24,25 @@ let git = null;
 let health = null;
 let updates = null;
 let skills = null;
+let speech = null;
 let heartbeatTimer = null;
+
+/* Two instances sharing one userData dir corrupt each other: config.json goes
+ * last-write-wins between two module-level caches, both fs-watch (and one
+ * boot-deletes) the same hook-state files, and both attach clients drag every
+ * tmux pane to the smaller size. Trivially easy to hit with the portable exe —
+ * refuse and focus the running window instead. */
+const gotInstanceLock = app.requestSingleInstanceLock();
+if (!gotInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+}
 
 // writes local minidumps to userData/Crashpad on a native crash (GPU/renderer/
 // main) so a silent crash leaves *something* to inspect afterwards
@@ -41,10 +59,22 @@ function sendToWin(channel, payload) {
  * several agents stream at once. */
 const ptyBuffers = new Map(); // sessionId -> queued output
 let ptyFlushTimer = null;
-function flushPtyBuffers() {
+/* With an id, drain only that session — hook events land several times a
+ * second on a busy swarm, and a swarm-wide flush per event would chop every
+ * other session's batch into per-event IPC messages, exactly the churn the
+ * 16ms batch exists to prevent. The shared timer keeps running for the rest. */
+function flushPtyBuffers(id) {
+  if (id !== undefined) {
+    const data = ptyBuffers.get(id);
+    if (data !== undefined) {
+      ptyBuffers.delete(id);
+      sendToWin('session:data', { id, data });
+    }
+    return;
+  }
   clearTimeout(ptyFlushTimer);
   ptyFlushTimer = null;
-  for (const [id, data] of ptyBuffers) sendToWin('session:data', { id, data });
+  for (const [sid, data] of ptyBuffers) sendToWin('session:data', { id: sid, data });
   ptyBuffers.clear();
 }
 function queuePtyData(id, data) {
@@ -195,6 +225,11 @@ function createWindow() {
 }
 
 function registerIpc() {
+  // archived tasks always cross IPC without their transcripts (see config:get)
+  const projectArchive = (list) => list.map(({ sessionLog, ...t }) => (
+    sessionLog ? { ...t, hasSessionLog: true } : t
+  ));
+
   /* Only the fields the renderer actually reads. The rest of config.json is
    * main's own bookkeeping — every session's persisted usage totals, the tmux
    * session metadata, the installed-skills list, the last usage snapshot — and
@@ -209,11 +244,15 @@ function registerIpc() {
     const cfg = config.load();
     return {
       workspaces: cfg.workspaces,
-      archivedWorkspaces: cfg.archivedWorkspaces,
       selectedWorkspaceId: cfg.selectedWorkspaceId,
       maxAgents: cfg.maxAgents,
       tasks: cfg.tasks,
-      archivedTasks: cfg.archivedTasks,
+      /* Without its transcript: each archived task can carry a 300KB
+       * sessionLog and the archive holds 200 of them, so shipping them whole
+       * was a ~60MB structured clone on every boot for a popup almost nobody
+       * opens. `hasSessionLog` is enough to draw the button; the transcript
+       * itself comes from task:archived-log below when one is actually read. */
+      archivedTasks: projectArchive(config.loadArchive()),
       autoUsageLimit: cfg.autoUsageLimit,
       skipPermissions: cfg.skipPermissions,
       workspaceColors: config.WORKSPACE_COLORS,
@@ -315,7 +354,10 @@ function registerIpc() {
     if (!file) return { ok: false, reason: 'no-workspace' };
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, String(text || '').slice(0, NOTES_MAX), 'utf8');
+      // tmp+rename like every other persisted file — a crash mid-write must
+      // not truncate the shared notebook agents are told to read
+      fs.writeFileSync(file + '.tmp', String(text || '').slice(0, NOTES_MAX), 'utf8');
+      fs.renameSync(file + '.tmp', file);
       return { ok: true };
     } catch (err) {
       debugLog('[notes:write] FAIL ' + err.message);
@@ -332,8 +374,9 @@ function registerIpc() {
 
   ipcMain.handle('preview:stop', (e, { workspaceId }) => preview.stop(workspaceId).then(() => ({ ok: true })));
 
-  // removing a workspace archives it (the folder ref, not the agents),
-  // so it can be restored from the 🗃 popover later
+  // removing a workspace archives it (the folder ref, not the agents) so that
+  // re-adding the same folder via workspace:add brings the old workspace —
+  // and everything filed under its id — back instead of minting a new one
   ipcMain.handle('workspace:remove', (e, id) => {
     const cfg = config.load();
     const ws = cfg.workspaces.find((w) => w.id === id);
@@ -348,33 +391,8 @@ function registerIpc() {
     config.save(cfg);
     return {
       workspaces: cfg.workspaces,
-      archivedWorkspaces: cfg.archivedWorkspaces,
       selectedWorkspaceId: cfg.selectedWorkspaceId,
     };
-  });
-
-  ipcMain.handle('workspace:restore', (e, id) => {
-    const cfg = config.load();
-    const ws = (cfg.archivedWorkspaces || []).find((w) => w.id === id);
-    cfg.archivedWorkspaces = (cfg.archivedWorkspaces || []).filter((w) => w.id !== id);
-    if (ws && !cfg.workspaces.some((w) => w.path === ws.path)) {
-      cfg.workspaces.push(ws);
-      cfg.selectedWorkspaceId = ws.id;
-    }
-    config.save(cfg);
-    if (git) git.tick();
-    return {
-      workspaces: cfg.workspaces,
-      archivedWorkspaces: cfg.archivedWorkspaces,
-      selectedWorkspaceId: cfg.selectedWorkspaceId,
-    };
-  });
-
-  ipcMain.handle('workspace:purge', (e, id) => {
-    const cfg = config.load();
-    cfg.archivedWorkspaces = (cfg.archivedWorkspaces || []).filter((w) => w.id !== id);
-    config.save(cfg);
-    return { archivedWorkspaces: cfg.archivedWorkspaces };
   });
 
   // branch dropdown on the pane git chip
@@ -478,11 +496,12 @@ function registerIpc() {
       workspaceId,
       mode: cleanMode,
       startMode: ['acceptEdits', 'plan', 'bypass'].includes(startMode) ? startMode : 'default',
-      model: ['sonnet', 'opus', 'haiku', 'fable'].includes(model) ? model : 'default',
+      model: MODELS.includes(model) ? model : 'default',
       // the role preset the task's agent launches with — same table and same
       // check session:create applies, since it ends up in the same flag
       role: Object.hasOwn(ROLES, String(role || '')) ? role : '',
-      effort: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode', 'auto'].includes(effort) ? effort : 'default',
+      // the named flag levels plus the two that only exist as typed commands
+      effort: [...EFFORT_FLAGS, 'ultracode', 'auto'].includes(effort) ? effort : 'default',
       focus: !!focus,
       closeOnComplete: closeOnComplete !== false,
       priority: ['low', 'medium', 'high', 'critical'].includes(priority) ? priority : 'medium',
@@ -544,29 +563,32 @@ function registerIpc() {
     const cfg = config.load();
     const task = (cfg.tasks || []).find((t) => t.id === id);
     cfg.tasks = (cfg.tasks || []).filter((t) => t.id !== id);
-    if (task) {
-      cfg.archivedTasks = (cfg.archivedTasks || []).filter((t) => t.id !== task.id);
-      cfg.archivedTasks.unshift(task);
-      // each archived task can carry a ~300KB sessionLog — cap the archive so
-      // config.json (rewritten on every save) can't grow without bound
-      cfg.archivedTasks = cfg.archivedTasks.slice(0, 200);
-    }
     config.save(cfg);
-    return { tasks: cfg.tasks, archivedTasks: cfg.archivedTasks };
+    let archived = config.loadArchive();
+    if (task) {
+      // capped so archive.json can't grow without bound
+      archived = [task, ...archived.filter((t) => t.id !== task.id)].slice(0, 200);
+      config.saveArchive(archived);
+    }
+    return { tasks: cfg.tasks, archivedTasks: projectArchive(archived) };
+  });
+
+  // one archived task's transcript, on demand — config:get ships the archive
+  // without them (see the projection above)
+  ipcMain.handle('task:archived-log', (e, id) => {
+    const t = config.loadArchive().find((x) => x.id === id);
+    return { sessionLog: (t && t.sessionLog) || '' };
   });
 
   ipcMain.handle('task:purge', (e, id) => {
-    const cfg = config.load();
-    cfg.archivedTasks = (cfg.archivedTasks || []).filter((t) => t.id !== id);
-    config.save(cfg);
-    return { archivedTasks: cfg.archivedTasks };
+    const archived = config.loadArchive().filter((t) => t.id !== id);
+    config.saveArchive(archived);
+    return { archivedTasks: projectArchive(archived) };
   });
 
   ipcMain.handle('task:purge-all', () => {
-    const cfg = config.load();
-    cfg.archivedTasks = [];
-    config.save(cfg);
-    return { archivedTasks: cfg.archivedTasks };
+    config.saveArchive([]);
+    return { archivedTasks: [] };
   });
 
   // the coordinator: one multi-part request in, a reviewable list of subtasks
@@ -575,7 +597,13 @@ function registerIpc() {
   ipcMain.handle('coordinator:split', async (e, { text, workspaceId }) => {
     const ws = config.load().workspaces.find((w) => w.id === workspaceId);
     if (!ws) return { ok: false, reason: 'no-workspace' };
-    return coordinator.split(text, ws.name);
+    // split() can genuinely throw (temp file unwritable) — a rejected invoke
+    // would wedge the modal's button at "splitting…"
+    try {
+      return await coordinator.split(text, ws.name);
+    } catch (err) {
+      return { ok: false, reason: err.message };
+    }
   });
 
   // called once by the renderer at boot: reattach surviving tmux sessions
@@ -584,11 +612,16 @@ function registerIpc() {
     const sessions = await ptys.attachExisting();
     // whatever each agent had spent when the app closed rides back with it, so
     // the cost panel is filled in before its next turn — and totals belonging
-    // to sessions that didn't survive are dropped here
-    hooks.pruneUsage(sessions.map((s) => s.id));
+    // to sessions that didn't survive are dropped here. Not when the probe
+    // failed, though: that [] means "couldn't reach tmux", and pruning against
+    // it would erase every surviving agent's spend history.
+    if (!ptys.probeFailed) hooks.pruneUsage(sessions.map((s) => s.id));
     return {
       sessions: sessions.map((s) => ({ ...s, usage: hooks.snapshot(s.id) })),
       persistent: ptys.tmuxOk,
+      // the renderer's orphan-task recovery must not respawn agents for tasks
+      // whose panes are merely unreachable right now
+      probeFailed: ptys.probeFailed,
     };
   });
 
@@ -603,7 +636,7 @@ function registerIpc() {
   // shape session:create checks before passing one to `claude --resume`.
   ipcMain.handle('history:read', (e, { workspaceId, id }) => {
     const ws = config.load().workspaces.find((w) => w.id === workspaceId);
-    if (!ws || !/^[A-Za-z0-9-]{8,64}$/.test(String(id || ''))) return null;
+    if (!ws || !SESSION_ID_RE.test(String(id || ''))) return null;
     return readHistory(ws, id);
   });
 
@@ -639,8 +672,8 @@ function registerIpc() {
       const session = ptys.spawn(ws, cols || 80, rows || 24, {
         model,
         role: Object.hasOwn(ROLES, String(role || '')) ? role : undefined,
-        resume: /^[A-Za-z0-9-]{8,64}$/.test(String(resumeId || '')) ? resumeId : undefined,
-        effort: /^(low|medium|high|xhigh|max)$/.test(String(effort || '')) ? effort : undefined,
+        resume: SESSION_ID_RE.test(String(resumeId || '')) ? resumeId : undefined,
+        effort: EFFORT_FLAGS.includes(String(effort || '')) ? effort : undefined,
       });
       debugLog('[session:create] ok ' + session.id + ' "' + session.agentName + '" in ' + ws.path);
       return { ok: true, session };
@@ -666,7 +699,7 @@ function registerIpc() {
         resume: !!payload.resume,
         role: Object.hasOwn(ROLES, String(payload.role || '')) ? payload.role : undefined,
         // same whitelist task:create applies — it lands in the same launch flag
-        model: ['sonnet', 'opus', 'haiku', 'fable'].includes(payload.model) ? payload.model : undefined,
+        model: MODELS.includes(payload.model) ? payload.model : undefined,
       });
       debugLog('[session:restart] ok ' + session.id + ' "' + session.agentName + '" wanted-resume=' + !!payload.resume + ' resumed=' + resumed);
       return { ok: true, session, resumed };
@@ -720,7 +753,14 @@ function registerIpc() {
   ipcMain.on('session:write', (e, { id, data }) => ptys.write(id, data));
   ipcMain.on('session:resize', (e, { id, cols, rows }) => ptys.resize(id, cols, rows));
   ipcMain.handle('session:kill', async (e, { id }) => {
-    await ptys.kill(id);
+    // kill() throws when the shell never answered — the agent is still alive
+    // in tmux and its metadata kept, so it reattaches on the next launch.
+    // Don't cleanup hooks state for an agent that's still running.
+    try {
+      await ptys.kill(id);
+    } catch (err) {
+      return { ok: false, reason: err.message };
+    }
     hooks.cleanup(id);
     return { ok: true };
   });
@@ -796,7 +836,8 @@ function registerIpc() {
 
   ipcMain.on('clipboard:write', (e, text) => clipboard.writeText(String(text || '')));
 
-  const speech = new SpeechBridge({ send: sendToWin, debugLog });
+  // module-level so before-quit can shut the recogniser and any TTS child down
+  speech = new SpeechBridge({ send: sendToWin, debugLog });
   ipcMain.handle('speech:installed', () => speech.available());
   ipcMain.handle('speech:install', () => speech.install());
   ipcMain.handle('speech:start', (e, id) => speech.start(id));
@@ -808,6 +849,7 @@ function registerIpc() {
 }
 
 app.whenReady().then(() => {
+  if (!gotInstanceLock) return; // quitting — must not touch the running instance's files
   // a graceful quit flips cleanShutdown back to true (see before-quit); finding
   // it false at boot means the previous run was killed rather than exited —
   // e.g. hard-terminated externally, since a catchable JS crash or renderer/GPU
@@ -844,7 +886,7 @@ app.whenReady().then(() => {
     // across the wire, so the renderer's transcript capture would grab the
     // buffer a moment before it's complete. Flushing first preserves order.
     onEvent: (id, payload) => {
-      flushPtyBuffers();
+      flushPtyBuffers(id);
       sendToWin('session:state', { id, ...payload });
     },
   });
@@ -856,22 +898,31 @@ app.whenReady().then(() => {
     decorateCmd: (id, cmd) => hooks.claudeCmd(id, cmd),
     onData: queuePtyData,
     onExit: (id, exitCode, detached) => {
-      flushPtyBuffers(); // the session's last output must not arrive after its exit event
+      flushPtyBuffers(id); // the session's last output must not arrive after its exit event
       if (!detached) hooks.cleanup(id);
       sendToWin('session:exit', { id, exitCode, detached });
     },
   });
   ptysReady = ptys.init();
 
-  git = new GitMonitor({ onUpdate: (info) => sendToWin('git:update', info) });
+  // the git and health pollers exist purely to paint chrome — no point
+  // spawning shells for a window nobody can see; a focus/restore tick below
+  // catches them up the moment it's visible again
+  const winVisible = () => !!(win && !win.isDestroyed() && win.isVisible() && !win.isMinimized());
+
+  git = new GitMonitor({ onUpdate: (info) => sendToWin('git:update', info), visible: winVisible });
   git.start();
 
   // WSL reachability is a Windows-only failure mode — on macOS agents run
   // natively, so there is no boundary to lose
   if (IS_WIN) {
-    health = new HealthMonitor({ debugLog, onUpdate: (h) => sendToWin('health:update', h) });
+    health = new HealthMonitor({ debugLog, onUpdate: (h) => sendToWin('health:update', h), visible: winVisible });
     health.start();
   }
+
+  const wakePollers = () => { if (git) git.tick(); if (health) health.tick(); };
+  win.on('focus', wakePollers);
+  win.on('restore', wakePollers);
 
   updates = new UpdateChecker({
     current: app.getVersion(),
@@ -916,7 +967,10 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', (e) => {
-  if (ptys && !ptys.tmuxOk && ptys.runningCount() > 0) {
+  if (!gotInstanceLock) return; // second instance: nothing initialized, nothing to write
+  // an update install has already spawned the replacement exe by the time
+  // quit is requested — cancelling here would leave both builds running
+  if (ptys && !ptys.tmuxOk && ptys.runningCount() > 0 && !(updates && updates.installing)) {
     const n = ptys.runningCount();
     const choice = dialog.showMessageBoxSync(win, {
       type: 'warning',
@@ -937,9 +991,20 @@ app.on('before-quit', (e) => {
   if (health) health.stop();
   if (updates) updates.stop();
   if (hooks) hooks.stop();
+  // quitting mid-dictation would otherwise orphan the recogniser (and any
+  // still-speaking TTS child), which outlive the app they were spawned from
+  speech?._kill?.();
+  speech?._killTts?.();
   if (ptys) ptys.shutdown();
 });
 
 app.on('window-all-closed', () => {
   app.quit();
+});
+
+// macOS: cancelling the "agents still running" dialog leaves the window closed
+// but the app alive (win.on('closed') already nulled it), with no way back in
+// from the dock — rebuild it instead of leaving a zombie.
+app.on('activate', () => {
+  if (!win) createWindow();
 });

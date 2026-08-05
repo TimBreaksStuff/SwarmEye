@@ -74,7 +74,13 @@
 
   document.addEventListener('mouseover', (e) => {
     const target = e.target.closest('[data-tip]');
-    if (!target) return;
+    if (!target) {
+      // Chromium fires no mouseout for a node that is simply removed, so a
+      // tooltip whose anchor was wiped by a list rebuild would otherwise stay
+      // pinned over the UI — the next hover anywhere else clears it
+      if (anchor && !anchor.isConnected) hide();
+      return;
+    }
     if (target.isContentEditable) return;
     scheduleShow(target);
   });

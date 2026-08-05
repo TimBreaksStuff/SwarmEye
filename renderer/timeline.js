@@ -26,9 +26,9 @@ const Timeline = (() => {
   const laneById = new Map(); // sessionId -> {row, name, track, sig}
   let headEl = null;
 
-  function fmtClock(t) {
-    return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
+  // Topbar.fmtClock — the notification bell's formatter, not a copy (looked
+  // up at call time; topbar.js loads before this file anyway)
+  const fmtClock = (t) => Topbar.fmtClock(t);
 
   function fmtSpan(ms) {
     const s = Math.round(ms / 1000);
@@ -87,7 +87,13 @@ const Timeline = (() => {
       headEl = document.createElement('div');
       headEl.className = 'tl-head';
       el.appendChild(headEl);
+    } else if (headEl.dataset.from === String(from)) {
+      // the ruler only moves once per TICK_MS, while render() runs on every
+      // syncChrome beat — rebuilding it each time orphans a hovered tick's
+      // tooltip, the same hazard the lanes' signature guard exists for
+      return;
     }
+    headEl.dataset.from = String(from);
     headEl.textContent = '';
     const label = document.createElement('span');
     label.className = 'tl-head-label';

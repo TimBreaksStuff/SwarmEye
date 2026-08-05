@@ -1,5 +1,5 @@
 const { exec, shQuote } = require('./platform');
-const { claudeProjectDirName } = require('./sessions');
+const { claudeProjectDirName, SESSION_ID_RE } = require('./sessions');
 
 /* Past Claude conversations for a workspace.
  *
@@ -99,7 +99,9 @@ function previewOf(raw) {
 /* ---- reading one transcript back out ---- */
 
 // hard cap on how much of a transcript is pulled back; a long session's
-// .jsonl runs to tens of megabytes and the modal only has to be readable
+// .jsonl runs to tens of megabytes and the modal only has to be readable. It
+// is the *tail* that is kept: a session long enough to hit this cap is one
+// whose newest turns are the reason it was opened.
 const READ_MAX = 16 * 1024 * 1024;
 // per-turn cut, so one pasted build log can't dominate the whole view
 const TURN_CHARS = 8000;
@@ -134,13 +136,18 @@ function blockText(b) {
  * read as listSessions — on Windows the file lives inside WSL. */
 async function readSession(ws, id) {
   const f = '~/.claude/projects/' + shQuote(claudeProjectDirName(ws.path)) + '/' + shQuote(id + '.jsonl');
-  const out = await exec(`head -c ${READ_MAX} ${f} 2>/dev/null`, 30000, { maxBuffer: READ_MAX + 1024 * 1024 });
+  const out = await exec(`tail -c ${READ_MAX} ${f} 2>/dev/null`, 30000, { maxBuffer: READ_MAX + 1024 * 1024 });
   if (out == null) return null; // shell unreachable, or no such transcript
   const turns = [];
-  for (const line of out.split('\n')) {
+  const lines = out.split('\n');
+  let parsed = 0;
+  for (const line of lines) {
+    // up to 16MB of JSONL in one tight loop stalls the main process (frozen
+    // IPC, stuttering pty streams) — yield every few thousand lines
+    if (++parsed % 5000 === 0) await new Promise((r) => setImmediate(r));
     if (!line.trim()) continue;
     let o;
-    try { o = JSON.parse(line); } catch { continue; } // the last line may be cut by READ_MAX
+    try { o = JSON.parse(line); } catch { continue; } // the first line may be cut by READ_MAX
     if (o.isMeta) continue;
     if (o.type !== 'user' && o.type !== 'assistant') continue;
     const content = o.message && o.message.content;
@@ -187,7 +194,7 @@ async function listSessions(ws) {
  * it lands on a shell command line. This is final: the .jsonl is the file
  * `claude --resume` reads, so the conversation is gone with it. */
 async function deleteSessions(ws, ids) {
-  const safe = ids.filter((id) => /^[A-Za-z0-9-]{8,64}$/.test(String(id || '')));
+  const safe = ids.filter((id) => SESSION_ID_RE.test(String(id || '')));
   if (!safe.length) return 0;
   const d = '~/.claude/projects/' + shQuote(claudeProjectDirName(ws.path));
   const files = safe.map((id) => `${d}/${shQuote(id + '.jsonl')}`).join(' ');

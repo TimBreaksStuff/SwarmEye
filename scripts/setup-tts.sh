@@ -60,7 +60,9 @@ if ! "$DIR/venv/bin/python" -m pip --version >/dev/null 2>&1; then
     3.9) GETPIP="https://bootstrap.pypa.io/pip/$PYMM/get-pip.py" ;;
     *)   GETPIP="https://bootstrap.pypa.io/get-pip.py" ;;
   esac
-  curl -fsSL "$GETPIP" | "$DIR/venv/bin/python"
+  # every curl here is bounded: a stall would otherwise hang the in-app
+  # installer forever, and its one-install-at-a-time lock with it
+  curl -fsSL --retry 3 --max-time 120 "$GETPIP" | "$DIR/venv/bin/python"
 fi
 # not --quiet: pip's own progress is the only sign of life during a multi-
 # minute wheel download, and the in-app installer streams this straight into
@@ -78,10 +80,15 @@ LANGUAGE=${LOCALE%%_*}
 if [ "$(cat "$DIR/.voice" 2>/dev/null)" != "$VOICE" ] || [ ! -f "$DIR/voice.onnx" ]; then
   echo "step: downloading the voice '$VOICE' (~61 MB for a medium one)"
   BASE=https://huggingface.co/rhasspy/piper-voices/resolve/main
-  curl -fL --progress-bar -o "$DIR/voice.onnx" \
+  # download beside the real names and move into place only once both halves
+  # have landed: main/speech.js's install check is "voice.onnx exists", so a
+  # half-written file would report TTS installed and then say nothing at all
+  curl -fL --progress-bar --retry 3 --max-time 900 -o "$DIR/voice.onnx.part" \
     "$BASE/$LANGUAGE/$LOCALE/$SPEAKER/$QUALITY/$VOICE.onnx"
-  curl -fsSL -o "$DIR/voice.onnx.json" \
+  curl -fsSL --retry 3 --max-time 60 -o "$DIR/voice.onnx.json.part" \
     "$BASE/$LANGUAGE/$LOCALE/$SPEAKER/$QUALITY/$VOICE.onnx.json"
+  mv "$DIR/voice.onnx.part" "$DIR/voice.onnx"
+  mv "$DIR/voice.onnx.json.part" "$DIR/voice.onnx.json"
   echo "$VOICE" > "$DIR/.voice"
 fi
 

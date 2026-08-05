@@ -37,6 +37,7 @@ class UpdateChecker {
     this.timer = null;
     this.latest = null; // { version, assetUrl, releaseUrl }
     this.downloadedPath = null;
+    this.downloading = false;
   }
 
   start() {
@@ -77,6 +78,10 @@ class UpdateChecker {
 
   async download() {
     if (!this.latest) return;
+    // the destination is a fixed path, so two overlapping downloads would
+    // interleave into one file and install() would copy that over the running
+    // executable
+    if (this.downloading) return;
     // checked before the download, not after it — otherwise a dev build pulls
     // the whole archive down and only then admits it cannot install it
     if (!app.isPackaged) {
@@ -84,8 +89,15 @@ class UpdateChecker {
       return;
     }
     const dest = path.join(app.getPath('temp'), ASSET_NAME);
+    this.downloading = true;
+    // the timeout covers reaching GitHub, not the transfer — a slow but live
+    // download of a 100MB asset must not be aborted halfway, so it is cleared
+    // as soon as the response headers are in
+    const ctrl = new AbortController();
+    const connectTimer = setTimeout(() => ctrl.abort(), 30000);
     try {
-      const res = await fetch(this.latest.assetUrl);
+      const res = await fetch(this.latest.assetUrl, { signal: ctrl.signal });
+      clearTimeout(connectTimer);
       if (!res.ok || !res.body) throw new Error('download failed: ' + res.status);
       const total = Number(res.headers.get('content-length')) || 0;
       let received = 0;
@@ -101,6 +113,9 @@ class UpdateChecker {
     } catch (err) {
       this.debugLog('[update] download failed: ' + err.message);
       this.onError(err.message);
+    } finally {
+      clearTimeout(connectTimer);
+      this.downloading = false;
     }
   }
 
@@ -111,6 +126,10 @@ class UpdateChecker {
       this.onError(result.error);
       return;
     }
+    // the replacement is already spawned (Windows) / watching for our exit
+    // (macOS) — main's before-quit checks this flag so its "agents still
+    // running" dialog can no longer cancel the quit and leave both running
+    this.installing = true;
     app.quit();
   }
 }

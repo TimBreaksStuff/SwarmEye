@@ -142,28 +142,39 @@ async function selectWorkspace(id) {
   syncChrome();
 }
 
-/* removing a workspace kills its agents — arm/confirm like the pane ✕ */
-const pendingRemove = { id: null, timer: null };
+/* main refuses the kill when it can't reach tmux (the agent would be left
+ * running invisibly) — the pane is already gone from the UI by then, so all
+ * that's left to do is say so; the kept metadata reattaches it next launch */
+function killSessionChecked(id) {
+  window.swarm.killSession(id).then((res) => {
+    if (res && !res.ok) toast('could not reach tmux — that agent is still running and will reattach on the next launch');
+  });
+}
 
-async function removeWorkspace(id) {
+/* removing a workspace kills its agents — armed through the app-wide Confirm
+ * like every other destructive control, so an armed pane ✕ and an armed
+ * workspace ✕ can never be live at once */
+async function removeWorkspace(id, btn) {
   const agents = panesForWs(id);
-  if (agents.length && pendingRemove.id !== id) {
-    pendingRemove.id = id;
-    clearTimeout(pendingRemove.timer);
-    pendingRemove.timer = setTimeout(() => { pendingRemove.id = null; }, 3000);
-    const running = agents.filter((p) => !p.exited || p.detached).length;
-    toast(running
-      ? `this workspace has ${running} running agent${running > 1 ? 's' : ''} — click ✕ again to remove it and kill them`
-      : 'click ✕ again to remove this workspace and its exited panes');
+  if (agents.length && btn) {
+    const fired = Confirm.armOrFire(btn, 'ws-remove:' + id, () => doRemoveWorkspace(id));
+    if (!fired) {
+      const running = agents.filter((p) => !p.exited || p.detached).length;
+      toast(running
+        ? `this workspace has ${running} running agent${running > 1 ? 's' : ''} — click ✕ again to remove it and kill them`
+        : 'click ✕ again to remove this workspace and its exited panes');
+    }
     return;
   }
-  clearTimeout(pendingRemove.timer);
-  pendingRemove.id = null;
+  doRemoveWorkspace(id, agents);
+}
 
+// the armed path re-reads the panes when it finally fires, seconds later
+async function doRemoveWorkspace(id, agents = panesForWs(id)) {
   for (const pane of agents) {
     // detached panes read as exited but their tmux agent is still running —
     // kill those too, or removing the workspace would orphan live agents
-    if (!pane.exited || pane.detached) window.swarm.killSession(pane.session.id);
+    if (!pane.exited || pane.detached) killSessionChecked(pane.session.id);
     if (state.lastFocused === pane) state.lastFocused = null;
     state.panes.delete(pane.session.id);
     grid.remove(pane); // disposes; no-op removal if the pane wasn't visible
@@ -368,6 +379,11 @@ const ESCAPABLE = [
   [() => notifPopEl, () => closeNotifPop()],
   [() => notifPanelEl, () => { notifPanelEl.hidden = true; }],
   [() => sessionViewEl, () => Board.closeSessionView()],
+  // the board's category-manage popover is a top-level element, so closing the
+  // board would otherwise leave it floating over the agent grid with live
+  // handlers — it has to be reachable before the board itself
+  [() => document.getElementById('board-category-pop'),
+    () => { document.getElementById('board-category-pop').hidden = true; }],
   [() => boardEl, () => toggleBoard(false)],
   [() => skillsEl, () => toggleSkills(false)],
   [() => historyEl, () => toggleHistory(false)],
@@ -444,6 +460,7 @@ const notifHandlers = {
   onExpand() {
     closeNotifPop();
     notifPanelEl.hidden = false;
+    renderNotifs(); // both lists are only built while they are visible
   },
   async onOpen(paneId) {
     const pane = state.panes.get(paneId);
@@ -554,6 +571,7 @@ notifBtnEl.addEventListener('click', (e) => {
     notifPopEl.style.top = Math.round(r.bottom + 8) + 'px';
     notifPopEl.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
     notifPopEl.hidden = false;
+    renderNotifs(); // the list is only built while it is visible
   } else {
     closeNotifPop(); // second click on the bell = mark as read
   }
@@ -1544,7 +1562,7 @@ const boardHandlers = {
     if (!task) return;
     const pane = state.panes.get(task.paneId);
     if (pane) {
-      if (!pane.exited) window.swarm.killSession(pane.session.id);
+      if (!pane.exited) killSessionChecked(pane.session.id);
       if (state.lastFocused === pane) state.lastFocused = null;
       state.panes.delete(pane.session.id);
       grid.remove(pane);
@@ -1630,6 +1648,10 @@ const boardHandlers = {
   async onExportSession(task) {
     const ws = state.workspaces.find((w) => w.id === task.workspaceId);
     const name = boardHandlers.getPaneAgentName(task.paneId) || (ws ? ws.name : 'task');
+    // an archived task's log is fetched on demand, not shipped in the boot payload
+    if (!task.sessionLog && task.hasSessionLog) {
+      task.sessionLog = (await window.swarm.archivedTaskLog(task.id)).sessionLog || '';
+    }
     const res = await window.swarm.exportSession(name, task.sessionLog || '');
     if (res.ok) toast('transcript saved to ' + res.path);
     else if (!res.canceled) toast('could not save: ' + res.reason);
@@ -1667,6 +1689,12 @@ const skillsEl = document.getElementById('skills-view');
 function toggleSkills(show) {
   skillsEl.hidden = !show;
   boardEl.hidden = true;
+  // the board's transcript modal and its mic live outside #board-view, so
+  // hiding that container alone leaves the modal painted over this screen and
+  // the mic recording into a textarea nobody can see (toggleBoard's own close
+  // path does the same two calls)
+  Board.stopDictation?.();
+  Board.closeSessionView?.();
   historyEl.hidden = true;
   closeSwarmView();
   gridWrapEl.hidden = show;
@@ -1704,6 +1732,8 @@ const historyHandlers = {
 function toggleHistory(show) {
   historyEl.hidden = !show;
   boardEl.hidden = true;
+  Board.stopDictation?.(); // see toggleSkills
+  Board.closeSessionView?.();
   skillsEl.hidden = true;
   closeSwarmView();
   gridWrapEl.hidden = show;
@@ -1820,6 +1850,8 @@ function toggleSwarmView(show) {
   }
   swarmViewEl.hidden = false;
   boardEl.hidden = true;
+  Board.stopDictation?.(); // see toggleSkills
+  Board.closeSessionView?.();
   skillsEl.hidden = true;
   historyEl.hidden = true;
   gridWrapEl.hidden = true;
@@ -1875,10 +1907,12 @@ function recordTimeline(pane) {
 }
 
 function renderTimeline() {
-  if (!timelineOn || swarmViewEl.hidden) return;
   // panes closed since the last paint stop being tracked here rather than at
-  // every one of the several call sites that can remove one
+  // every one of the several call sites that can remove one — above the guard,
+  // since the ribbon is off by default and the log would otherwise keep one
+  // entry per session ever started for the life of the app
   for (const id of timelineLog.keys()) if (!state.panes.has(id)) timelineLog.delete(id);
+  if (!timelineOn || swarmViewEl.hidden) return;
   Timeline.render(svTimelineEl, [...state.panes.values()], timelineLog);
 }
 
@@ -1910,7 +1944,7 @@ const paneHandlers = {
     return task ? task.text : null;
   },
   onClose(pane) {
-    if (!pane.exited) window.swarm.killSession(pane.session.id);
+    if (!pane.exited) killSessionChecked(pane.session.id);
     autoClosers.delete(pane.session.id);
     // closing a still-active task's agent window is how you stop it — send
     // the task to Completed marked 'stopped' instead of leaving it stuck in
@@ -2187,6 +2221,7 @@ window.swarm.onSessionExit(({ id, exitCode, detached }) => {
   manualStartRun.delete(id);
   manualLaunchOpts.delete(id);
   sessionStarted.delete(id);
+  if (!detached) autoClosers.delete(id); // symmetric with onClose; a detached pane may come back
   if (orphanedTask) {
     orphanedTask.status = 'pending';
     orphanedTask.paneId = null;
@@ -2638,9 +2673,13 @@ async function jumpToMatch(pane, line, q) {
   pane.search.findNext(q);
 }
 
+/* Every run translates each live pane's whole scrollback (up to 20k lines) —
+ * pane.write() drops that memo on every chunk of agent output, so with a busy
+ * swarm the work is real on every keystroke. Debounced long enough that typing
+ * a word costs one pass rather than one per letter. */
 gsInput.addEventListener('input', () => {
   clearTimeout(gsTimer);
-  gsTimer = setTimeout(runGlobalSearch, 200);
+  gsTimer = setTimeout(runGlobalSearch, 400);
 });
 gsInput.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { toggleGlobalSearch(false); e.preventDefault(); }
@@ -2764,7 +2803,7 @@ document.fonts.ready.then(() => {
   renderBoard();
 
   // reattach agents that survived the last app run (tmux)
-  const { sessions } = await window.swarm.listSessions();
+  const { sessions, probeFailed } = await window.swarm.listSessions();
   for (const session of sessions) mountPane(session);
   if (sessions.length) toast(`reattached ${sessions.length} running agent${sessions.length > 1 ? 's' : ''}`);
 
@@ -2772,19 +2811,31 @@ document.fonts.ready.then(() => {
   // just the app — WSL restart, host reboot, tmux missing) would otherwise sit
   // stuck forever pointing at a pane that will never exist in this run, since
   // onSessionExit only fires for sessions that are actually live to exit.
-  // Re-run it in a fresh agent, same as a queued task starting.
-  const liveIds = new Set(sessions.map((s) => s.id));
-  const orphaned = state.tasks.filter((t) => t.status === 'active' && !liveIds.has(t.paneId));
-  for (const task of orphaned) {
-    task.status = 'pending';
-    task.paneId = null;
-    window.swarm.updateTask(task.id, { status: 'pending', paneId: null });
-    await startTask(task);
+  // Re-run it in a fresh agent, same as a queued task starting. Not when the
+  // tmux probe failed, though — that empty session list means "couldn't reach
+  // tmux", and respawning would double up every still-running task's agent.
+  if (probeFailed) {
+    toast('could not reach tmux — surviving agents will reattach on the next launch');
+  } else {
+    const liveIds = new Set(sessions.map((s) => s.id));
+    const orphaned = state.tasks.filter((t) => t.status === 'active' && !liveIds.has(t.paneId));
+    for (const task of orphaned) {
+      task.status = 'pending';
+      task.paneId = null;
+      window.swarm.updateTask(task.id, { status: 'pending', paneId: null });
+      await startTask(task);
+    }
+    if (orphaned.length) toast(`resumed ${orphaned.length} task${orphaned.length > 1 ? 's' : ''} in a new agent — previous one didn't survive the restart`);
   }
-  if (orphaned.length) toast(`resumed ${orphaned.length} task${orphaned.length > 1 ? 's' : ''} in a new agent — previous one didn't survive the restart`);
   renderBoard();
 
   runScheduler(); // pick up any pending "auto" tasks now instead of waiting for the interval below
   // periodic safety net: catches any missed usage/session-exit trigger
   setInterval(runScheduler, 5000);
-})();
+})().catch((err) => {
+  // a rejected invoke mid-boot (one bad session, a slow main) must not leave
+  // the app with no panes, no scheduler and no explanation
+  console.error('[boot]', err);
+  try { toast('startup hit an error — some agents may not have reattached'); } catch { /* toast not ready */ }
+  setInterval(runScheduler, 5000);
+});

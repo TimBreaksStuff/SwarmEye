@@ -2,6 +2,7 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { app } = require('electron');
 const config = require('./config');
 const { IS_WIN, exec } = require('./platform');
 
@@ -91,6 +92,23 @@ function window(w) {
   return { usedPct: pct(w.utilization), resetsAt: resetsAtMs(w.resets_at) };
 }
 
+/* Its own file, not config.json — the runstate.json split in main.js, for the
+ * same reason: this snapshot is ~150 bytes and is rewritten every 90 seconds,
+ * while config.json carries the archived task logs and is six figures of bytes,
+ * so writing it there sized every poll by the archive. */
+const SNAPSHOT_FILE = () => path.join(app.getPath('userData'), 'usage-snapshot.json');
+
+function readSnapshot() {
+  try { return JSON.parse(fs.readFileSync(SNAPSHOT_FILE(), 'utf8')); } catch { /* see below */ }
+  // written by a version that still kept it in config.json — taken over once,
+  // so upgrading doesn't blank the widgets until the first live fetch lands
+  return config.load().lastUsageSnapshot || null;
+}
+
+function writeSnapshot(snapshot) {
+  try { fs.writeFileSync(SNAPSHOT_FILE(), JSON.stringify(snapshot)); } catch { /* next poll retries */ }
+}
+
 class UsageMonitor {
   constructor({ onUpdate }) {
     this.onUpdate = onUpdate;
@@ -100,9 +118,15 @@ class UsageMonitor {
     // immediately instead of blank widgets while the first live fetch is
     // pending (or failing, e.g. right after boot the OAuth token / usage
     // endpoint can be briefly unreachable)
-    this.lastGood = config.load().lastUsageSnapshot || null;
+    this.lastGood = readSnapshot();
     this.lastAttempt = 0;
     this.inFlight = null;
+    this.stopped = false;
+    // parsed OAuth creds, kept until their own expiresAt passes or the API
+    // rejects them — re-reading every poll cost a wsl.exe spawn (hundreds of
+    // ms) per 90s tick on Windows, ~960 spawns a day, for a token that
+    // changes a handful of times a day
+    this.cachedOauth = null;
   }
 
   start() {
@@ -113,6 +137,10 @@ class UsageMonitor {
   }
 
   stop() {
+    // schedule() runs from inside the in-flight fetch, so a stop() landing
+    // while one is pending would otherwise re-arm the timer behind it and the
+    // poller would keep running (and writing) after shutdown
+    this.stopped = true;
     clearTimeout(this.timer);
     this.timer = null;
   }
@@ -130,22 +158,22 @@ class UsageMonitor {
     if (Date.now() - this.lastAttempt < MIN_MANUAL_INTERVAL_MS) {
       return this.degraded('checking too frequently');
     }
-    return this.tick();
+    return this.tick(true);
   }
 
-  async tick() {
+  async tick(manual = false) {
     // a manual refresh landing while a poll's fetch is still in flight must
     // not fire a second concurrent request (a doubled 429 would double the
     // backoff) — both callers share the one pending result instead
     if (this.inFlight) return this.inFlight;
     this.lastAttempt = Date.now();
     this.inFlight = (async () => {
-      const snapshot = await this.fetchSnapshot();
+      const snapshot = await this.fetchSnapshot(manual);
       // a failure pushing to the renderer (destroyed window, IPC hiccup) must
       // never prevent the next poll from being scheduled — otherwise the loop
       // silently dies and nothing but an app restart brings it back
       try { this.onUpdate(snapshot); } catch { /* see comment above */ }
-      this.schedule(this.backoff);
+      if (!this.stopped) this.schedule(this.backoff);
       return snapshot;
     })();
     try {
@@ -155,15 +183,32 @@ class UsageMonitor {
     }
   }
 
-  async fetchSnapshot() {
-    let oauth;
-    try {
-      oauth = await readCredentials();
-    } catch (err) {
-      return this.degraded(err.message);
+  /* Only the scheduled poll backs off: a manual refresh that gets rate-limited
+   * or fails must not push the automatic loop out (a few impatient clicks would
+   * otherwise walk it up to the 30-minute maximum). */
+  backOff(manual) {
+    if (!manual) this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS);
+  }
+
+  async fetchSnapshot(manual = false) {
+    // re-read only when the cached token is missing or about to expire —
+    // a still-valid token needs no disk/Keychain/WSL round trip
+    let oauth = this.cachedOauth;
+    if (!oauth || (oauth.expiresAt && Date.now() > oauth.expiresAt - 60000)) {
+      try {
+        oauth = await readCredentials();
+        this.cachedOauth = oauth;
+      } catch (err) {
+        // a credential read that keeps failing retried forever at POLL_MS, and on
+        // Windows each retry is a fresh wsl.exe spawn that blocks for 15s when
+        // WSL is down — the same backoff the 429 path uses applies here
+        this.backOff(manual);
+        return this.degraded(err.message);
+      }
     }
 
     if (oauth.expiresAt && Date.now() > oauth.expiresAt) {
+      this.cachedOauth = null; // the next poll re-reads — claude may have refreshed it on disk
       return this.degraded('token expired');
     }
 
@@ -178,10 +223,11 @@ class UsageMonitor {
       });
 
       if (res.status === 429) {
-        this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS);
+        this.backOff(manual);
         return this.degraded('rate limited');
       }
       if (res.status === 401) {
+        this.cachedOauth = null; // stale cache — re-read from disk next poll
         return this.degraded('token rejected');
       }
       if (!res.ok) {
@@ -196,9 +242,10 @@ class UsageMonitor {
         weekly: window(body.seven_day),
         fetchedAt: new Date().toISOString(),
       };
-      config.patch({ lastUsageSnapshot: this.lastGood });
+      writeSnapshot(this.lastGood);
       return this.lastGood;
     } catch (err) {
+      this.backOff(manual);
       return this.degraded('usage API unreachable');
     }
   }

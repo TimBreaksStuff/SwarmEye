@@ -301,7 +301,10 @@ const History = (() => {
     query = searchEl.value.trim().toLowerCase();
     render();
   });
+  // Esc clears the filter; everything else is kept off the document-level
+  // shortcut handler (bare Tab would move focus into a terminal mid-typing)
   searchEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') e.stopPropagation();
     if (e.key === 'Escape' && searchEl.value) {
       searchEl.value = '';
       query = '';

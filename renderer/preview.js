@@ -97,7 +97,12 @@ const Preview = (() => {
   function toggle(show) {
     el.hidden = !show;
     btnEl.classList.toggle('active', show);
-    if (!show) return;
+    if (!show) {
+      // closing mid-resolve cancels main's ~15s poll (and kills the server it
+      // just started); a server already up is left alone for the next open
+      if (resolving && workspaceId) window.swarm.stopPreview(workspaceId);
+      return;
+    }
     urlEl.value = storedUrl();
     if (!loaded) autoStart();
   }
@@ -106,6 +111,9 @@ const Preview = (() => {
    * switching to the API repo doesn't leave the web app's page up */
   function setWorkspace(id) {
     if (id === workspaceId) return;
+    // same cancellation as closing the dock — the old workspace's poll must
+    // not keep running (it also holds the `resolving` flag up)
+    if (resolving && workspaceId) window.swarm.stopPreview(workspaceId);
     workspaceId = id;
     const next = storedUrl();
     urlEl.value = next;

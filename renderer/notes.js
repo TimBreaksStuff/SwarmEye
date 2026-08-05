@@ -80,7 +80,7 @@ const Notes = (() => {
     textEl.addEventListener('input', syncHint);
     textEl.addEventListener('keydown', (e) => {
       e.stopPropagation(); // no agent cycling or app shortcuts while writing
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+      if (e.key === 'Enter' && modHeld(e)) { e.preventDefault(); save(); } // modHeld: app.js's one modifier rule
       else if (e.key === 'Escape') { e.preventDefault(); close(); }
     });
     saveBtn.addEventListener('click', save);

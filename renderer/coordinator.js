@@ -15,7 +15,6 @@ const Coordinator = (() => {
   const createBtn = document.getElementById('coord-create');
   const closeBtn = document.getElementById('coord-close');
 
-  const MODELS = ['default', 'sonnet', 'opus', 'haiku', 'fable'];
   const REASONS = {
     'no-workspace': 'that workspace is gone',
     'empty-text': 'nothing to split',
@@ -50,6 +49,9 @@ const Coordinator = (() => {
       text.rows = 3;
       text.value = row.text;
       text.addEventListener('input', () => { row.text = text.value; syncFoot(); });
+      // keys typed here must not reach app.js's document-level shortcuts —
+      // Escape is left alone so it still closes the modal
+      text.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
 
       const controls = document.createElement('div');
       controls.className = 'coord-row-controls';
@@ -61,7 +63,8 @@ const Coordinator = (() => {
       roleSel.dataset.tip = 'Role preset this subtask’s agent launches with';
       roleSel.addEventListener('change', () => { row.role = roleSel.value; });
 
-      const modelSel = select(MODELS.map((m) => [m, m]), row.model);
+      // Pane.MODELS is the one renderer model table — a new tier is one edit
+      const modelSel = select(Pane.MODELS, row.model);
       modelSel.dataset.tip = 'Model for this subtask — “default” lets the role decide';
       modelSel.addEventListener('change', () => { row.model = modelSel.value; });
 
@@ -105,7 +108,14 @@ const Coordinator = (() => {
     splitBtn.disabled = true;
     splitBtn.textContent = 'splitting…';
     metaEl.textContent = 'asking the coordinator…';
-    const res = await window.swarm.splitTask(text, ctx.workspaceId);
+    // never let a rejected invoke escape — it would leave the button wedged
+    // at "splitting…" (main catches its own failures, this covers the rest)
+    let res;
+    try {
+      res = await window.swarm.splitTask(text, ctx.workspaceId);
+    } catch {
+      res = null;
+    }
     if (el.hidden) return; // closed while the call was in flight — ctx is gone
     if (!res || !res.ok) {
       splitBtn.disabled = false;
@@ -164,7 +174,9 @@ const Coordinator = (() => {
   closeBtn.addEventListener('click', close);
   el.addEventListener('click', (e) => { if (e.target === el) close(); });
   inputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) doSplit();
+    if (e.key !== 'Escape') e.stopPropagation(); // same reason as the plan rows
+    // modHeld (app.js): Win+Enter must not fire a paid split call
+    if (e.key === 'Enter' && modHeld(e)) doSplit();
   });
 
   return { open, close };

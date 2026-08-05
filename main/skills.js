@@ -109,6 +109,9 @@ function readSkillMeta(dest, fallbackName) {
  * resolve in an agent running somewhere else. */
 const GLOBAL_SOURCE = 'local-global';
 
+// how many repos checkAllUpdates fetches at once
+const CHECK_PARALLEL = 3;
+
 function localSkillsIn(dir, { sourceId, sourceLabel, workspaceId = null }) {
   let entries = [];
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
@@ -141,6 +144,7 @@ class SkillsManager {
   constructor({ debugLog }) {
     this.debugLog = debugLog;
     this.root = path.join(app.getPath('userData'), 'skills');
+    this.checkingAll = false;
   }
 
   /* Installed-from-a-repo skills only — what the update/enable/symlink
@@ -328,26 +332,48 @@ class SkillsManager {
       const lines = out.trim().split('\n').filter(Boolean);
       updateAvailable = lines.length === 2 && lines[0] !== lines[1];
     }
+    // almost every sweep finds the flag already right — don't rewrite the
+    // whole config.json per repo just to store the value it already holds
+    let changed = false;
     for (const s of cfg.skills || []) {
-      if (s.repoId === skill.repoId) s.updateAvailable = updateAvailable;
+      if (s.repoId === skill.repoId && !!s.updateAvailable !== updateAvailable) {
+        s.updateAvailable = updateAvailable;
+        changed = true;
+      }
     }
-    config.save(cfg);
+    if (changed) config.save(cfg);
     return updateAvailable;
   }
 
   /* Fires one check per distinct repo (not per skill entry — a multi-skill
-   * repo would otherwise re-fetch once per skill) without waiting on each
-   * other, then fans each result out to every sibling id so the Skills
-   * screen can light up "Update" buttons as results trickle in. */
+   * repo would otherwise re-fetch once per skill), then fans each result out
+   * to every sibling id so the Skills screen can light up "Update" buttons as
+   * results trickle in.
+   *
+   * The renderer re-fires this on install, enable, active, update, remove and
+   * every time the Skills screen opens, so it is guarded twice: one sweep at
+   * a time app-wide, and CHECK_PARALLEL fetches within a sweep. Unbounded, a
+   * dozen repos and a few toggles meant dozens of overlapping `git fetch`es,
+   * each finishing with a whole-config.json rewrite. */
   checkAllUpdates(onEach) {
-    const seenRepo = new Set();
+    if (this.checkingAll) return;
+    const firstIdOf = new Map(); // repoId -> one skill id that stands for it
     for (const skill of this._configSkills()) {
-      if (seenRepo.has(skill.repoId)) continue;
-      seenRepo.add(skill.repoId);
-      this.checkUpdate(skill.id).then((updateAvailable) => {
-        for (const s of this._configSkills()) if (s.repoId === skill.repoId) onEach(s.id, updateAvailable);
-      }).catch(() => {});
+      if (!firstIdOf.has(skill.repoId)) firstIdOf.set(skill.repoId, skill.id);
     }
+    const queue = [...firstIdOf];
+    if (!queue.length) return;
+    this.checkingAll = true;
+    const next = () => {
+      const item = queue.shift();
+      if (!item) return Promise.resolve();
+      const [repoId, id] = item;
+      return this.checkUpdate(id).then((updateAvailable) => {
+        for (const s of this._configSkills()) if (s.repoId === repoId) onEach(s.id, updateAvailable);
+      }).catch(() => {}).then(next);
+    };
+    Promise.all(Array.from({ length: CHECK_PARALLEL }, next))
+      .then(() => { this.checkingAll = false; });
   }
 
   /* Pulls the shared clone once, then re-parses every sibling skill's own
@@ -441,7 +467,11 @@ class SkillsManager {
   terminalCommand(id) {
     const skill = this._configSkills().find((s) => s.id === id);
     if (!skill) return '';
-    return `mkdir -p .claude/skills && ln -sfn "${toShellPath(this._skillDir(skill))}" .claude/skills/${id}`;
+    // null = the shell can't reach this path — no command beats a command
+    // that symlinks a literal "null"
+    const shellDir = toShellPath(this._skillDir(skill));
+    if (shellDir === null) return '';
+    return `mkdir -p .claude/skills && ln -sfn "${shellDir}" .claude/skills/${id}`;
   }
 }
 

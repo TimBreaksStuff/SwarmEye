@@ -216,9 +216,17 @@ const SwarmView = (() => {
   const CLUSTER_ORBIT = 12; // hub → agent, when the swarm spans workspaces
   const SOLO_ORBIT = 34; // hub → agent, when a single hub owns the canvas
 
+  /* The canvas only changes size when the ResizeObserver at the bottom says
+   * so — measuring it inside render() forced a style+layout flush right after
+   * syncChrome's DOM writes, several times a second. Same for the body and
+   * dock widths below. */
+  let geoCache = null;
   function geometry() {
-    const r = canvasEl.getBoundingClientRect();
-    return { pxPerX: (r.width || 1) / 100, pxPerY: (r.height || 1) / 100 };
+    if (!geoCache) {
+      const r = canvasEl.getBoundingClientRect();
+      geoCache = { pxPerX: (r.width || 1) / 100, pxPerY: (r.height || 1) / 100 };
+    }
+    return geoCache;
   }
 
   // a point `rPct` of the canvas height from (cx, cy), at `ang`
@@ -293,7 +301,7 @@ const SwarmView = (() => {
 
   function paintLinks(plan, geo) {
     const seen = new Set();
-    const line = (key, x1, y1, x2, y2, color, opacity) => {
+    const line = (key, x1, y1, x2, y2, color, opacity, busy) => {
       let l = lineEls.get(key);
       if (!l) {
         l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -306,6 +314,9 @@ const SwarmView = (() => {
       setAttr(l, 'y2', y2.toFixed(2));
       setAttr(l, 'stroke', color);
       setAttr(l, 'opacity', String(opacity));
+      // the dash only flows on a busy agent's link (see app.css) — setAttr,
+      // not className, which is read-only on SVG elements
+      setAttr(l, 'class', busy ? 'sv-link-busy' : '');
       seen.add(key);
     };
 
@@ -334,7 +345,7 @@ const SwarmView = (() => {
     const core = plan.hubs.find((h) => h.core);
     for (const hub of plan.hubs) {
       if (hub.core || !core) continue;
-      line('hub:' + hub.key, ...trim(core.x, core.y, hub.x, hub.y, CORE_R + HUB_GAP, HUB_R + HUB_GAP), hub.color || 'var(--accent)', 0.28);
+      line('hub:' + hub.key, ...trim(core.x, core.y, hub.x, hub.y, CORE_R + HUB_GAP, HUB_R + HUB_GAP), hub.color || 'var(--accent)', 0.28, false);
     }
     for (const node of plan.nodes) {
       const hub = plan.hubs.find((h) => h.key === node.hubKey) || core;
@@ -342,7 +353,7 @@ const SwarmView = (() => {
       const status = statusOf(node.pane);
       const opacity = status === 'exited' ? 0.1 : status === 'detached' ? 0.16 : status === 'idle' ? 0.2 : 0.42;
       const hubR = (hub.core ? CORE_R : HUB_R) + HUB_GAP;
-      line('node:' + node.pane.session.id, ...trim(hub.x, hub.y, node.x, node.y, hubR, DOT_R), wsColorOf(node.pane), opacity);
+      line('node:' + node.pane.session.id, ...trim(hub.x, hub.y, node.x, node.y, hubR, DOT_R), wsColorOf(node.pane), opacity, status === 'busy');
     }
 
     for (const [key, l] of lineEls) {
@@ -472,25 +483,22 @@ const SwarmView = (() => {
       setText(rec.name, pane.session.agentName);
       const activity = activityOf(pane, status);
       setText(rec.state, urgent && age > 20000 ? `${status} ${fmtAge(age)}` : status);
-      rec.root.dataset.tip = `${pane.session.agentName} · ${pane.session.workspaceName}`;
-      rec.root.dataset.tipSecondary = activity;
+      setAttr(rec.root, 'data-tip', `${pane.session.agentName} · ${pane.session.workspaceName}`);
+      setAttr(rec.root, 'data-tip-secondary', activity);
       setStyle(rec.actions, 'display', status === 'waiting' && pane.promptAnswerable ? '' : 'none');
       seen.add(id);
     }
     for (const [id, rec] of nodeEls) {
-      if (!seen.has(id)) { rec.root.remove(); nodeEls.delete(id); }
+      // its stopwatch goes with it — nothing else prunes stateSince, so an
+      // agent that ever appeared would otherwise stay in the map forever
+      if (!seen.has(id)) { rec.root.remove(); nodeEls.delete(id); stateSince.delete(id); }
     }
   }
 
   /* ---- dock: activity list ---- */
 
-  function fmtAge(ms) {
-    const s = Math.max(0, Math.round(ms / 1000));
-    if (s < 60) return s + 's';
-    const m = Math.floor(s / 60);
-    if (m < 60) return m + 'm' + String(s % 60).padStart(2, '0') + 's';
-    return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm';
-  }
+  // Pane.fmtDuration — the same formatter the cost panel uses, not a copy
+  const fmtAge = (ms) => Pane.fmtDuration(ms);
 
   function makeRow(pane) {
     const row = document.createElement('div');
@@ -564,7 +572,7 @@ const SwarmView = (() => {
       setText(rec.age, status === 'idle' || status === 'exited' || status === 'detached' ? '' : fmtAge(age));
       const u = pane.usage;
       setText(rec.cost, u ? fmtCost(u.cost) + ' · ' + fmtTokens(u.context) : '');
-      rec.row.dataset.tip = clickMode === 'jump' ? 'Jump to this agent' : 'Select — double-click to jump to it';
+      setAttr(rec.row, 'data-tip', clickMode === 'jump' ? 'Jump to this agent' : 'Select — double-click to jump to it');
       setStyle(rec.actions, 'display', status === 'waiting' && pane.promptAnswerable ? '' : 'none');
 
       // keep DOM order in sync with the sorted list without rebuilding rows
@@ -625,6 +633,31 @@ const SwarmView = (() => {
     return { card, dot, ws, name, state, body, actions };
   }
 
+  /* the tail of the agent's own terminal, blank lines dropped so the card
+   * shows output rather than the TUI's padding. Split out so hovering a card
+   * can refill just that one without a whole render(). */
+  function paintTermBody(rec, pane, open, flat) {
+    const want = open ? HOVER_LINES : previewLines;
+    // a folded card shows nothing, so don't pay to read its terminal — and an
+    // unchanged buffer (pane.writeSeq) isn't re-read at all: tailLines'
+    // translateToString per row is the expensive part, and this runs for every
+    // live pane on every render beat. Same inputs, same lines, DOM already right.
+    const sig = flat ? 'flat' : `${pane.writeSeq}:${open}:${want}`;
+    if (rec.tailSig === sig) return;
+    rec.tailSig = sig;
+    const lines = flat ? [] : pane.tailLines(open ? 90 : 30).map((l) => l.trimEnd()).filter(Boolean).slice(-want);
+    const text = lines.join('\n');
+    if (rec.body.dataset.text === text) return;
+    rec.body.dataset.text = text;
+    rec.body.textContent = '';
+    for (const line of lines) {
+      const div = document.createElement('div');
+      div.className = /^[●⏺✻]/.test(line) ? 'sv-term-line-run' : /^\s*[⎿│]/.test(line) ? 'sv-term-line-dim' : '';
+      div.textContent = line;
+      rec.body.appendChild(div);
+    }
+  }
+
   function paintPreviews(panes) {
     const live = showPreview ? panes.filter((p) => !p.exited) : [];
     termsEl.hidden = !live.length;
@@ -649,24 +682,9 @@ const SwarmView = (() => {
       setText(rec.name, pane.session.agentName);
       setText(rec.state, status);
       setStyle(rec.actions, 'display', status === 'waiting' && pane.promptAnswerable ? '' : 'none');
-      rec.card.dataset.tip = clickMode === 'jump' ? 'Jump to this agent' : 'Select — double-click to jump to it';
+      setAttr(rec.card, 'data-tip', clickMode === 'jump' ? 'Jump to this agent' : 'Select — double-click to jump to it');
 
-      // the tail of the agent's own terminal, blank lines dropped so the card
-      // shows output rather than the TUI's padding
-      const want = open ? HOVER_LINES : previewLines;
-      // a folded card shows nothing, so don't pay to read its terminal
-      const lines = flat ? [] : pane.tailLines(open ? 90 : 30).map((l) => l.trimEnd()).filter(Boolean).slice(-want);
-      const text = lines.join('\n');
-      if (rec.body.dataset.text !== text) {
-        rec.body.dataset.text = text;
-        rec.body.textContent = '';
-        for (const line of lines) {
-          const div = document.createElement('div');
-          div.className = /^[●⏺✻]/.test(line) ? 'sv-term-line-run' : /^\s*[⎿│]/.test(line) ? 'sv-term-line-dim' : '';
-          div.textContent = line;
-          rec.body.appendChild(div);
-        }
-      }
+      paintTermBody(rec, pane, open, flat);
 
       if (termsEl.children[i] !== rec.card) termsEl.insertBefore(rec.card, termsEl.children[i] || null);
       seen.add(id);
@@ -975,7 +993,9 @@ const SwarmView = (() => {
     prompt.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') return;
       e.stopPropagation();
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) fire();
+      // modHeld (app.js — loaded before any event fires): Windows reports the
+      // Windows key as metaKey, and Win+Enter must not launch an agent
+      if (e.key === 'Enter' && modHeld(e)) fire();
     });
 
     const hint = document.createElement('div');
@@ -1054,9 +1074,10 @@ const SwarmView = (() => {
   /* Clamp against the live body width rather than the stored one — a window
    * narrowed since the drag must not push the map out. Only ever writes on a
    * real change, so the resize observer this feeds back into settles. */
+  let bodyWCache = 0; // invalidated by the ResizeObserver, like geoCache
   function applyDock() {
     if (dockW) {
-      const total = bodyEl.clientWidth;
+      const total = bodyWCache || (bodyWCache = bodyEl.clientWidth);
       if (total) {
         const max = Math.max(DOCK_MIN, total - MAP_MIN);
         dockW = Math.round(Math.min(max, Math.max(DOCK_MIN, dockW)));
@@ -1069,8 +1090,11 @@ const SwarmView = (() => {
   /* A preview card holds a terminal, so a wider dock should give a taller
    * window, not just a wider one: the card keeps roughly a terminal's
    * proportions and the line count follows, both while dragging and after. */
+  let dockWCache = 0; // invalidated by the ResizeObserver, like geoCache
   function applyPreviewSize() {
-    const w = dockEl.getBoundingClientRect().width;
+    // dockW (set by the drag / clamp above) already *is* the width — only the
+    // CSS-default case needs a measurement, and that is cached
+    const w = dockW || dockWCache || (dockWCache = dockEl.getBoundingClientRect().width);
     if (!w) return;
     const lineH = 1.55 * 11 * fontScale;
     const lines = Math.max(PREVIEW_MIN, Math.min(PREVIEW_MAX, Math.round(((w - 26) / PREVIEW_ASPECT) / lineH)));
@@ -1093,11 +1117,29 @@ const SwarmView = (() => {
   /* Hover focuses, click selects: resting on an agent highlights it in the dock
    * and opens its preview, but leaves the selection where it was. `reveal` is
    * for hovers that come from the map — the dock has to scroll to the agent,
-   * whereas a card you are already pointing at is by definition in view. */
+   * whereas a card you are already pointing at is by definition in view.
+   *
+   * Only one agent's row and preview card change, so they are painted directly:
+   * a full render() re-lays-out the whole map and re-reads every live agent's
+   * terminal, and a sweep across the map fires two of those per node. */
+  function paintHoverOn(id, on) {
+    const row = rowEls.get(id);
+    if (row) row.row.classList.toggle('sv-row-hot', on);
+    const rec = termCards.get(id);
+    if (!rec) return;
+    const pane = ((ctx && ctx.panes) || []).find((p) => p.session.id === id);
+    if (!pane) return;
+    const flat = statusOf(pane) === 'idle' && !on;
+    rec.card.classList.toggle('sv-term-open', on);
+    rec.card.classList.toggle('sv-term-flat', flat);
+    paintTermBody(rec, pane, on, flat);
+  }
+
   function hover(id, reveal) {
     if (hoveredId === id) return;
+    if (hoveredId) paintHoverOn(hoveredId, false); // a node and its card can overlap
     hoveredId = id;
-    render(ctx);
+    paintHoverOn(id, true);
     // dragging the map sweeps the cursor over nodes it isn't aiming at — the
     // dock yanking about mid-pan is worse than not following at all
     if (reveal && !canvasEl.classList.contains('sv-panning')) revealInDock(id);
@@ -1106,7 +1148,7 @@ const SwarmView = (() => {
   function unhover(id) {
     if (hoveredId !== id) return;
     hoveredId = null;
-    render(ctx);
+    paintHoverOn(id, false);
   }
 
   function revealInDock(id) {
@@ -1283,8 +1325,16 @@ const SwarmView = (() => {
   applyView();
 
   // orbits are sized against the canvas, so a resized window (or a toggled
-  // preview card) has to re-place every node
-  new ResizeObserver(() => { if (!el.hidden) render(ctx); }).observe(canvasEl);
+  // preview card) has to re-place every node — and the cached measurements
+  // above are only ever refreshed here
+  const sizeObserver = new ResizeObserver(() => {
+    geoCache = null;
+    bodyWCache = 0;
+    dockWCache = 0;
+    if (!el.hidden) render(ctx);
+  });
+  sizeObserver.observe(canvasEl);
+  sizeObserver.observe(bodyEl);
 
   return { render, setActive };
 })();
