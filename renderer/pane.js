@@ -94,16 +94,24 @@ const XTERM_THEMES = {
     brightYellow: '#ffc879',
   },
 };
-/* the canvas is transparent so the pane's glass (blur + tint, see .pane /
- * .pane-term in app.css) shows through behind the text — the per-theme
- * terminal tint comes from the CSS var(--term-bg) mix, not the palette.
- * The RGB channels still carry the backdrop the pane will actually show:
- * nothing is painted with them at zero alpha, but xterm measures their
- * luminance for the contrast pass below, and rgba(0,0,0,0) would have every
- * light theme's terminal believe it is drawing onto black. */
-function glassTheme(palette, bgHex = palette.background) {
-  const [r, g, b] = hexRgb(bgHex);
-  return { ...palette, background: `rgba(${r}, ${g}, ${b}, 0)` };
+/* The terminal paints its own opaque background rather than letting a pane
+ * tint show through (it used to be transparent, back when the panes were
+ * glass; chrome-clean.css has filled .pane-term with a flat var(--term-bg)
+ * since it took the design over). That is a legibility fix, not a cosmetic
+ * one: with `allowTransparency` on, xterm rasterizes its glyph atlas into a
+ * canvas created with `{alpha: true}`, and Chromium will only greyscale-
+ * antialias into one of those. Opaque, it subpixel-antialiases instead —
+ * which is most of the difference on Windows, where DirectWrite already
+ * lays down lighter stems than CoreText and the text read washed out.
+ *
+ * So the palette's background has to be the colour the CSS would have
+ * painted, read from the same variable: it covers every theme and both
+ * states of the background overlay, which pins --term-bg dark whatever the
+ * theme is. xterm also measures its luminance for the contrast pass below,
+ * so a wrong value there would mis-correct the light themes' foregrounds. */
+function paneTheme(palette) {
+  const css = getComputedStyle(document.documentElement).getPropertyValue('--term-bg').trim();
+  return { ...palette, background: /^#[0-9a-f]{6}$/i.test(css) ? css : palette.background };
 }
 
 /* ---- readability pass for the light-background themes ----
@@ -127,28 +135,12 @@ function glassTheme(palette, bgHex = palette.background) {
  * *with near-black text on it*. Hence the option, not a palette rewrite. */
 /* must match the overlay-off selector list in app.css */
 const LIGHT_THEMES = new Set(['light', 'blue', 'neoblue', 'purple']);
-/* What .pane-term resolves to for it — term-bg at 45% over the pane's 55%
- * surface over --bg (see app.css). xterm needs the real backdrop to measure
- * against, not the palette's nominal `background`, which the CSS covers up. */
-const LIGHT_PANE_BG = {
-  light: '#f8f9fb',
-  blue: '#f8f9fb',
-  neoblue: '#f8f9fb',
-  purple: '#f8f9fb',
-};
-/* and what app.css pins that same stack to while the overlay is off */
-const FLAT_PANE_BG = '#0b0d10';
-
-function hexRgb(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
 
 // WCAG AA for text. Left at 1 (xterm's "off") for the dark themes, whose
 // panes are the backdrop agents already assume.
 const MIN_CONTRAST = 4.5;
 
-let activeXtermTheme = glassTheme(XTERM_THEMES.dark);
+let activeXtermTheme = paneTheme(XTERM_THEMES.dark);
 let activeMinContrast = 1;
 
 // ↻ says something different depending on whether the agent is still running:
@@ -161,10 +153,10 @@ const DEFAULT_FONT_SIZE = 13;
 // across restarts so reopened agent panes come back at the same text size
 let activeFontSize = Number(localStorage.getItem('swarmeye.paneFontSize')) || DEFAULT_FONT_SIZE;
 
-// Windows starts a step heavier: DirectWrite rasterizes stems lighter than
+// Windows starts two steps heavier: DirectWrite rasterizes stems lighter than
 // macOS's Skia/CoreText, so the same 400 that looks right on a Mac reads thin
 // and washed out there. Still just a default — the Options knob overrides it.
-const DEFAULT_FONT_WEIGHT = window.swarm.isMac ? 400 : 500;
+const DEFAULT_FONT_WEIGHT = window.swarm.isMac ? 400 : 600;
 // "Agent pane text weight" option in ⌨ Options — the light themes draw dark
 // text on a near-white pane, which reads thinner than the dark themes'
 // light-on-dark, so the weight is a knob rather than a constant. Capped at 600
@@ -806,7 +798,8 @@ class Pane {
       theme: activeXtermTheme,
       // per-cell readability on the light themes — see the pass above
       minimumContrastRatio: activeMinContrast,
-      allowTransparency: true, // glass panes: the canvas bg is transparent, CSS tints it
+      // opaque, so the glyph atlas gets subpixel antialiasing — see paneTheme
+      allowTransparency: false,
       fontFamily: "'JetBrains Mono', monospace",
       fontSize: activeFontSize,
       fontWeight: activeFontWeight,
@@ -2031,20 +2024,14 @@ class Pane {
   }
 }
 
-/* app.js calls this on theme switch; new panes pick it up via the constructor,
- * existing terminals are restyled by the caller with the returned palette.
- * `overlayOn` is the "Theme background overlay" option — with it off the panes
- * are dark whatever the theme, which flips the backdrop the light themes'
- * palettes have to read against (see the readability pass above). */
-Pane.setXtermTheme = (name, overlayOn = true) => {
+/* app.js calls this on theme switch — and on a "Theme background overlay"
+ * flip, after setting the attribute, since that changes --term-bg and hence
+ * the backdrop paneTheme reads. New panes pick the result up via the
+ * constructor; existing terminals are restyled by the caller. */
+Pane.setXtermTheme = (name) => {
   const base = XTERM_THEMES[name] || XTERM_THEMES.dark;
-  if (!LIGHT_THEMES.has(name)) {
-    activeXtermTheme = glassTheme(base);
-    activeMinContrast = 1;
-    return activeXtermTheme;
-  }
-  activeXtermTheme = glassTheme(base, overlayOn ? LIGHT_PANE_BG[name] : FLAT_PANE_BG);
-  activeMinContrast = MIN_CONTRAST;
+  activeXtermTheme = paneTheme(base);
+  activeMinContrast = LIGHT_THEMES.has(name) ? MIN_CONTRAST : 1;
   return activeXtermTheme;
 };
 /* the caller pushes this to already-open panes alongside the palette */

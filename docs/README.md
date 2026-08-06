@@ -402,6 +402,7 @@ The panel is grouped into five collapsible sections — **Appearance**, **Agents
 | **Menu bar size** | 100% | Scales the top bar and icon rail, 70–160%. |
 | **Task board, Skills & Options text size** | 100% | Scales the board, archive, Skills screen and this panel, 70–160%. |
 | **Agent pane text size** | 13px | Default terminal text size, 8–24px. Shared with the per-pane `−`/`+` buttons and `Ctrl +`/`−`, so changing it here live-updates every open pane. |
+| **Agent pane text weight** | Semibold on Windows, Normal on macOS | Stroke weight of the terminal text — Light, Normal, Medium or Semibold. The default differs per platform because DirectWrite lays down lighter stems than macOS's CoreText, so the weight that looks right on a Mac reads thin on Windows. Live-updates every open pane. |
 | **Max simultaneous agents** | 10 | Cap on running agents — raise it as high as you want, there is no upper limit. The task scheduler respects it too. |
 | **Auto-start usage limit** | 85% | The ceiling an **auto** task waits for, on the 5-hour session usage window. 1–100%. |
 | **Allow auto mode (bypass permissions)** | off | Launches agents with `--allow-dangerously-skip-permissions` so `auto` becomes selectable in the mode cycle — *without* starting them in bypass mode. Also auto-accepts the one-time "Do you trust the files in this folder?" and "Running in Bypass Permissions mode" dialogs, since neither is covered by the flag itself. Picking `auto` as the default permission below turns this on automatically, as it's a hard prerequisite. |

@@ -818,17 +818,19 @@ const applyAgentPadding = boolOption('agent-padding-toggle', 'agentPadding', tru
   gridWrapEl.classList.toggle('no-pane-gap', !on);
 });
 
-/* "Theme background overlay" state — read before applyTheme below, which
- * needs it: with the overlay off the panes are dark whatever the theme, and
- * the light themes' terminal palettes are built against that backdrop */
-let themeOverlayOn = localStorage.getItem('swarmeye.themeOverlay') !== '0';
+/* "Theme background overlay" state — applied before applyTheme below, which
+ * needs it: with the overlay off --term-bg is pinned dark whatever the theme,
+ * and that is the backdrop the terminal palette is built against. The option
+ * itself is wired up further down and re-applies the same attribute. */
+document.documentElement.dataset.themeOverlay =
+  localStorage.getItem('swarmeye.themeOverlay') === '0' ? 'off' : 'on';
 
 /* colour theme — swatches in the ⌨ popover; persisted locally */
 const themeDots = document.querySelectorAll('#theme-opts .theme-dot');
 function applyTheme(name) {
   document.documentElement.dataset.theme = name;
   localStorage.setItem('swarmeye.theme', name);
-  const xt = Pane.setXtermTheme(name, themeOverlayOn);
+  const xt = Pane.setXtermTheme(name);
   const minContrast = Pane.getMinContrast();
   for (const p of state.panes.values()) {
     p.term.options.theme = xt;
@@ -847,7 +849,6 @@ applyTheme([...themeDots].some((d) => d.dataset.theme === savedTheme) ? savedThe
  * panes, terminals) to the default dark shades, leaving only the theme's
  * colours — borders, text, accents, terminal ramp — themed. See app.css. */
 const applyThemeOverlay = boolOption('theme-overlay-toggle', 'themeOverlay', true, (on) => {
-  themeOverlayOn = on;
   document.documentElement.dataset.themeOverlay = on ? 'on' : 'off';
   applyTheme(document.documentElement.dataset.theme); // terminal palette follows the backdrop
 });
