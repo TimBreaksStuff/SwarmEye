@@ -121,7 +121,7 @@ That is as fine-grained as it can be — a subagent runs in its own context and 
 
 Picking **plan** in the pane header's mode dropdown stops an agent editing mid-run, without restarting it.
 
-That is the same `Shift+Tab` cycle the dropdown drives for every other mode, verified against Claude's footer, and plan mode is a rule the agent cannot talk itself out of. What is different about `plan` is the fallback: when the switch cannot be made (a dialog is up, or the agent is mid-turn), SwarmEye sends the agent a plain-English request to stop editing instead, and the dropdown then reads **`plan (asked)`** in amber rather than claiming a mode it did not get — a request, not a rule; the agent can still write. Picking any other mode lifts it, in words if that is how it was asked.
+That is the same `Shift+Tab` cycle the dropdown drives for every other mode, verified against Claude's footer, and plan mode is a rule the agent cannot talk itself out of. What is different about `plan` is the fallback: when the switch cannot be made (a dialog is up, or the agent is mid-turn), SwarmEye sends the agent a plain-English request to stop editing instead, and the dropdown then reads **`plan (asked)`** in amber rather than claiming a mode it did not get — a request, not a rule; the agent can still write. Picking any other mode lifts it, in words if that is how it was asked — and so does moving the mode inside the agent with `Shift+Tab`, since Claude's footer is then the newer answer: reaching plan mode by hand turns the request into the rule it asked for, anything else takes it back.
 
 This used to be a separate `read-only` chip beside the dropdown. Two controls set one state and could disagree — the dropdown re-reads Claude's footer every scan, the chip held what you asked for — so the fallback moved into the dropdown and the chip went.
 
@@ -499,7 +499,7 @@ The panel is grouped into five collapsible sections — **Appearance**, **Agents
 | Option | Default | What it does |
 |---|---|---|
 | **SwarmEye version** | — | The running version, and a **Check** button that asks GitHub for the latest release right away instead of waiting for the six-hourly background check. When a newer release exists, the row grows a **Download** button (then **Restart & Update**) and a matching pill appears in the top bar. A check that fails says why — *no release published on GitHub yet*, a rate-limit status, or the missing per-platform asset — rather than falling back to "up to date". Downloading is only possible from a packaged build; running from source it says so immediately and links the release page. |
-| **Small left menu** | off | Collapses the icon rail to 57px icons-only; hovering previews the expanded layout as an overlay without reflowing the grid. |
+| **Small left menu** | off | Collapses the icon rail to 57px icons-only; hovering previews the expanded layout as an overlay without reflowing the grid. The rail's right border is the same switch: drag it left or right — or click it — to move between the small and big menu, and this checkbox follows. |
 | **Menu bar size** | 100% | Scales the top bar and icon rail, 70–160%. |
 | **Task board, Skills & Options text size** | 100% | Scales the board, archive, Skills screen and this panel, 70–160%. |
 | **Agent pane text size** | 13px | Default terminal text size, 8–24px. Shared with the per-pane `−`/`+` buttons and `Ctrl +`/`−`, so changing it here live-updates every open pane. |

@@ -2312,3 +2312,30 @@
   font-size: 10px;
   letter-spacing: 0.04em;
 }
+
+/* the rail's right border is a drag handle (railgrip.js): pull it left or right
+   to switch the menu between small and big. It sits on #leftbar (the placeholder
+   that reserves the width), not on the surface, so it stays put while the
+   workspace list scrolls behind it. */
+.rail-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 7px;
+  z-index: 3;
+  cursor: col-resize;
+}
+.rail-grip::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.rail-grip:hover::after,
+#leftbar.rail-dragging .rail-grip::after { opacity: 0.55; }
+/* the 0.16s width animation lags the pointer mid-drag */
+#leftbar.rail-dragging,
+#leftbar.rail-dragging #leftbar-surface { transition: none; }

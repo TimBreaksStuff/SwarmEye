@@ -1817,17 +1817,10 @@ class Pane {
   }
 
   /* The dropdown as the user drives it — setMode is the mechanism, this is the
-   * intent, and `plan` is the one mode with a fallback behind it.
-   *
-   * "Stop editing" used to be its own chip beside this select, which meant two
-   * controls for one state that could disagree: the select is re-read off
-   * claude's footer every buffer scan, the chip held what the user asked for.
-   * The fallback is what the chip was worth keeping for — setMode verifies
-   * itself against the footer and gives up when a dialog is up or the agent is
-   * mid-turn, and "stop editing" is worth having anyway then, as a plain
-   * request down the same two-write channel the message box uses. It is not a
-   * rule the agent has to obey, so the select says `plan (asked)` rather than
-   * claiming plan mode it did not get. */
+   * intent, and `plan` is the one mode with a fallback: when the switch cannot
+   * be made (a dialog is up, the agent is mid-turn) the same thing is asked for
+   * in words, which the agent can ignore — so the select says `plan (asked)`
+   * rather than claiming plan mode it did not get. */
   async pickMode(target) {
     const wasAsked = this.planAsked;
     this.planAsked = false;
@@ -1894,11 +1887,16 @@ class Pane {
   /* Runs on every buffer scan, so the label and tooltip only move when the
    * asked state actually flips. While a request is standing the select holds
    * `plan` rather than following the footer, which reads `default` — the footer
-   * is right about the permission mode and wrong about what was asked for. */
+   * is right about the permission mode and wrong about what was asked for.
+   * Until the user moves the mode in the agent itself: plan reached by hand
+   * turns the request into the rule it asked for, any other mode takes it
+   * back, and either way the footer is now the newer answer. */
   syncMode(lines) {
     if (this.exited || this.modeBusy) return;
+    const mode = this.detectMode(lines);
+    if (this.planAsked && mode !== 'default') this.planAsked = false;
     const asked = this.planAsked;
-    this.modeSel.value = asked ? 'plan' : this.detectMode(lines);
+    this.modeSel.value = asked ? 'plan' : mode;
     if (asked === this.modeAskedShown) return;
     this.modeAskedShown = asked;
     this.modeSel.classList.toggle('asked', asked);
