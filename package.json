@@ -1,7 +1,7 @@
 {
   "name": "swarmeye",
   "productName": "SwarmEye",
-  "version": "1.60.11",
+  "version": "1.60.12",
   "description": "Parallel Claude Code session cockpit",
   "main": "main/main.js",
   "private": true,
@@ -14,8 +14,6 @@
     "setup:stt:win": "wsl.exe -e bash scripts/setup-stt.sh",
     "setup:tts": "bash scripts/setup-tts.sh",
     "setup:tts:win": "wsl.exe -e bash scripts/setup-tts.sh",
-    "publish:github": "bash scripts/publish-github.sh",
-    "publish:github:win": "wsl.exe -e bash scripts/publish-github.sh",
     "publish:release": "bash scripts/publish-release.sh",
     "publish:release:win": "wsl.exe -e bash scripts/publish-release.sh"
   },
