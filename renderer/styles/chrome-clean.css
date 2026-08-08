@@ -475,15 +475,23 @@
   border-radius: 3px;
   box-shadow: none;
 }
+/* the counts sit beside the title while they fit and drop onto their own full
+ * width line when they don't — beside it they were being ellipsised from
+ * "2 idle" the moment a "1 waiting" joined them */
+#leftbar.expanded .swarm-map-head,
+#leftbar.hover-expanded .swarm-map-head {
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
 #leftbar.expanded .swarm-map-footer,
 #leftbar.hover-expanded .swarm-map-footer {
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--muted);
   text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 0 0 auto;
+  max-width: 100%;
+  line-height: 1.35;
 }
 
 /* --- collapsed rail: the same flat language as the expanded rows --- */
@@ -615,7 +623,6 @@
 .pane-effort,
 .pane-llm,
 .pane-git,
-.pane-collision,
 .pane-badge {
   font-family: var(--font-ui);
   font-size: 11px;
@@ -734,13 +741,21 @@
    outside click, and a full-screen backdrop would contain every click there
    is. Opaque surface, 12px radius, one border — the language #coord-modal-box
    and the four views settled on, not msg-pop's older glass. */
+/* One grip, on the box: the textarea used to carry its own, which left two of
+   them stacked in the same corner once the box itself could be dragged. */
 #notes-pop {
   position: fixed;
   z-index: 60;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
   width: min(620px, 90vw);
+  height: min(460px, 80vh);
+  min-width: 380px;
+  min-height: 260px;
+  max-width: 96vw;
+  max-height: calc(100vh - 120px); /* dragged to the top, still clear of the top bar */
+  overflow: hidden; /* `resize` does nothing while overflow is visible */
+  resize: both;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -758,6 +773,7 @@
   justify-content: space-between;
   gap: 14px;
 }
+.notes-foot { padding-right: 14px; } /* clear of the resize grip in the corner */
 #notes-text {
   font-family: var(--font-mono);
   font-size: 12.5px;
@@ -767,8 +783,9 @@
   border: 1px solid var(--border2);
   border-radius: 8px;
   padding: 10px 12px;
-  resize: vertical;
-  min-height: 160px;
+  resize: none; /* the box has the grip now */
+  flex: 1;
+  min-height: 0;
 }
 #notes-text:focus-visible { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
 .notes-hint {
@@ -812,14 +829,6 @@
   border-color: var(--accent);
 }
 
-/* two agents in one file: a warning about the swarm, not a fault in this pane,
-   so amber like the dirty branch chip rather than the badge's red */
-.pane-collision {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
-  background: color-mix(in srgb, var(--amber) 8%, transparent);
-  white-space: nowrap;
-}
 /* the permission mode is a control, not a chip, but it reads on the same line */
 .pane-mode {
   height: 22px;
@@ -830,6 +839,14 @@
   text-transform: none;
   color: var(--text2);
   border-color: var(--border2);
+}
+/* a standing "stop editing" request that plan mode itself never took — amber
+   rather than the plain control colour, because it is the one mode reading the
+   footer would not tell you about */
+.pane-mode.asked {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
 }
 /* the hook status says what the agent is doing — sentences, not shouting */
 .pane-status {
@@ -1689,3 +1706,609 @@
 .rail-flyout-pin svg,
 .rail-flyout-notes svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
 .rail-tile .ws-pin svg { width: 9px; height: 9px; display: block; }
+
+/* ---- isolated agents: the flyout toggle and the review popover ---- */
+
+/* two more flyout buttons beside notes/pin/✕, same size and the same "on"
+   treatment the pin already uses for a persisted workspace flag */
+.rail-flyout-isolate,
+.rail-flyout-review {
+  background: none;
+  border: none;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--text2);
+  opacity: 0.55;
+}
+.rail-flyout-isolate:hover,
+.rail-flyout-review:hover { opacity: 1; background: var(--hover); }
+.rail-flyout-isolate.on { opacity: 1; color: var(--accent-text); }
+.rail-flyout-isolate svg,
+.rail-flyout-review svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
+
+/* the git chip's popover gains one action above the branch list */
+.branch-menu .branch-review {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--accent-text);
+  font: inherit;
+  text-align: left;
+  padding: 5px 9px;
+  margin: 4px 2px 2px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.branch-menu .branch-review:hover { background: var(--pill-hover); border-color: var(--border-hover); }
+
+/* The review popover. Sized like a workbench rather than a menu — a patch is
+   the widest thing the app shows — and floating over whatever view is up. */
+#diff-pop {
+  position: fixed;
+  z-index: 60;
+  top: 50%;
+  left: 50%;
+  width: min(1100px, 94vw);
+  height: min(760px, 86vh);
+  min-width: 520px;
+  min-height: 360px;
+  max-width: 96vw;
+  max-height: calc(100vh - 120px); /* dragged to the top, still clear of the top bar */
+  overflow: hidden; /* `resize` does nothing while overflow is visible */
+  resize: both;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+#diff-pop[hidden] { display: none; }
+.diff-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.diff-title { flex: 1; }
+.diff-branch {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-text);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+.diff-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+.diff-side {
+  width: 240px;
+  flex: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.diff-side-head {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted2);
+  margin-top: 6px;
+}
+/* buttons are inline by default, so the list has to say it is a column */
+.diff-files,
+.diff-worktrees {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.diff-file {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: left;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl; /* a long path is worth reading from its filename end */
+}
+.diff-file:hover { background: var(--hover); color: var(--text); }
+.diff-file.current { background: var(--hover); color: var(--accent-text); }
+.diff-file.untracked { color: var(--muted); font-style: italic; }
+.diff-wt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 6px;
+}
+.diff-wt.current { background: var(--hover); }
+.diff-wt-name {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: left;
+  padding: 2px 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.diff-wt-name:hover { color: var(--accent-text); }
+.diff-wt-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted2);
+}
+.diff-wt-x {
+  background: none;
+  border: none;
+  color: var(--muted2);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 5px;
+}
+.diff-wt-x:hover { color: var(--err); background: var(--hover); }
+.diff-wt-x.armed { color: var(--err); border: 1px solid var(--err); }
+.diff-patch {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.diff-line {
+  white-space: pre;
+  padding: 0 12px;
+  color: var(--text2);
+}
+.diff-line.add { color: var(--diff-add); background: var(--diff-add-bg); }
+.diff-line.del { color: var(--diff-del); background: var(--diff-del-bg); }
+.diff-line.hunk { color: var(--diff-hunk); }
+.diff-line.meta { color: var(--muted2); }
+.diff-empty {
+  padding: 10px 12px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted);
+}
+.diff-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 14px; /* clear of the resize grip in the corner */
+}
+.diff-note {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted2);
+}
+.diff-note.warn { color: var(--amber); }
+.diff-msg {
+  width: 320px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+.diff-msg:focus-visible { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
+
+/* --- workspace identity colours on a light chassis ---
+ * `WORKSPACE_COLORS` in main/config.js was picked against the dark page, and
+ * that is where it works: on Light the swarm map's `#d6ff4b` node, links, hub
+ * disc and hub label are drawn on `#eef0f3` and none of them are visible. The
+ * hue *is* the identity, so the hue and chroma are kept and only the lightness
+ * is pinned dark enough to read.
+ *
+ * Every element painted in a workspace's colour carries the raw value as `--ws`
+ * and paints with `var(--ws-ink)`. Keyed off the chassis rather than the theme
+ * name, since "Theme background overlay: off" keeps a light theme on the dark
+ * chassis, where the raw colour is already right — and done in CSS rather than
+ * in the renderer so a theme flip repaints without a render pass. */
+.ws-tint {
+  --ws-ink: var(--ws);
+  --ws-op-boost: 1;
+  /* the hub disc's four alphas, in app.css's own order: the wash, its edge and
+   * the two spinning rings */
+  --ws-disc: 20%;
+  --ws-edge: 40%;
+  --ws-ring: 50%;
+  --ws-ring2: 25%;
+}
+:root[data-theme-overlay="on"]:is([data-theme="light"], [data-theme="blue"], [data-theme="neoblue"], [data-theme="purple"]) .ws-tint {
+  --ws-ink: oklch(from var(--ws) 0.47 c h);
+  /* the map's links carry their agent's status as an alpha ramp (0.1 dead to
+   * 0.42 busy), picked for a bright line on black. The same alpha on a dark
+   * line over a white page is a ghost, so the whole ramp lifts together and
+   * the gradation survives. */
+  --ws-op-boost: 2.2;
+  /* same story on the hub: the strokes firm up, and the wash goes the other way
+   * so the count sitting on it keeps its contrast */
+  --ws-disc: 12%;
+  --ws-edge: 70%;
+  --ws-ring: 75%;
+  --ws-ring2: 45%;
+}
+
+/* the paint sites. `stroke`/`background`/`color` as properties, not attributes
+ * or inline styles, so the cascade above is what decides them. */
+#sv-links line.ws-tint {
+  stroke: var(--ws-ink);
+  opacity: calc(var(--ws-op) * var(--ws-op-boost));
+}
+.sv-hub.ws-tint {
+  color: var(--ws-ink);
+  background: radial-gradient(circle, color-mix(in srgb, currentColor var(--ws-disc), transparent), transparent 70%);
+  border-color: color-mix(in srgb, currentColor var(--ws-edge), transparent);
+}
+.sv-hub.ws-tint .sv-hub-ring { border-color: color-mix(in srgb, currentColor var(--ws-ring), transparent); }
+.sv-hub.ws-tint .sv-hub-ring2 { border-color: color-mix(in srgb, currentColor var(--ws-ring2), transparent); }
+.sv-node.ws-tint { --sv-ws: var(--ws-ink); }
+.sv-row-dot.ws-tint,
+.sv-term-dot.ws-tint,
+.ws-color-dot.ws-tint,
+.ws-swatch.ws-tint { background: var(--ws-ink); }
+.swarm-map-slot.ws-tint { border-color: var(--ws-ink); }
+
+/* --- an agent that wants you: the pane frame, not a 10px dot --- */
+/* At eight panes a status dot is invisible in peripheral vision, which is the
+   only vision spare while reading another pane. The frame takes the theme's own
+   accent — the border every other lit control in the app uses — and the signal
+   is the glow around it rather than a second colour: an amber-mixed border read
+   brown against the surface on every theme. Nothing moves when it appears (the
+   border width is unchanged), and it goes the moment the pane is looked at
+   (clearAttention). */
+.pane.attn {
+  border-color: var(--accent);
+  box-shadow: 0 0 18px 2px var(--accent-glow);
+}
+.pane.attn.focused {
+  box-shadow: 0 0 18px 2px var(--accent-glow);
+}
+
+/* how long it has been blocked. Amber — "this needs a human" — and clickable,
+   since the answer to reading it is almost always to go there. */
+.pane-wait {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  border-radius: 6px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pane-wait:hover { background: color-mix(in srgb, var(--amber) 16%, transparent); }
+
+/* the status line now opens the activity popover, so it has to look touchable */
+.pane-status { cursor: pointer; }
+.pane-status:hover { color: var(--text); }
+
+/* --- the activity popover --- */
+/* Size is the user's: drag the corner. Position is set in JS rather than by a
+   centring transform, because a box centred that way grows in both directions
+   under the resize handle and the cursor slides off it. */
+#activity-pop {
+  position: fixed;
+  z-index: 60;
+  top: 50%;
+  left: 50%;
+  width: min(720px, 92vw);
+  height: min(620px, 84vh);
+  min-width: 380px;
+  min-height: 240px;
+  max-width: 96vw;
+  max-height: calc(100vh - 120px); /* dragged to the top, still clear of the top bar */
+  overflow: hidden; /* `resize` does nothing while overflow is visible */
+  resize: both;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+#activity-pop[hidden] { display: none; }
+.activity-head { display: flex; align-items: center; gap: 10px; }
+.activity-title { flex: 1; }
+.activity-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+}
+.activity-calls {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.activity-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+}
+.activity-row:last-child { border-bottom: 0; }
+.activity-tool { flex: 0 0 96px; color: var(--text); }
+.activity-target {
+  flex: 1;
+  min-width: 0;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.activity-ms { flex: 0 0 auto; color: var(--muted); }
+/* a failed call is the one row worth finding in a list of sixty */
+.activity-row.failed { background: var(--diff-del-bg); }
+.activity-row.failed .activity-tool { color: var(--diff-del); }
+/* still running: the accent, the same signal the busy equalizer carries */
+.activity-row.live .activity-tool { color: var(--accent-text); }
+.activity-files {
+  /* shrink to the lists rather than reserving a third of the popover: two
+     three-line columns under a full-height call list is mostly empty box */
+  flex: 0 1 auto;
+  max-height: 34%;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+}
+.activity-col {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.activity-col-head {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.activity-file {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.activity-empty {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 10px;
+}
+.activity-note {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted);
+  padding-right: 14px; /* clear of the resize grip in the corner */
+}
+/* a call the turn ended on: never ran, so it is neither a pass nor a failure */
+.activity-row.cancelled .activity-tool,
+.activity-row.cancelled .activity-target { color: var(--muted); }
+
+/* --- subagents, and asking an agent to stop editing --- */
+/* a Task subagent is invisible in a terminal — its whole run is one line of its
+   parent's output. The count is the signal; the popover names them. */
+.pane-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--tag);
+  border: 1px solid color-mix(in srgb, var(--tag) 35%, var(--border2));
+  border-radius: 6px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pane-sub:hover { background: color-mix(in srgb, var(--tag) 12%, transparent); }
+
+.activity-subs {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px 4px;
+}
+.activity-subs[hidden] { display: none; }
+
+/* --- the role editor --- */
+#roles-pop {
+  position: fixed;
+  z-index: 60;
+  top: 50%;
+  left: 50%;
+  width: min(680px, 92vw);
+  height: min(660px, 86vh);
+  min-width: 420px;
+  min-height: 320px;
+  max-width: 96vw;
+  max-height: calc(100vh - 120px); /* dragged to the top, still clear of the top bar */
+  overflow: hidden; /* `resize` does nothing while overflow is visible */
+  resize: both;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+#roles-pop[hidden] { display: none; }
+.roles-head { display: flex; align-items: center; gap: 10px; }
+.roles-head .kbd-title { flex: 1; }
+.roles-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.roles-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.roles-card-top { display: flex; align-items: center; gap: 8px; }
+.roles-label {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 0 8px;
+}
+.roles-model {
+  height: 26px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text2);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+}
+.roles-del {
+  width: 26px;
+  height: 26px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.roles-del:hover { color: var(--diff-del); border-color: color-mix(in srgb, var(--diff-del) 45%, var(--border2)); }
+.roles-del.armed { color: var(--bg); background: var(--diff-del); border-color: var(--diff-del); }
+.roles-prompt {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.roles-label:focus-visible,
+.roles-prompt:focus-visible,
+.roles-model:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.roles-warn {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--amber);
+  min-height: 14px;
+}
+.roles-foot { display: flex; align-items: center; gap: 10px; padding-right: 14px; } /* clear of the resize grip */
+.roles-note {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted);
+}
+.roles-empty {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted);
+  padding: 12px;
+}
+/* the menu row that opens all this is an action, not another agent to start */
+.branch-item-quiet { color: var(--muted); }
+
+/* --- the message box's @ file picker --- */
+.msg-mentions {
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.msg-mentions[hidden] { display: none; }
+.msg-mention {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 5px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-mention:last-child { border-bottom: 0; }
+.msg-mention:hover { background: var(--hover); color: var(--text); }
+.msg-mention.sel { background: var(--hover); color: var(--accent-text); }
+
+/* the tool trail is the way into the activity popover, so it reads as a
+   target — the header status chip is the same idea one row up */
+.pane-usage-tools { cursor: pointer; }
+.pane-usage-tools:hover { color: var(--text); }
+
+/* the History row's second export, beside the ⤓ */
+.hist-html {
+  width: auto;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}

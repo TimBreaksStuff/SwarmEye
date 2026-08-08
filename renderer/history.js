@@ -23,7 +23,9 @@ const History = (() => {
   const headTitleEl = document.getElementById('history-list-title');
   const headCountEl = document.getElementById('history-list-count');
   const deleteAllBtn = document.getElementById('history-delete-all');
+  const MODAL_SIZE_KEY = 'swarmeye.histSize'; // drag the corner; kept between opens
   const modalEl = document.getElementById('hist-modal');
+  const modalBox = document.getElementById('hist-modal-box');
   const modalTitle = document.getElementById('hist-modal-title');
   const modalMeta = document.getElementById('hist-modal-meta');
   const modalBody = document.getElementById('hist-modal-body');
@@ -94,6 +96,7 @@ const History = (() => {
       s.size ? fmtSize(s.size) : null, s.id].filter(Boolean).join(' · ');
     modalBody.textContent = 'reading transcript…';
     modalEl.hidden = false;
+    Resizable.place(modalBox, MODAL_SIZE_KEY);
     modalBody.scrollTop = 0;
     const turns = await window.swarm.readHistory(s.workspaceId, s.id);
     if (openSession !== s) return; // another row was clicked while we read
@@ -105,6 +108,7 @@ const History = (() => {
   }
 
   function closeModal() {
+    if (!modalEl.hidden) Resizable.remember(modalBox, MODAL_SIZE_KEY);
     modalEl.hidden = true;
     openSession = null;
     openTurns = null;
@@ -117,14 +121,61 @@ const History = (() => {
       + `${t.at ? ' · ' + new Date(t.at).toLocaleString() : ''} ─────\n${t.text}`).join('\n');
   }
 
-  /* Save the conversation as text, through the same save dialog the pane's
-   * own transcript export uses. */
-  async function download(s, btn) {
+  const esc = (t) => String(t == null ? '' : t)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  /* The same conversation as a page you can send someone: one self-contained
+   * file, no scripts, no fonts or styles fetched from anywhere. Colours are
+   * literals rather than the app's tokens — the file has to read correctly
+   * outside SwarmEye, which is the whole point of exporting it — and it carries
+   * a dark and a light palette so it matches whatever the reader is using. */
+  function transcriptHtml(s, turns) {
+    const title = esc(s.preview || 'conversation ' + s.id.slice(0, 8));
+    const when = new Date(s.modifiedAt).toLocaleString();
+    const rows = turns.map((t) => `<article class="turn ${t.role === 'user' ? 'user' : 'assistant'}">`
+      + `<header>${esc(t.role)}${t.sub ? ' <span class="sub">subagent</span>' : ''}`
+      + `${t.at ? ' · <time>' + esc(new Date(t.at).toLocaleString()) + '</time>' : ''}</header>`
+      + `<pre>${esc(t.text)}</pre></article>`).join('\n');
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title}</title>
+<style>
+  :root { color-scheme: light dark;
+    --bg: #ffffff; --fg: #16181d; --muted: #5b616b; --line: #e2e5ea; --card: #f7f8fa; --user: #2f6feb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d0f12; --fg: #e8eaed; --muted: #9aa0a8; --line: #22252b; --card: #14171c; --user: #7aa2f7; }
+  }
+  body { margin: 0; padding: 32px 20px; background: var(--bg); color: var(--fg);
+    font: 15px/1.55 system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .turn { border: 1px solid var(--line); border-radius: 10px; margin: 0 0 14px; overflow: hidden; }
+  .turn header { padding: 7px 12px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--muted); background: var(--card); border-bottom: 1px solid var(--line); }
+  .turn.user header { color: var(--user); }
+  .sub { text-transform: none; letter-spacing: 0; }
+  pre { margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style></head><body><main>
+<h1>${title}</h1>
+<div class="meta">session ${esc(s.id)} · ${esc(when)} · exported from SwarmEye</div>
+${rows}
+</main></body></html>`;
+  }
+
+  /* Save the conversation, through the same save dialog the pane's own
+   * transcript export uses — as plain text, or as a page. */
+  async function download(s, btn, format) {
     btn.disabled = true;
     try {
       const turns = (openSession === s && openTurns) || await window.swarm.readHistory(s.workspaceId, s.id);
       if (!turns || !turns.length) { toast('could not read that transcript'); return; }
-      const res = await window.swarm.exportSession('conversation ' + s.id.slice(0, 8), transcriptText(s, turns));
+      const name = 'conversation ' + s.id.slice(0, 8);
+      const res = format === 'html'
+        ? await window.swarm.exportSession(name, transcriptHtml(s, turns), 'html')
+        : await window.swarm.exportSession(name, transcriptText(s, turns));
       if (res && res.ok) toast('saved to ' + res.path);
       else if (res && res.reason) toast('save failed: ' + res.reason);
     } finally {
@@ -176,12 +227,23 @@ const History = (() => {
     dl.dataset.tip = 'Save this conversation as a text file';
     dl.addEventListener('click', (e) => {
       e.stopPropagation();
-      download(s, dl);
+      download(s, dl, 'txt');
+    });
+
+    // the same conversation as a page: one self-contained file that reads the
+    // way the modal does, for anyone who is not going to open SwarmEye
+    const dlHtml = document.createElement('button');
+    dlHtml.className = 'hist-copy hist-html';
+    dlHtml.textContent = 'HTML';
+    dlHtml.dataset.tip = 'Save this conversation as a self-contained HTML page';
+    dlHtml.addEventListener('click', (e) => {
+      e.stopPropagation();
+      download(s, dlHtml, 'html');
     });
 
     const actions = document.createElement('div');
     actions.className = 'hist-actions';
-    actions.append(copy, dl, resume);
+    actions.append(copy, dl, dlHtml, resume);
 
     row.append(body, actions);
     return row;

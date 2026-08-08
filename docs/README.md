@@ -9,6 +9,7 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
 - [Key features](#key-features)
   - [Command palette](#command-palette-ctrlk)
   - [Cost & context panel](#cost--context-panel) · [Swarm view](#swarm-view) · [Swarm timeline](#swarm-timeline) · [History](#history) · [Messages between agents](#messages-between-agents) · [Preview dock](#preview-dock)
+- [Isolated agents](#isolated-agents) — [Review, commit, merge](#review-commit-merge)
 - [The task board](#the-task-board)
 - [Skills](#skills)
 - [Voice dictation](#voice-dictation)
@@ -52,14 +53,22 @@ The rail comes **Expanded** (full workspace names and tile labels) or **Collapse
 | **Scout** | Haiku | Locate things and report where they are: paths with line numbers, call sites. Read only, keep it short. |
 | **Planner** | Opus | Turn the request into an ordered plan: files touched, steps, risks. Read only, don't write the code. |
 
-A role is launched as `--append-system-prompt`, so it costs no turn and never lands in the conversation as a message; its model tier is a default that the role picks *instead of* the Options default. The pane header wears the role as a chip, `→`/`↓` splits inherit it, and `↻` restart re-applies it (the system prompt belongs to the process, not to the resumed conversation). `Ctrl+N` always spawns a plain agent. The table lives in `main/sessions.js`; the renderer only ever sees the labels.
+A role is launched as `--append-system-prompt`, so it costs no turn and never lands in the conversation as a message; its model tier is a default that the role picks *instead of* the Options default. The pane header wears the role as a chip, `→`/`↓` splits inherit it, and `↻` restart re-applies it (the system prompt belongs to the process, not to the resumed conversation). `Ctrl+N` always spawns a plain agent.
+
+**Those four are a starting point, not the table.** `+ Agent → Edit roles…` opens the editor: reword a preset for your codebase, change the tier it launches on, add your own, or delete one. The list is stored in `config.json` and seeded from the four above the first time it is read, so an existing install keeps exactly what it had.
+
+- A role needs a name and a prompt; one missing either is dropped on save. Delete takes two clicks, and saving an empty list restores the four built-ins rather than leaving the app with no roles.
+- The editor's bottom-right corner drags, so a long prompt gets more than two cards' worth of window; the size is kept for next time.
+- The name is only a label — the key a saved task refers to is derived once, when the role is created, and does not change when you rename it.
+- **Quotes, `$`, backticks and backslashes are stripped from a prompt on save**, and the editor counts them for you as you type. The prompt is passed to the agent inside a single-quoted shell command; a stray apostrophe there would break the launch rather than the sentence.
+- Roles are read at launch, so editing one changes the agents you start next, not the ones already running.
 
 Each pane header carries:
 
 - **Status dot + live state** — see below.
 - **Mode dropdown** — `manual` (Claude asks before edits), `accept edits`, `plan`, `auto` (bypass permissions). Claude has no set-mode command for a running session, so SwarmEye reads the mode from Claude's own footer and taps `Shift+Tab` through the cycle until yours is active; it stays in sync if you switch modes by hand. `auto` requires the Options toggle below.
 - **Model chip** — which model the agent is actually replying with (`Sonnet 5`, `Opus 4.8`, …), read from the session transcript after each turn. A `/model` switch you run yourself shows up instantly.
-- **Git chip** — the folder's branch (`⎇ main`), amber with a dot when there are uncommitted changes. Refreshed every 15s; a folder that git can't answer for in time (an unreachable network share, a suspended drive) says so in the tooltip rather than claiming the tree is clean, and one slow workspace no longer holds up the others. The branch list is fetched at most once a minute per workspace, so repeated clicks don't queue up network round-trips. Click it and the popover opens with a **`git diff --stat` summary of the working tree** — staged and unstaged together, which is what "dirty" on the chip actually means — followed by a count of untracked files, which no diff reports. Under that is the branch list (local + remote, fetched fresh from the workspace's git remote): pick one to check it out, or `+ new branch…` to create one off the current HEAD; checkout errors (e.g. uncommitted changes in the way) show as a toast. The diff is read in parallel with the branch fetch, so it is up long before the network call finishes, and a long stat is elided in the middle with git's own "N files changed" line always kept.
+- **Git chip** — the folder's branch (`⎇ main`), amber with a dot when there are uncommitted changes. Refreshed every 15s; a folder that git can't answer for in time (an unreachable network share, a suspended drive) says so in the tooltip rather than claiming the tree is clean, and one slow workspace no longer holds up the others. The branch list is fetched at most once a minute per workspace, so repeated clicks don't queue up network round-trips. Click it and the popover opens with a **`git diff --stat` summary of the working tree** — staged and unstaged together, which is what "dirty" on the chip actually means — followed by a count of untracked files, which no diff reports. Under that is the branch list (local + remote, fetched fresh from the workspace's git remote): pick one to check it out, or `+ new branch…` to create one off the current HEAD; checkout errors (e.g. uncommitted changes in the way) show as a toast. The diff is read in parallel with the branch fetch, so it is up long before the network call finishes, and a long stat is elided in the middle with git's own "N files changed" line always kept. Above the branch list, `Review changes…` opens the full patch with commit and merge — see [Isolated agents](#isolated-agents). In an isolated workspace this chip reports the agent's *own* worktree branch rather than the workspace's.
 - **Buttons** — `↻` restart (on a running agent it arms first — click twice) · `⤓` export transcript · `⌕` in-pane search · mic (dictation) · `−`/`+` text size · `⛶` maximize · `→`/`↓` place a new agent beside/below (only with auto-organize off) · `✕` close (click twice while running).
 - **Quick-respond** — while a pane is waiting on a numbered permission prompt (Claude's `1. Yes` / `2. No` style), it grows `✓` approve and `✕` deny buttons right next to the status text — no need to click into the terminal. Shift-click `✓` prefers a "don't ask again" / "allow all" option over a plain yes, if the prompt offers one. The same two buttons show up on `waiting` entries in the notification bell and its docked panel, and on the swarm view's nodes, rows and preview cards. They appear only while a yes/no menu is genuinely on screen: an agent that is merely waiting for you to type something — the commonest kind of `waiting`, and the only kind there is in bypass-permissions mode — says so without offering buttons that have nothing to answer. If the prompt is answered elsewhere between the buttons being drawn and clicked, nothing is sent and a toast says so instead of guessing.
 **Opening a workspace with no agents in it** shows the **launch card** over a honeycomb field instead of an empty grid. Pick a swarm size on the tiles — 1, 2, 4, 6, 8, 10, 12 — and `Launch N agents` opens that many panes at once. Tiles are keyboard-first: Tab into the group, arrows move between the ones still selectable, and `Ctrl`/`⌘` plus a size picks it outright.
@@ -87,21 +96,48 @@ With no workspace selected the card is replaced by the old `No agents here_` hin
 
 Every agent SwarmEye spawns reports its real state through Claude Code's hook system, rather than SwarmEye guessing from output timing:
 
-- **Working** — the dot goes lime and the header names the tool in use (`VIBING...` for Bash, Edit, …) next to a pulsing equalizer.
-- **Waiting on you** — a permission prompt or a question makes the pane pulse amber and show the reason.
+- **Working** — the dot goes lime and the header reads `vibing...` next to a pulsing equalizer. Which tool is running and what it is on are in the activity popover, which the cost panel's tool trail opens.
+- **Waiting on you** — a permission prompt or a question rings the whole pane frame in the theme's accent with a soft glow, shows the reason, and puts the age of the wait beside it (`waiting 4m`).
 - **Done** — the pane shows `done` and flags attention.
 
 If the window isn't focused, the taskbar flashes (dock bounces on macOS) and the event lands in the notification bell. Clicking into a pane clears its attention state. Hovering the agent name or its status dot shows the task prompt that started it.
 
-### Collision guard
+### The attention queue (`Ctrl+.`)
 
-Running several agents in one repo, the collision that costs you is two of them editing the same file. SwarmEye watches the same hook stream it reads state from: when an agent is about to write a file another agent has written in the last **30 minutes**, both panes get an amber `⚠ <file>` chip, and its tooltip names the other agent — *"Roomba Prime has also edited /…/app.js recently"*.
+With several agents running, the work is answering whoever is blocked — and finding them meant scanning every pane for a dot that had changed colour. Two things fix that:
 
-- It fires from `PreToolUse`, which runs **before** the write lands, so the chip is up while the second edit is still being made rather than after both have hit the disk.
-- Only the four tools that change a file count: `Edit`, `Write`, `MultiEdit`, `NotebookEdit`. Two agents reading one file collide over nothing.
-- Both sides are flagged, each naming the other — a warning only the second agent's pane could see would be half a warning.
-- The chip clears itself about ten minutes after the last shared write, and is re-armed by each new one, so two agents genuinely working the same file keep it lit.
-- **Nothing is blocked and no lock is taken.** This is observability: it tells you who else is in the file and leaves the decision to you. If you want real isolation, give the agents separate worktrees.
+- A pane blocked on you carries **how long it has been blocked** (`waiting <1m`, `waiting 4m`, `waiting 1h 12m`). A 40-second block and a 40-minute one no longer look identical.
+- **`Ctrl+.`** focuses whoever has waited longest. Press it again for the next one down, and again to come back round. It crosses workspaces — the right workspace is selected on the way — and closes the board or swarm view first, so the agent is actually on screen. With nobody waiting it says so and changes nothing.
+
+The ring around a waiting pane replaces the old dot-only signal: a 10px dot is invisible in peripheral vision at eight panes, which is the only vision spare while reading another pane. It is the theme's accent plus a glow rather than a colour of its own, and it clears the moment you click into the pane.
+
+### Subagents
+
+Claude Code can spawn its own `Task` subagents, and in a terminal they are invisible: everything a subagent does scrolls past as one line of its parent's output. A pane running them now carries a `▸ n` chip counting the live ones, and the activity popover lists them by description with how long each took.
+
+That is as fine-grained as it can be — a subagent runs in its own context and fires no hooks of its own, so "it is still running" is the most that is knowable from here. Several subagents run in parallel, and each is matched to its own completion rather than to whichever finished first.
+
+### Asking an agent to stop editing
+
+Picking **plan** in the pane header's mode dropdown stops an agent editing mid-run, without restarting it.
+
+That is the same `Shift+Tab` cycle the dropdown drives for every other mode, verified against Claude's footer, and plan mode is a rule the agent cannot talk itself out of. What is different about `plan` is the fallback: when the switch cannot be made (a dialog is up, or the agent is mid-turn), SwarmEye sends the agent a plain-English request to stop editing instead, and the dropdown then reads **`plan (asked)`** in amber rather than claiming a mode it did not get — a request, not a rule; the agent can still write. Picking any other mode lifts it, in words if that is how it was asked.
+
+This used to be a separate `read-only` chip beside the dropdown. Two controls set one state and could disagree — the dropdown re-reads Claude's footer every scan, the chip held what you asked for — so the fallback moved into the dropdown and the chip went.
+
+Real per-tool enforcement (deny `Edit` outright for one agent) would have to be set at launch, since that is when an agent's settings are written.
+
+### What an agent has been doing
+
+Click the status text in any pane header — or the tool trail in the [cost & context panel](#cost--context-panel), under the model — for that agent's activity: every tool call it has made this session, newest first, with what the call was on, how long it took, and red if it failed. Under it, two lists — the files it has **read** and the files it has **written**.
+
+- Drag the popover's bottom-right corner to size it — a long `cd … && grep …` row needs the width, a busy agent the height. The size is remembered, and clamped back inside the window if you later make the window smaller. The same grip is on the review popover, the role editor, the workspace notebook, the transcript modal and the coordinator; each remembers its own size. Every popover in the app works this way: the workspace notebook, the roles editor, `Review changes…`, the coordinator and the History transcript modal all take a drag and keep the size they were left at, each under its own key.
+- Calls come from the same hook stream everything else reads, now including `PostToolUse`, which is what gives a finished call its duration and its pass/fail.
+- A call that never reported back — a denied permission prompt, an interrupt — is retired as `not run` when the agent's next call or next turn starts, rather than reading as "running" forever.
+- The hook state file holds one event at a time, so a burst of very fast calls can lose a row. The list says so, and the terminal is always the record.
+- Only tools that genuinely name a file feed the read/written lists (`Read`, `NotebookRead`; `Edit`, `Write`, `MultiEdit`, `NotebookEdit`). A Grep pattern is not a path.
+
+Agents that were already running when you updated report no `PostToolUse` until they are restarted — the hook settings an agent runs with are written at launch.
 
 Agents that were already running when you updated to 1.40.0 report no paths until they're restarted — the hook settings an agent runs with are written at launch.
 
@@ -143,7 +179,7 @@ The list is rebuilt every time it opens, so an agent you just closed or a task t
 
 Hover a workspace tile and click `📝` in its flyout to open that folder's notebook, stored as **`.swarmeye/notes.md`** in the workspace itself — so it lives with the repo, and can be committed if you want the team to share it.
 
-It answers "what should the next agent already know?": conventions, gotchas, where things live, decisions that aren't visible in the code.
+It answers "what should the next agent already know?": conventions, gotchas, where things live, decisions that aren't visible in the code. Drag the box's bottom-right corner if a column that narrow is not how you want to write Markdown — the size sticks.
 
 - **Agents are given the path, not the contents.** Every agent launched in a workspace whose notebook has something in it gets one appended line naming `.swarmeye/notes.md` and telling it to read the file before making assumptions. Inlining the notes instead would put all of them in every agent's context and bill for them on every turn, relevant or not — a pointer costs about twenty tokens once.
 - **An empty notebook is skipped entirely.** No pointer is added while the file is missing or blank, so nothing is spent sending an agent to read nothing.
@@ -175,7 +211,7 @@ Top row:
 - **Cache hit rate** — the share of input served from the prompt cache, which bills at a tenth of normal input. High is good and mostly automatic; a number that collapses is a sign something is invalidating the cached prefix.
 - **Model** — the live model, same source as the header chip.
 
-Bottom row: a **burn sparkline** (tokens per turn, newest on the right), the **turn count**, a live **`working 2m14s` / `waiting 6m` / `idle` timer**, this agent's **estimated share of the 5-hour limit** — its slice of everything the swarm burned this window, applied to the window's own percentage, so it answers "which pane is eating my quota" — and the **last three tools** it ran.
+Bottom row: a **burn sparkline** (tokens per turn, newest on the right), the **turn count**, a live **`working 2m14s` / `waiting 6m` / `idle` timer**, this agent's **estimated share of the 5-hour limit** — its slice of everything the swarm burned this window, applied to the window's own percentage, so it answers "which pane is eating my quota" — and on the right, under the model, the **last three tools** it ran. Click that tool trail to open the agent's [activity list](#what-an-agent-has-been-doing); it reads `activity` until the first tool runs, so it is a target from the start. The header's status chip opens the same popover, which is how you reach it with this panel off.
 
 Everything comes from the session transcript Claude Code already writes; SwarmEye reads only the bytes appended since the previous turn, so this costs one small file read per turn and no API calls. A `≈` in front of the cost means the session was already long when SwarmEye started counting and the total is a floor.
 
@@ -185,7 +221,7 @@ The panel costs two rows of terminal height in every pane, which is why it's opt
 
 `Ctrl+Shift+S`, or the `Swarm View` tile (directly above `🗃` in the bottom cluster), swaps the grid for a bird's-eye map of the whole swarm — every agent in every workspace at once, which the grid can't show you because it only ever draws the selected workspace.
 
-Every agent is a node. Its **fill is its workspace's identity colour**, the same colour as that workspace's rail tile, so a project reads as a colour rather than a label. Its **ring is its status**, and the ring animates:
+Every agent is a node. Its **fill is its workspace's identity colour**, the same colour as that workspace's rail tile, so a project reads as a colour rather than a label. On the light themes that colour is drawn darker — same hue, same swatch, enough lightness taken out of it to read on a white page, which is also what happens to the links, the workspace hubs, the rail tile marks and the swatch picker. With **Theme background overlay** off the chassis stays dark, and so do the colours. Its **ring is its status**, and the ring animates:
 
 | Node | Meaning |
 |---|---|
@@ -226,8 +262,10 @@ Each row shows the conversation's **opening request**, how long ago it last ran,
 
 - The workspace picker in the header switches folders; `⟳ Refresh` re-reads (the list is re-read on every visit anyway, since agents keep writing to that folder).
 - The filter box narrows by preview text or session id.
+- Clicking a row reads the transcript in place, in a box you can drag bigger by its bottom-right corner; that size is kept for the next one you open.
 - `▶ Resume` spawns a **new** agent (new name, new tmux session) running `claude --resume` on that transcript, switches to its workspace and focuses the pane. Only the conversation comes back; the old process does not.
 - `📋` copies the session id, for resuming from a terminal yourself.
+- `⤓` saves the conversation as plain text, and `HTML` saves it as a page: one self-contained file with the turns laid out the way the reader modal shows them, no scripts and nothing fetched from anywhere. It carries a light and a dark palette and follows whatever the reader's system is set to — the point of exporting is to hand it to someone who is not going to open SwarmEye.
 
 Newest 60 per workspace. On Windows the transcripts are read from inside WSL through the shell rather than with `fs` — that is where the copy of Claude Code that wrote them lives. A very long conversation is read from its **end**: transcripts run to tens of megabytes and only the last 16 MB is loaded, so what you see is how the session finished.
 
@@ -260,6 +298,10 @@ The `✉` button in the top bar (`Ctrl+Shift+E`) opens a one-line composer that 
 
 Delivery is the same channel a task's prompt uses: the text, a beat, then `Enter`, so Claude's input box sees a real keystroke rather than a pasted chunk. Sessions are tmux-backed, so this is one write per agent — nothing is queued or stored.
 
+**Attaching a file or an image.** Typing `@` *after* some text opens a picker over this workspace's files — fuzzy, so `@rap` finds `renderer/app.js` — and `↑`/`↓`, `Enter` or `Tab` insert the path. A leading `@` still addresses an agent, so the two never fight. The list comes from `git ls-files` (tracked plus untracked-but-not-ignored), which is why a folder that isn't a repo offers nothing rather than being crawled.
+
+Paste or drop an **image** into the box and it is written to the app's own data directory and its path inserted, because that is what Claude Code takes: a prompt that names an image file gets the image. On Windows the path inserted is the WSL one, since that is where the agent is. Screenshots land in `pasted/` under the user-data dir, never in your workspace, so they can't turn up in a `git status`.
+
 ### Preview dock
 
 The monitor button in the top bar docks a browser to the right of the grid: URL bar, `‹` `›` back/forward, `⟳` reload, `↗` open in your usual browser, `✕` close. Drag its left edge to resize (remembered), and each **workspace keeps its own address**, so switching to the API repo doesn't leave the web app's page up. Typing a bare port is enough — `3000` becomes `http://localhost:3000`.
@@ -285,6 +327,65 @@ Credentials are read read-only — the macOS Keychain (falling back to `~/.claud
 ### Swarm map
 
 Pinned above the `Task Board` tile, one slot per agent-capacity slot across every workspace: lime = working, pulsing amber = needs attention, gray = idle, dark = free. Collapsed shows a compact 2-column grid of dots; Expanded heads the strip with "Swarm" on the left and the live counts ("`2` busy · `1` waiting", zeros omitted) on the right, and the slots fill one row until there are more than 12, then wrap onto a second. An exited agent frees its slot immediately, same as the session counter in the top bar; if the agent cap is lowered below the number of live agents, every agent still gets a slot rather than being hidden.
+
+---
+
+## Isolated agents
+
+Agents in one workspace share one checkout, so two of them editing the same
+tree overwrite each other. **Isolation** is the prevention: hover a
+workspace's rail tile and click the branch button in its flyout, and from then
+on every agent started in that workspace — `+ Agent`, the launch card, a task
+from the board — gets a git worktree of its own.
+
+The worktree is `<workspace>/.swarmeye/wt/<agent name>` on a branch called
+`swarmeye/<agent name>`, and it is what the agent's terminal starts in. Nothing
+else changes: the pane, the role, the model, the task board and `↻` restart all
+behave exactly as before, except that the pane's git chip now reports **that
+agent's** branch and dirtiness rather than the workspace's. A restart puts the
+agent back in the same worktree; if the worktree has been removed in the
+meantime, it falls back to the workspace itself.
+
+Two details worth knowing:
+
+- **Killing an agent never removes its worktree.** Whatever it had not
+  committed is still there, and removal is an explicit, click-twice action in
+  the review popover below. Nothing you cannot undo happens because a pane was
+  closed.
+- **The workspace notebook still applies.** `.swarmeye/notes.md` inside a
+  worktree is a different file, so an isolated agent is pointed at the
+  *workspace's* copy by absolute path instead of the relative name.
+- **History files each worktree separately.** Claude Code names its transcript
+  folder after the working directory, so an isolated agent's past
+  conversations are listed under its worktree, not under the workspace.
+
+SwarmEye adds `.swarmeye/wt/` to the repository's `.git/info/exclude` the first
+time it makes a worktree there — a nested worktree is not ignored by git on its
+own, and your tracked `.gitignore` is not SwarmEye's to edit.
+
+### Review, commit, merge
+
+`Review changes…` at the top of any pane's git-chip popover — or the diff
+button in a workspace's rail flyout — opens the review popover over whatever
+view you are on (`Esc` closes it). A patch is the widest thing the app shows, so
+the box takes a drag on its bottom-right corner and keeps the size.
+
+- **Left**: the changed files of whatever is being reviewed, untracked ones in
+  italic at the bottom, and under them every worktree in the workspace with its
+  commits-ahead count, a dot when it is dirty, and `idle` when no agent is
+  living in it any more. Click a worktree to review that one instead; click the
+  `✕` on an idle one — twice — to remove it.
+- **Right**: the full patch of the selected file, coloured by sign. A very
+  large patch is cut rather than being allowed to choke the window, and says so.
+- **Bottom**: a commit box (which stages everything in that worktree and
+  commits it) and **Merge**, which merges the worktree's branch into whatever
+  the workspace has checked out, with `--no-ff` so the agent's work stays a
+  visible unit.
+
+A merge that conflicts is **aborted**: the workspace is left exactly as it was
+and the conflicting paths are named under the patch, rather than leaving you in
+a half-merged tree. A workspace with uncommitted changes of its own refuses the
+merge for the same reason, and says so.
 
 ---
 
@@ -435,6 +536,7 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous workspace |
 | `Ctrl+K` | Command palette — jump to anything |
 | `Ctrl+N` | New agent |
+| `Ctrl+.` | Go to whoever has been blocked longest (again: the next one down) |
 | `Ctrl+X` | Close focused agent (again within 5s: confirm kill) |
 | `Ctrl+T` | Task board, new-task form |
 | `Ctrl+R` | Dictate — mic in the focused pane, or the task-board form's mic if the board is open |
@@ -494,5 +596,6 @@ chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper
 - Agent state comes from Claude Code hooks: spawned agents run with `--settings <userData>/hook-settings.json`, whose hooks `cat` their JSON into `hook-state/<sessionId>.json`; the main process fs-watches that directory and relays events to the renderer. Agents reattached from an older version, or hook failures, fall back to output-timing heuristics.
 - The model chip isn't a hook field — verified absent from the real payload — so on every `Stop` event SwarmEye tails the session's transcript JSONL for the newest assistant `message.model`.
 - No bundler; xterm.js and its addons (fit, webgl, search, web-links) load straight from `node_modules` as UMD.
+- `renderer/resizable.js` is the shared half of a drag-the-corner popover: the stylesheet does the resizing (`resize: both` plus a min/max pair, which is also what clamps a restored size into a window that has since shrunk), and the module only remembers the size and centres the box on whatever size it comes back as. Position is set in JS rather than by a centring transform, because a transform-centred box grows in both directions under the grip and the cursor slides off it.
 - The preview dock is an Electron `<webview>` in its own session partition. Main allows it at all (`webviewTag`), strips node access and any preload from it at attach, and pins its top-level document to `localhost` — at attach, at `will-navigate`, and at the main-frame request itself, which is the one that also catches a `src` set from the renderer.
 - Main process modules: `platform.js` (OS shim), `sessions.js` (PTY/tmux), `usage.js` (usage poller), `config.js` (persistence), `hooks.js` (hook settings + state watcher), `git.js`, `health.js` (WSL probe, Windows only), `update.js`, `skills.js`, `speech.js`, `names.js`. The IPC surface is enumerated in `preload.js`.

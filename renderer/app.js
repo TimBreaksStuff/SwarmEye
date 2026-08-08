@@ -80,7 +80,9 @@ function syncChromeNow() {
     onRename: renameWorkspace,
     onSetColor: setWorkspaceColor,
     onSetPinned: setWorkspacePinned,
+    onSetIsolate: setWorkspaceIsolate,
     onOpenNotes: (ws) => Notes.open(ws),
+    onReview: (ws) => Diff.open({ workspaceId: ws.id, workspaceName: ws.name }),
   });
   const wsColor = {};
   for (const ws of state.workspaces) wsColor[ws.id] = ws.color;
@@ -209,6 +211,19 @@ async function setWorkspacePinned(id, pinned) {
   syncChrome();
 }
 
+/* Isolation is a property of the workspace, not of one launch: with it on,
+ * every agent started here — + Agent, the launch card, a board task — gets a
+ * git worktree of its own (main/worktree.js). */
+async function setWorkspaceIsolate(id, isolate) {
+  const ws = state.workspaces.find((w) => w.id === id);
+  if (ws) ws.isolate = isolate;
+  await window.swarm.setWorkspaceIsolate(id, isolate);
+  toast(isolate
+    ? 'new agents here get their own branch and worktree'
+    : 'new agents here work in the workspace itself');
+  syncChrome();
+}
+
 async function setWorkspaceColor(id, color) {
   const ws = state.workspaces.find((w) => w.id === id);
   if (ws) ws.color = color; // optimistic; syncChrome() repaints tiles + swarm map
@@ -276,6 +291,8 @@ function cycleAgent(dir) {
  *                      since Cmd+Tab is the macOS app switcher
  * MOD+'+' / '-' / 0    font size of the focused pane (bigger/smaller/reset)
  * MOD+N                new agent
+ * MOD+.                focus the agent that has been blocked longest, then
+ *                      the next one down on the press after that
  * MOD+X                close focused agent (again within 5s: confirm kill)
  * MOD+T                task board, new-task form (dashboard)
  * MOD+R                dictate — mic in the focused pane, or the task-board
@@ -310,9 +327,32 @@ function isShortcut(e) {
   if (e.code === 'KeyT' && !e.shiftKey) return true;
   if (e.code === 'KeyR' && !e.shiftKey) return true;
   if (e.code === 'KeyK' && !e.shiftKey) return true;
+  if (e.code === 'Period' && !e.shiftKey) return true;
   if (!e.shiftKey) return false;
   return e.code === 'KeyM' || e.code === 'KeyF' || e.code === 'KeyG' || e.code === 'KeyB'
     || e.code === 'KeyS' || e.code === 'KeyE' || /^Digit\d$/.test(e.code);
+}
+
+/* MOD+. — the attention queue. Running many agents *is* answering whoever is
+ * blocked, and that loop used to start with a visual scan of every pane for a
+ * dot that had changed colour. Oldest wait first; pressing it again moves down
+ * the queue, since the queue is re-derived on every press (a pane that started
+ * waiting, or stopped, simply changes where the next press lands). */
+async function focusLongestWaiting() {
+  const waiting = [...state.panes.values()]
+    .filter((p) => !p.exited && p.awaitingPrompt && p.waitingSince > 0)
+    .sort((a, b) => a.waitingSince - b.waitingSince);
+  if (!waiting.length) { toast('nobody is waiting'); return; }
+  // -1 (nothing focused, or the focused pane is not in the queue) lands on the
+  // oldest; the oldest itself lands on the next one down
+  const at = waiting.indexOf(focusedPane());
+  const pane = waiting[(at + 1) % waiting.length];
+  toggleBoard(false);
+  closeSwarmView();
+  if (pane.session.workspaceId !== state.selectedWorkspaceId) {
+    await selectWorkspace(pane.session.workspaceId);
+  }
+  pane.focus();
 }
 
 function handleShortcut(e) {
@@ -330,6 +370,7 @@ function handleShortcut(e) {
   if (e.key === '-' || e.key === '_') { if (focused) focused.setFontSize(focused.term.options.fontSize - 1); return true; }
   if (e.key === '0' && !e.shiftKey) { if (focused) focused.setFontSize(Pane.DEFAULT_FONT_SIZE); return true; }
 
+  if (e.code === 'Period' && !e.shiftKey) { focusLongestWaiting(); return true; }
   if (e.code === 'KeyK' && !e.shiftKey) { Palette.toggle(); return true; }
   if (e.code === 'KeyN' && !e.shiftKey) { addAgent(); return true; }
   if (e.code === 'KeyX' && !e.shiftKey) { if (focused) focused.requestClose(); return true; }
@@ -368,6 +409,9 @@ const ESCAPABLE = [
   // has to go before anything it might be covering
   [() => document.getElementById('palette-pop'), () => Palette.close()],
   [() => document.getElementById('notes-pop'), () => Notes.close()],
+  [() => document.getElementById('diff-pop'), () => Diff.close()],
+  [() => document.getElementById('activity-pop'), () => Activity.close()],
+  [() => document.getElementById('roles-pop'), () => Roles.close()],
   [() => gsearchEl, () => toggleGlobalSearch(false)],
   [() => msgPopEl, () => Messenger.close()],
   [() => kbdShortcutsPop, () => { kbdShortcutsPop.hidden = true; }],
@@ -1968,6 +2012,19 @@ const paneHandlers = {
   onMaximize(pane) {
     grid.toggleMax(pane);
   },
+  // the git chip's "Review changes…": the patch for this agent's own tree —
+  // its worktree when it has one, the workspace when it doesn't
+  onReview(pane) {
+    const s = pane.session;
+    const ws = state.workspaces.find((w) => w.id === s.workspaceId);
+    Diff.open({
+      workspaceId: s.workspaceId,
+      workspaceName: (ws && ws.name) || s.workspaceName,
+      sessionId: s.worktree ? s.id : undefined,
+      title: s.agentName,
+      branch: s.worktree && s.worktree.branch,
+    });
+  },
   onResize(pane, cols, rows) {
     window.swarm.resizeSession(pane.session.id, cols, rows);
   },
@@ -2072,6 +2129,9 @@ const paneHandlers = {
       workspaceName: s.workspaceName,
       agentName: s.agentName,
       cwd: s.cwd,
+      // an isolated agent goes back into its own worktree: the name, not the
+      // path — main rebuilds the path and checks it is still there
+      worktree: s.worktree,
       cols: pane.term.cols,
       rows: pane.term.rows,
       resume,
@@ -2124,7 +2184,7 @@ function flushPending(pane) {
 
 function mountPane(session, { managed = false, refPane, direction } = {}) {
   const pane = new Pane(session, paneHandlers, { managed });
-  pane.setGit(state.git[session.workspaceId]);
+  pane.setGit(gitFor(session));
   state.panes.set(session.id, pane);
   recordTimeline(pane); // the lane starts the moment the agent does
   if (session.workspaceId === state.selectedWorkspaceId) {
@@ -2259,9 +2319,16 @@ window.swarm.onSessionState((payload) => {
   }
 });
 
+/* An isolated agent's branch and dirtiness are its worktree's, not the
+ * workspace's — main sweeps both and keys the isolated ones by session id
+ * (main/git.js). Every other pane still reads its workspace's entry. */
+function gitFor(session) {
+  return state.git[session.id] || state.git[session.workspaceId];
+}
+
 window.swarm.onGitUpdate((info) => {
   state.git = info || {};
-  for (const pane of state.panes.values()) pane.setGit(state.git[pane.session.workspaceId]);
+  for (const pane of state.panes.values()) pane.setGit(gitFor(pane.session));
   if (!boardEl.hidden) renderBoard(); // keep board branch chips current while it's open
 });
 
@@ -2437,6 +2504,11 @@ window.swarm.onUpdateError(({ error }) => {
 const msgPopEl = document.getElementById('msg-pop');
 
 Notes.init({ toast });
+Diff.init({ toast });
+Activity.init();
+// the role list the + Agent menu and the coordinator draw from is refreshed
+// from the save itself, so an edited preset is pickable without a reload
+Roles.init({ toast, onSaved: (list) => { roles = list; } });
 
 /* Everything the palette (Ctrl+K) can reach. Built fresh on every open — a
  * closed agent or a finished task must never still be offered — and kept here
@@ -2579,6 +2651,11 @@ window.Speech.wire(document.getElementById('voice-btn'), {
 });
 
 Messenger.init({
+  toast,
+  // the @ picker offers files from the selected workspace — a message can be
+  // addressed across workspaces, but the file you are pointing at is in the
+  // one you are looking at
+  workspaceId: () => state.selectedWorkspaceId,
   listAgents: () => [...state.panes.values()]
     .filter((p) => !p.exited)
     .map((p) => ({ id: p.session.id, name: p.session.agentName, ws: p.session.workspaceName })),
@@ -2720,18 +2797,21 @@ addAgentBtn.addEventListener('click', () => {
   const menu = document.createElement('div');
   menu.className = 'branch-menu';
   const entries = [{ label: 'Claude', tip: 'A plain agent — your Options default model, no role prompt' }];
-  for (const r of roles) entries.push({ label: r.label, role: r.key, tip: `${r.label} role prompt · ${r.model}` });
+  for (const r of roles) entries.push({ label: r.label, role: r.key, tip: `${r.label} role prompt · ${r.model || 'default tier'}` });
   // the coordinator is the odd one out: it starts no agent of its own, it
   // splits a request into board tasks that the scheduler then starts
   entries.push({ label: 'Coordinator', coordinate: true, tip: 'Split one multi-part request into subtasks on the board — nothing starts until you approve them' });
-  for (const { label, role, tip, coordinate } of entries) {
+  // the roles above are editable, and this is where you would look for that
+  entries.push({ label: 'Edit roles…', editRoles: true, tip: 'Reword a preset, change the tier it launches on, or add your own' });
+  for (const { label, role, tip, coordinate, editRoles } of entries) {
     const row = document.createElement('button');
-    row.className = 'branch-item';
+    row.className = 'branch-item' + (editRoles ? ' branch-item-quiet' : '');
     row.textContent = label;
     row.dataset.tip = tip;
     row.addEventListener('click', () => {
       closeAgentKindMenu();
       if (coordinate) openCoordinator();
+      else if (editRoles) Roles.open();
       else addAgent({ role });
     });
     menu.appendChild(row);

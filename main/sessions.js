@@ -105,33 +105,12 @@ function claudeProjectDirName(cwd) {
   return (toShellPath(cwd) || cwd).replace(/[^A-Za-z0-9]/g, '-');
 }
 
-/* Role presets for + Coding Agent: a short system prompt appended at launch
- * and the model tier that job is worth. Deliberately quote-free and free of
- * $ ` and backslashes — the prompt is interpolated into the command line that
- * _launch wraps in single quotes for tmux, so a quote here would break the
- * whole launch. Main owns the table; the renderer only ever sees key + label. */
-const ROLES = {
-  builder: {
-    label: 'Builder',
-    model: 'sonnet',
-    prompt: 'You are the builder in a swarm of agents. Implement exactly what you are asked and nothing more: the smallest working diff, the patterns already in this codebase, no speculative abstractions. When you are done, say in a few lines what you changed and what you left alone.',
-  },
-  reviewer: {
-    label: 'Reviewer',
-    model: 'opus',
-    prompt: 'You are the reviewer in a swarm of agents. Read the code and report what is wrong with it: correctness first, then security, then clarity. Do not edit files unless you are explicitly asked to fix something. One line per finding, most severe first, and say plainly when you found nothing.',
-  },
-  scout: {
-    label: 'Scout',
-    model: 'haiku',
-    prompt: 'You are the scout in a swarm of agents. Locate things and report where they are: file paths with line numbers, call sites, naming conventions. Read only. Do not edit files and do not propose designs. Keep the answer short.',
-  },
-  planner: {
-    label: 'Planner',
-    model: 'opus',
-    prompt: 'You are the planner in a swarm of agents. Turn the request into a short ordered plan: which files it touches, the steps in order, and the risks. Read only. Do not edit files and do not write the code yourself.',
-  },
-};
+/* Role presets live in main/roles.js now — seeded from four built-ins and
+ * editable, so this file looks one up rather than owning the table. The same
+ * quoting rule still applies and is enforced there: no quotes, $, backticks or
+ * backslashes, because the prompt is interpolated into the command line that
+ * _launch wraps in single quotes for tmux. */
+const roles = require('./roles');
 
 /* A workspace can keep a `.swarmeye/notes.md` — what one agent learned about
  * this repo, so the next one starts with it instead of rediscovering it.
@@ -144,18 +123,39 @@ const ROLES = {
  * Same quoting rules as the role prompts above: no quotes, $, backticks or
  * backslashes, since this lands in the same single-quoted tmux command. */
 const NOTES_REL = path.join('.swarmeye', 'notes.md');
-const NOTES_PROMPT = 'This workspace keeps shared notes at .swarmeye/notes.md. '
-  + 'Read that file before making assumptions about this repo, and append anything '
-  + 'a later agent working here would want to know.';
+const NOTES_POSIX = '.swarmeye/notes.md'; // what the prompt says, on both platforms
+
+/* Anything with a quote, $, backtick or backslash in it would break the
+ * single-quoted tmux command this ends up inside — a workspace path is user
+ * data, so it is checked rather than trusted, and the pointer is dropped
+ * instead of risking the launch. */
+const NOTES_SAFE_RE = /^[^"'$`\\]+$/;
+
+function notesPrompt(where) {
+  if (typeof where !== 'string' || !NOTES_SAFE_RE.test(where)) return '';
+  return `This workspace keeps shared notes at ${where}. `
+    + 'Read that file before making assumptions about this repo, and append anything '
+    + 'a later agent working here would want to know.';
+}
 
 /* An empty notes file is not worth a pointer — the agent would open it, find
  * nothing, and the tokens would be spent for no reason. */
-function hasNotes(cwd) {
+function hasNotes(wsPath) {
   try {
-    return fs.statSync(path.join(cwd, NOTES_REL)).size > 0;
+    return fs.statSync(path.join(wsPath, NOTES_REL)).size > 0;
   } catch {
     return false;
   }
+}
+
+/* Where to point an agent running in `cwd` at the workspace notebook. An
+ * isolated agent runs in a worktree (main/worktree.js), where
+ * `.swarmeye/notes.md` is a *different* file — absent, or an old committed
+ * copy — so it gets the workspace's own by shell path instead of the relative
+ * name. Null (an untranslatable Windows path) drops the pointer. */
+function notesTarget(wsPath, cwd) {
+  if (!hasNotes(wsPath)) return null;
+  return cwd === wsPath ? NOTES_POSIX : toShellPath(path.join(wsPath, NOTES_REL));
 }
 
 /* --allow-dangerously-skip-permissions is opt-in (⌨ Options) — without it
@@ -173,7 +173,7 @@ function hasNotes(cwd) {
  * since it lands directly in a shell command line. */
 function claudeBase({ model, resume, role, notes, effort } = {}) {
   let cmd = config.load().skipPermissions ? 'claude --allow-dangerously-skip-permissions' : 'claude';
-  const preset = ROLES[role];
+  const preset = roles.get(role);
   // the role's model is a default, not an override — an explicit pick (the
   // task's own model select, or the Options default) still wins
   const effectiveModel = model || (preset && preset.model);
@@ -190,7 +190,7 @@ function claudeBase({ model, resume, role, notes, effort } = {}) {
   // one --append-system-prompt carrying both, not two flags: the role and the
   // notes pointer are the same kind of appended text, and claude takes the
   // last such flag rather than concatenating them
-  const appended = [preset && preset.prompt, notes && NOTES_PROMPT].filter(Boolean).join(' ');
+  const appended = [preset && preset.prompt, notes && notesPrompt(notes)].filter(Boolean).join(' ');
   if (appended) cmd += ` --append-system-prompt "${appended}"`;
   // a conversation id picked from the History screen. Claude Code names its
   // transcripts after the session uuid, so the id is what --resume takes;
@@ -320,29 +320,41 @@ class PtyManager {
       .concat([...this.sessions.values()].map((s) => s.session.agentName));
   }
 
+  /* The name an agent is about to get. main needs it before spawning an
+   * isolated agent: that agent's worktree is named after it and has to exist
+   * before node-pty can chdir into it. */
+  pickAgentName() {
+    return pickName(this.namesInUse());
+  }
+
+  /* opts.worktree = { name, branch, path } makes this an isolated agent: the
+   * pty chdirs into the worktree instead of the workspace, and the pair is
+   * persisted so a restart lands back in it. */
   spawn(workspace, cols, rows, opts = {}) {
     if (this.sessions.size >= this.maxSessions) throw new Error('cap');
+    const cwd = opts.worktree ? opts.worktree.path : workspace.path;
     // a moved/renamed/unmounted workspace folder makes posix_spawn fail on
     // chdir with the same opaque "posix_spawnp failed" — catch it here with
     // a message that actually says what's wrong
-    if (!fs.existsSync(workspace.path)) throw new Error('workspace folder not found: ' + workspace.path);
+    if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
     this.counter += 1;
     const id = 's_' + Math.random().toString(36).slice(2, 10);
     const meta = {
       id,
       num: this.counter,
-      agentName: pickName(this.namesInUse()),
+      agentName: opts.agentName || this.pickAgentName(),
       workspaceId: workspace.id,
       workspaceName: workspace.name,
-      cwd: workspace.path,
+      cwd,
       tmuxName: 'swarmeye_' + id,
       createdAt: Date.now(),
     };
     // persisted so a pane rebuilt from tmux after a restart still shows its
     // role chip — the flag itself is long gone by then, it lives in the process
-    if (ROLES[opts.role]) meta.role = opts.role;
+    if (roles.has(opts.role)) meta.role = opts.role;
+    if (opts.worktree) meta.worktree = { name: opts.worktree.name, branch: opts.worktree.branch };
     return this._launch(meta, cols, rows,
-      this.decorateCmd(id, claudeBase({ ...opts, notes: hasNotes(workspace.path) })));
+      this.decorateCmd(id, claudeBase({ ...opts, notes: notesTarget(workspace.path, cwd) })));
   }
 
   /* Does this folder have a previous Claude conversation to continue?
@@ -357,7 +369,7 @@ class PtyManager {
   /* Respawn an exited agent in the same folder under the same name.
    * resume=true continues the last conversation in that directory —
    * silently downgraded to a fresh session when there is none. */
-  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, role, model }) {
+  async restart({ workspaceId, workspaceName, agentName, cwd, workspacePath, worktree, cols, rows, resume, role, model }) {
     if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
     const resumed = resume ? await this.hasHistory(cwd) : false;
     // Checked here, right before the synchronous launch below, rather than
@@ -378,11 +390,14 @@ class PtyManager {
     };
     // a restarted agent keeps the role it was launched with — the system
     // prompt has to be re-appended, it is not part of the resumed conversation
-    if (ROLES[role]) meta.role = role;
+    if (roles.has(role)) meta.role = role;
+    // and it comes back in the same worktree: cwd already points there, this
+    // is what keeps the chip, the review popover and the next restart on it
+    if (worktree) meta.worktree = worktree;
     // `model` is how a restart moves the agent to another tier (the pane's
     // right-sizing offer). Left undefined it is the role's model, or the
     // account default — i.e. exactly what a plain restart did before.
-    const notes = hasNotes(cwd);
+    const notes = notesTarget(workspacePath || cwd, cwd);
     const cmd = this.decorateCmd(id, resumed
       ? claudeBase({ role, model, notes }) + ' --continue'
       : claudeBase({ role, model, notes }));
@@ -574,4 +589,4 @@ class PtyManager {
   }
 }
 
-module.exports = { PtyManager, claudeProjectDirName, ROLES, NOTES_REL, TMUX, MODELS, EFFORT_FLAGS, SESSION_ID_RE };
+module.exports = { PtyManager, claudeProjectDirName, NOTES_REL, TMUX, MODELS, EFFORT_FLAGS, SESSION_ID_RE };

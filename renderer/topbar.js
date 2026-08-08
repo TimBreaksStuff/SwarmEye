@@ -70,8 +70,8 @@ const Topbar = (() => {
     colors.className = 'rail-flyout-colors';
     WS_COLORS.forEach((c) => {
       const sw = document.createElement('button');
-      sw.className = 'ws-swatch' + (c === ws.color ? ' active' : '');
-      sw.style.background = c;
+      sw.className = 'ws-swatch ws-tint' + (c === ws.color ? ' active' : '');
+      sw.style.setProperty('--ws', c);
       sw.dataset.tip = 'Set workspace colour';
       sw.addEventListener('click', () => {
         ws.color = c; // keep the flyout's local copy in sync for the active ring
@@ -104,13 +104,38 @@ const Topbar = (() => {
       handlers.onOpenNotes(ws);
     });
 
+    // agents started here work in a git worktree of their own instead of
+    // sharing this checkout (main/worktree.js) — a workspace setting, so board
+    // tasks and + Agent pick it up without either of them asking
+    const isolate = document.createElement('button');
+    isolate.className = 'rail-flyout-isolate' + (ws.isolate ? ' on' : '');
+    Icons.set(isolate, 'branch');
+    isolate.dataset.tip = ws.isolate
+      ? 'Isolation on — new agents get their own branch and worktree'
+      : 'Isolate new agents — each gets its own branch and worktree';
+    isolate.addEventListener('click', () => {
+      hideFlyout();
+      handlers.onSetIsolate(ws.id, !ws.isolate);
+    });
+
+    // review what the agents changed: the full diff, commit, merge back
+    const review = document.createElement('button');
+    review.className = 'rail-flyout-review';
+    Icons.set(review, 'diff');
+    review.dataset.tip = 'Review changes — diff, commit and merge agent worktrees';
+    review.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hideFlyout();
+      handlers.onReview(ws);
+    });
+
     const x = document.createElement('button');
     x.className = 'rail-flyout-x';
     x.textContent = '✕';
     x.dataset.tip = 'Remove workspace';
     x.addEventListener('click', () => handlers.onRemove(ws.id, x)); // the button, so removal can arm on it (Confirm)
 
-    flyout.append(infoEl, notes, pin, x);
+    flyout.append(infoEl, review, isolate, notes, pin, x);
     flyout.hidden = false;
     const r = tile.getBoundingClientRect();
     flyout.style.left = Math.round(r.right + 10) + 'px';
@@ -162,8 +187,8 @@ const Topbar = (() => {
       // identity-colour dot (bottom-left corner, mirrors the top-right .ws-attn)
       if (ws.color) {
         const cdot = document.createElement('span');
-        cdot.className = 'ws-color-dot';
-        cdot.style.background = ws.color;
+        cdot.className = 'ws-color-dot ws-tint';
+        cdot.style.setProperty('--ws', ws.color);
         tile.appendChild(cdot);
       }
       // pinned marker, before .ws-attn/.rail-n in the DOM so the expanded
@@ -582,9 +607,9 @@ const Topbar = (() => {
         : pane.status === 'attention' ? 'attn'
         : 'idle';
       const slot = swarmMapGrid.children[i];
-      const className = 'swarm-map-slot' + (cls ? ' ' + cls : '') + (pane ? ' clickable' : '');
       // the slot's border carries its workspace's identity colour
       const bc = pane ? (wsColor[pane.session.workspaceId] || '') : '';
+      const className = 'swarm-map-slot' + (cls ? ' ' + cls : '') + (pane ? ' clickable' : '') + (bc ? ' ws-tint' : '');
       // last input the agent received — its most recently submitted command,
       // shown after a vertical rule in the hover tooltip (see tooltip.js)
       const cmd = (pane && pane.initialCommandText) || '';
@@ -593,7 +618,7 @@ const Topbar = (() => {
       if (slot.dataset.sig === sig) continue;
       slot.dataset.sig = sig;
       slot.className = className;
-      slot.style.borderColor = bc;
+      slot.style.setProperty('--ws', bc);
       if (pane) {
         slot.dataset.sid = pane.session.id;
         slot.dataset.tip = pane.session.agentName;

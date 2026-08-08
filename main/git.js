@@ -140,14 +140,24 @@ class GitMonitor {
     if (!this.visible()) return;
     this.ticking = true;
     try {
-      const workspaces = config.load().workspaces || [];
+      const cfg = config.load();
+      /* An isolated agent works in its own worktree (main/worktree.js), so its
+       * pane must report that branch rather than the workspace's checkout —
+       * same script, keyed by session id, which is what the renderer prefers
+       * when the sweep carries one. Two more lines in the one script, not a
+       * second poll. */
+      const targets = (cfg.workspaces || []).concat(
+        Object.values(cfg.sessions || {})
+          .filter((m) => m.worktree && m.cwd)
+          .map((m) => ({ id: m.id, path: m.cwd }))
+      );
       const info = {};
-      if (workspaces.length) {
+      if (targets.length) {
         // macOS has no GNU timeout unless coreutils is installed; degrade to
         // running git unguarded rather than failing the whole sweep
         const script = 'set -o pipefail 2>/dev/null; ' +
           'command -v timeout >/dev/null && T="timeout 8" || T=""; ' +
-          workspaces.map(wsScript).join('; ');
+          targets.map(wsScript).join('; ');
 
         const out = await exec(script, 25000);
         if (out == null) return; // shell unreachable — keep last known state
@@ -170,4 +180,6 @@ class GitMonitor {
   }
 }
 
-module.exports = { GitMonitor, listBranches, checkoutBranch, diffStat };
+// wsPrelude is shared with worktree.js rather than copied: the wslpath dance
+// is the one piece of this file that is easy to get subtly wrong on Windows
+module.exports = { GitMonitor, listBranches, checkoutBranch, diffStat, wsPrelude };

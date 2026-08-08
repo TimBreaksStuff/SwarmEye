@@ -34,7 +34,10 @@ contextBridge.exposeInMainWorld('swarm', {
   listSessions: () => ipcRenderer.invoke('session:list'),
   createSession: (workspaceId, cols, rows, model, resumeId, role, effort) =>
     ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, resumeId, role, effort }),
+  listWorkspaceFiles: (id) => ipcRenderer.invoke('workspace:files', id),
+  attachImage: (dataUrl) => ipcRenderer.invoke('attach:image', dataUrl),
   listRoles: () => ipcRenderer.invoke('roles:list'),
+  saveRoles: (roles) => ipcRenderer.invoke('roles:save', roles),
   listHistory: (workspaceId) => ipcRenderer.invoke('history:list', workspaceId),
   readHistory: (workspaceId, id) => ipcRenderer.invoke('history:read', { workspaceId, id }),
   deleteHistory: (workspaceId, ids) => ipcRenderer.invoke('history:delete', { workspaceId, ids }),
@@ -42,7 +45,7 @@ contextBridge.exposeInMainWorld('swarm', {
   reattachSession: (id, cols, rows) => ipcRenderer.invoke('session:reattach', { id, cols, rows }),
   renameSession: (id, name) => ipcRenderer.invoke('session:rename', { id, name }),
   setLastCommand: (id, cmd) => ipcRenderer.invoke('session:set-last-command', { id, cmd }),
-  exportSession: (name, text) => ipcRenderer.invoke('session:export', { name, text }),
+  exportSession: (name, text, ext) => ipcRenderer.invoke('session:export', { name, text, ext }),
   writeSession: (id, data) => ipcRenderer.send('session:write', { id, data }),
   resizeSession: (id, cols, rows) => ipcRenderer.send('session:resize', { id, cols, rows }),
   killSession: (id) => ipcRenderer.invoke('session:kill', { id }),
@@ -57,6 +60,15 @@ contextBridge.exposeInMainWorld('swarm', {
   listBranches: (workspaceId) => ipcRenderer.invoke('git:branches', workspaceId),
   gitDiff: (workspaceId) => ipcRenderer.invoke('git:diff', workspaceId),
   checkoutBranch: (workspaceId, branch, create) => ipcRenderer.invoke('git:checkout', { workspaceId, branch, create }),
+
+  // isolated agents: a worktree each (main/worktree.js). Every call names a
+  // workspace or a session, never a path — main resolves the repo itself
+  setWorkspaceIsolate: (id, isolate) => ipcRenderer.invoke('workspace:set-isolate', { id, isolate }),
+  listWorktrees: (workspaceId) => ipcRenderer.invoke('worktree:list', workspaceId),
+  removeWorktree: (workspaceId, name) => ipcRenderer.invoke('worktree:remove', { workspaceId, name }),
+  gitPatch: (target) => ipcRenderer.invoke('git:patch', target),
+  gitCommit: (target, message) => ipcRenderer.invoke('git:commit', { ...target, message }),
+  gitMerge: (workspaceId, branch) => ipcRenderer.invoke('git:merge', { workspaceId, branch }),
 
   listSkills: () => ipcRenderer.invoke('skills:list'),
   installSkill: (repoUrl) => ipcRenderer.invoke('skills:install', repoUrl),

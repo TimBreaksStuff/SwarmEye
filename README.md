@@ -14,20 +14,25 @@ No accounts, no backend, no telemetry. SwarmEye rides entirely on your existing 
 
 - **Workspaces** — each folder is a colour-coded tile in the left rail; the selected one decides where new agents start.
 - **Agent panes** — as many agents as you want, a terminal each, auto-arranged into a grid you can resize, split, search and export.
-- **Role presets** — launch an agent as Builder, Reviewer, Scout or Planner: a short system prompt plus the model tier that job is worth.
+- **Role presets** — launch an agent as Builder, Reviewer, Scout or Planner: a short system prompt plus the model tier that job is worth. Editable, and you can add your own.
 - **Coordinator** — hand it a whole request and it splits the work into role-assigned subtasks on the task board, editable before anything runs.
 - **Task board** — queue work with model, effort, priority and schedule; chain follow-ups so *build → review → fix* runs unattended.
-- **Live agent state** — panes read Claude Code's hooks, not output timing: working (naming the tool), waiting on you, or done.
-- **Collision guard** — an amber chip in both panes the moment two agents start editing the same file.
+- **Live agent state** — panes read Claude Code's hooks, not output timing: working (naming the tool *and the file*), waiting on you, or done.
+- **Attention queue** — a blocked pane glows and shows how long it has waited; `Ctrl+.` goes to whoever has waited longest.
+- **Activity** — click a pane's status for every tool call it has made, with durations, failures, and the files it read and wrote.
+- **Subagents, visible** — a `▸ n` chip counts the Task subagents a pane is running; the activity popover names them.
+- **Read-only, mid-run** — picking `plan` in a pane's mode dropdown puts a live agent into plan mode, or asks it to stop editing if that can't be set from here.
 - **Swarm view** — a live map of every agent across every workspace, with live terminal previews and a one-hour timeline ribbon.
-- **Message your agents** — `Ctrl+Shift+E` sends a prompt to one agent, several, or `@all`.
+- **Message your agents** — `Ctrl+Shift+E` sends a prompt to one agent, several, or `@all`, with `@` file mentions and pasted screenshots.
 - **Command palette** — `Ctrl+K` jumps to any agent, workspace, task, skill or view, and runs the verbs too.
 - **Cost & context panel** — per-pane context fill, spend, cache hit rate and tokens per turn, read from the transcript with no extra API calls.
 - **Model right-sizing** — an Opus agent on a long read-only streak offers `→ Haiku`, conversation kept.
 - **Usage widget** — the real 5-hour and weekly limits from Claude's own OAuth usage API, with a warning before the ceiling.
 - **Preview dock** — the workspace's dev server beside the grid, started for you, pinned to localhost.
-- **History** — read, export or `claude --resume` any past conversation in a workspace.
+- **History** — read any past conversation in a workspace, `claude --resume` it, or export it as text or a self-contained HTML page.
 - **Branch switcher & diff peek** — each pane's git chip: branch, `git diff --stat`, checkout or create.
+- **Isolated agents** — switch a workspace to isolation and every agent started there gets its own git worktree and branch, so they stop clobbering each other.
+- **Review, commit, merge** — the full patch of an agent's worktree in a popover, with a commit box and a `--no-ff` merge back into the workspace.
 - **Workspace notebook** — `.swarmeye/notes.md` per folder, which every agent launched there is told to read.
 - **Skills** — install Claude Code skills from GitHub, and see the ones your agents wrote themselves.
 - **Notifications** — an OS notification (optionally spoken) when an agent finishes or needs you, with approve/deny from the bell.

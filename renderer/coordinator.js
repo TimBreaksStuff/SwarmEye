@@ -7,7 +7,9 @@
  * Owns no app state: the workspace, the role list and what to do with an
  * approved row all arrive in open(). */
 const Coordinator = (() => {
+  const SIZE_KEY = 'swarmeye.coordSize'; // drag the corner; kept between opens
   const el = document.getElementById('coord-modal');
+  const boxEl = document.getElementById('coord-modal-box');
   const metaEl = document.getElementById('coord-modal-meta');
   const inputEl = document.getElementById('coord-input');
   const planEl = document.getElementById('coord-plan');
@@ -159,10 +161,12 @@ const Coordinator = (() => {
     el.hidden = false;
     showRequest();
     inputEl.value = '';
+    Resizable.place(boxEl, SIZE_KEY);
     inputEl.focus();
   }
 
   function close() {
+    if (!el.hidden) Resizable.remember(boxEl, SIZE_KEY);
     el.hidden = true;
     planEl.innerHTML = '';
     rows = [];

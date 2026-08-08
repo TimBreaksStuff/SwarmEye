@@ -312,11 +312,13 @@ const SwarmView = (() => {
       setAttr(l, 'y1', y1.toFixed(2));
       setAttr(l, 'x2', x2.toFixed(2));
       setAttr(l, 'y2', y2.toFixed(2));
-      setAttr(l, 'stroke', color);
-      setAttr(l, 'opacity', String(opacity));
+      setVar(l, '--ws', color);
+      // the stylesheet turns this into the line's opacity, so a light chassis
+      // can lift the whole ramp at once (see --ws-op-boost in chrome-clean.css)
+      setVar(l, '--ws-op', String(opacity));
       // the dash only flows on a busy agent's link (see app.css) — setAttr,
       // not className, which is read-only on SVG elements
-      setAttr(l, 'class', busy ? 'sv-link-busy' : '');
+      setAttr(l, 'class', 'ws-tint' + (busy ? ' sv-link-busy' : ''));
       seen.add(key);
     };
 
@@ -382,10 +384,10 @@ const SwarmView = (() => {
         hubEls.set(hub.key, box);
         hubsEl.appendChild(box);
       }
-      setClass(box, 'sv-hub' + (hub.core ? ' sv-hub-core' : ''));
+      setClass(box, 'sv-hub ws-tint' + (hub.core ? ' sv-hub-core' : ''));
       setStyle(box, 'left', hub.x.toFixed(2) + '%');
       setStyle(box, 'top', hub.y.toFixed(2) + '%');
-      setStyle(box, 'color', hub.color || 'var(--accent)');
+      setVar(box, '--ws', hub.color || 'var(--accent)');
       setText(box._label, hub.label);
       setText(box._count, String(hub.count));
       seen.add(hub.key);
@@ -469,11 +471,11 @@ const SwarmView = (() => {
       const status = statusOf(pane);
       const age = ageOf(pane, status);
 
-      setClass(rec.root, 'sv-node sv-node-' + status + (id === selectedId ? ' sv-node-sel' : ''));
+      setClass(rec.root, 'sv-node ws-tint sv-node-' + status + (id === selectedId ? ' sv-node-sel' : ''));
       setStyle(rec.root, 'left', node.x.toFixed(2) + '%');
       setStyle(rec.root, 'top', node.y.toFixed(2) + '%');
       // fill carries the workspace, the pulse ring carries the status
-      setVar(rec.root, '--sv-ws', wsColorOf(pane));
+      setVar(rec.root, '--ws', wsColorOf(pane));
       setVar(rec.root, '--sv-state', STATE_COLOR[status]);
       setVar(rec.root, '--sv-size', STATE_SIZE[status] + 'px');
       // an unanswered agent's halo swells the longer it goes unanswered
@@ -506,7 +508,7 @@ const SwarmView = (() => {
     row.dataset.id = pane.session.id;
 
     const dot = document.createElement('span');
-    dot.className = 'sv-row-dot';
+    dot.className = 'sv-row-dot ws-tint';
 
     const main = document.createElement('div');
     main.className = 'sv-row-main';
@@ -564,7 +566,7 @@ const SwarmView = (() => {
       setClass(rec.row, 'sv-row sv-row-' + status
         + (id === selectedId ? ' sv-row-sel' : '')
         + (id === hoveredId ? ' sv-row-hot' : ''));
-      setStyle(rec.dot, 'background', wsColorOf(pane));
+      setVar(rec.dot, '--ws', wsColorOf(pane));
       setVar(rec.row, '--sv-state', STATE_COLOR[status]);
       setText(rec.ws, pane.session.workspaceName || '');
       setText(rec.name, pane.session.agentName);
@@ -598,7 +600,7 @@ const SwarmView = (() => {
     const bar = document.createElement('div');
     bar.className = 'sv-term-bar';
     const dot = document.createElement('span');
-    dot.className = 'sv-term-dot';
+    dot.className = 'sv-term-dot ws-tint';
     const ws = document.createElement('span');
     ws.className = 'sv-term-ws';
     const name = document.createElement('span');
@@ -677,7 +679,7 @@ const SwarmView = (() => {
         + (open ? ' sv-term-open' : '')
         + (flat ? ' sv-term-flat' : ''));
       setVar(rec.card, '--sv-state', STATE_COLOR[status]);
-      setStyle(rec.dot, 'background', wsColorOf(pane));
+      setVar(rec.dot, '--ws', wsColorOf(pane));
       setText(rec.ws, pane.session.workspaceName || '');
       setText(rec.name, pane.session.agentName);
       setText(rec.state, status);

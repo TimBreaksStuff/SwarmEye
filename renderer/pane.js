@@ -213,12 +213,55 @@ const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SPARK_CHARS = '▁▂▃▄▅▆▇█';
 const TOOL_TRAIL_MAX = 3;
 
-/* How long the "another agent is in this file" chip stays up after the last
- * shared write, re-armed by each new one. Shorter than the window main uses to
- * decide what counts as shared (hooks.js COLLISION_WINDOW_MS): that one has to
- * span an agent that reads for a while between edits, this one only has to
- * outlast the gap between two agents actively working the same file. */
-const COLLISION_SHOW_MS = 10 * 60 * 1000;
+/* ---- what this agent has actually been doing ----
+ *
+ * One row per tool call for the activity popover, opened by PreToolUse and
+ * closed by the matching PostToolUse (which is where the duration and the
+ * pass/fail come from). Both this and the touched-file sets are bounded and
+ * renderer-only: main already sends every event the pane needs, so keeping a
+ * second copy of it over there would buy nothing.
+ *
+ * The hook state file holds one event at a time, so a call whose PreToolUse was
+ * overwritten before the watcher read it never appears — the list is what was
+ * seen, not a guaranteed-complete log, and the popover says so. */
+const ACTIVITY_MAX = 60;
+const TOUCHED_MAX = 300;
+
+/* Claude Code's own Task subagents. They are invisible in a terminal — the
+ * parent's pane is where all of their output lands — so the `Task` calls the
+ * hook stream already reports are kept in their own short list, which is what
+ * the header chip counts and the activity popover names. Their own tool calls
+ * never reach us: a subagent runs in its own context and fires no hooks of its
+ * own, so "what it is doing" is not answerable, only "it is still running". */
+const SUBAGENTS_MAX = 20;
+
+/* Calls started but not yet reported back. Parallel tool use is normal, a lost
+ * PostToolUse is not rare, and this only has to stay bounded. */
+const OPEN_CALLS_MAX = 24;
+
+/* Asking a live agent to stop editing — the fallback behind picking `plan` in
+ * the mode dropdown, for when the Shift+Tab cycle cannot land it. Deliberately
+ * plain English sent as a normal message: SwarmEye cannot *enforce* read-only
+ * without per-tool permissions, which agents only pick up at launch, so this
+ * is a request — and the dropdown says so rather than implying a lock. */
+const READ_ONLY_ASK =
+  'Please stop editing for now: do not use Edit, Write, MultiEdit or NotebookEdit, '
+  + 'and do not run any command that changes files. Read and report only, until I say otherwise.';
+const READ_ONLY_LIFT = 'You can edit files again — the read-only request is lifted.';
+
+/* Tools that change a file, and the ones that only look at one — these two
+ * only split a list in a popover. */
+const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+const FILE_READ_TOOLS = new Set(['Read', 'NotebookRead']);
+
+/* How long the agent has been blocked, in the coarsest unit that is still true:
+ * the question this answers is "40 seconds or 40 minutes", never the seconds. */
+function fmtWait(ms) {
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return '<1m';
+  if (min < 60) return min + 'm';
+  return Math.floor(min / 60) + 'h ' + (min % 60) + 'm';
+}
 
 /* ---- right-sizing the model ----
  *
@@ -294,6 +337,7 @@ const MODES = [
   ['plan', 'plan'],
   ['bypass', 'auto'],
 ];
+const MODE_TIP = 'Claude mode — switches by cycling Shift+Tab in the agent';
 const MODE_MARKERS = [
   ['bypass', /bypass(?:ing)? permissions/i],
   ['plan', /plan mode on/i],
@@ -400,7 +444,7 @@ class Pane {
     this.hookAlive = false; // true once Claude Code hook events flow — they replace the output-timing heuristics
     this.awaitingPrompt = false; // true while the agent is blocked on the user (Notification hook, cleared on the next turn)
     this.promptAnswerable = false; // true while a numbered yes/no menu is actually on screen — with awaitingPrompt, gates the ✓/✕ quick-respond buttons
-    this.statusText = ''; // what the hooks say the agent is doing right now (tool name / 'vibing...' / 'done'), mirrored for the swarm view
+    this.statusText = ''; // what the hooks say the agent is doing right now ('vibing...' / the permission message / 'done'), mirrored for the swarm view
     this.lastInputAt = 0; // last keystroke/mouse report — its echo must not read as agent activity
     this.idleTimer = null;
     this.bufferTextCache = null; // memoized getBufferText result
@@ -414,6 +458,14 @@ class Pane {
     // populated before this agent's next turn ever runs.
     this.usage = session.usage || null;
     this.toolTrail = [];
+    // the activity popover's source: every call seen this session, plus which
+    // files were read and which were written (see the ACTIVITY_MAX note above)
+    this.activity = [];
+    this.openCalls = []; // calls started and not yet reported back — tools run in parallel
+    this.reads = new Map(); // path -> times read
+    this.writes = new Map(); // path -> times written
+    this.subagents = []; // Task calls: {desc, t, ms, done}
+    this.planAsked = false; // plan mode was picked but could not be set, so it was asked for in words instead
     this.turnStartedAt = 0; // when the agent started working, 0 while it isn't
     this.waitingSince = 0; // when it started waiting on the user, 0 while it isn't
     this.usageTimer = null; // 1s tick, only while the panel is visible
@@ -475,23 +527,44 @@ class Pane {
 
     this.modeSel = document.createElement('select');
     this.modeSel.className = 'pane-mode';
-    this.modeSel.dataset.tip = 'Claude mode — switches by cycling Shift+Tab in the agent';
+    this.modeSel.dataset.tip = MODE_TIP;
     for (const [value, label] of MODES) {
       const opt = document.createElement('option');
       opt.value = value;
       opt.textContent = label;
+      // relabelled while a plan-mode request is standing but not enforced
+      if (value === 'plan') this.planOpt = opt;
       this.modeSel.appendChild(opt);
     }
     this.modeSel.addEventListener('keydown', (e) => e.stopPropagation());
-    this.modeSel.addEventListener('change', () => this.setMode(this.modeSel.value));
+    this.modeSel.addEventListener('change', () => this.pickMode(this.modeSel.value));
 
     this.modeBusy = false;
     this.modeTimer = null;
+    this.modeAskedShown = false;
 
-    // live agent state from Claude Code hooks (tool name, waiting, done)
+    // live agent state from Claude Code hooks (tool name + what it is on,
+    // waiting, done) — click it for the full list of calls behind it
     this.statusEl = document.createElement('span');
     this.statusEl.className = 'pane-status';
     this.statusEl.style.display = 'none';
+    this.statusEl.dataset.tip = 'What this agent has been doing — click for the full list';
+    this.statusEl.addEventListener('click', () => Activity.open(this));
+
+    // how long the agent has been blocked on the user. A 40-second wait and a
+    // 40-minute one are the same pane otherwise, and only one of them is worth
+    // walking over to.
+    this.waitEl = document.createElement('span');
+    this.waitEl.className = 'pane-wait';
+    this.waitEl.style.display = 'none';
+    this.waitEl.addEventListener('click', () => this.handlers.onFocus(this));
+
+    // Claude Code's Task subagents, which are otherwise invisible: their whole
+    // run is one line of the parent's output
+    this.subEl = document.createElement('span');
+    this.subEl.className = 'pane-sub';
+    this.subEl.style.display = 'none';
+    this.subEl.addEventListener('click', () => Activity.open(this));
 
     // equalizer-style busy indicator, shown only while the agent is working
     this.busyEl = document.createElement('span');
@@ -528,13 +601,6 @@ class Pane {
     this.badge = document.createElement('span');
     this.badge.className = 'pane-badge';
     this.badge.style.display = 'none';
-
-    // "somebody else is in this file too" — its own chip rather than the badge
-    // above, which is already spoken for by exited/detached and would have the
-    // two states overwrite each other.
-    this.collisionEl = document.createElement('span');
-    this.collisionEl.className = 'pane-collision';
-    this.collisionEl.style.display = 'none';
 
     // "this Opus agent has only been reading" — click twice to bring it back
     // on Haiku. A button, not a chip: it is the one thing in the header that
@@ -672,10 +738,10 @@ class Pane {
       this.requestClose();
     });
 
-    // the four buttons nobody reaches for mid-turn — inline when "Fixed agent
+    // the three buttons nobody reaches for mid-turn — inline when "Fixed agent
     // pane buttons" is on, folded under the ⋯ otherwise. Search and text size
     // have keyboard shortcuts, and text size is an Options row as well, so a
-    // pane header that shows all nine at once is nine equal-weight glyphs per
+    // pane header that shows all eight at once is eight equal-weight glyphs per
     // pane and none of them louder than the agent's own name. The mic stays
     // out: dictation is reached mid-turn, so it sits in the cluster itself.
     this.overflowEl = document.createElement('span');
@@ -698,7 +764,7 @@ class Pane {
     );
 
     header.append(
-      this.dot, this.taskEl, this.roleEl, this.effortEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.btnApprove, this.btnDeny, this.modeSel, this.rightsizeEl, this.collisionEl, this.badge, actions
+      this.dot, this.taskEl, this.roleEl, this.effortEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.waitEl, this.subEl, this.btnApprove, this.btnDeny, this.modeSel, this.rightsizeEl, this.badge, actions
     );
     this.syncActionsMode();
 
@@ -777,8 +843,12 @@ class Pane {
     this.usageTurnsEl = document.createElement('span');
     this.usageTimeEl = document.createElement('span');
     this.usageShareEl = document.createElement('span');
+    // the tool trail, under the model in the panel's own bottom right — the
+    // one place that says what the agent is doing right now, so it is also the
+    // way into the full list rather than a second header chip
     this.usageToolsEl = document.createElement('span');
     this.usageToolsEl.className = 'pane-usage-tools';
+    this.usageToolsEl.addEventListener('click', () => Activity.open(this));
     const usageSub = document.createElement('div');
     usageSub.className = 'pane-usage-row pane-usage-sub';
     usageSub.append(this.usageSparkEl, this.usageTurnsEl, this.usageTimeEl, this.usageShareEl, this.usageToolsEl);
@@ -1042,6 +1112,8 @@ class Pane {
     // blocked on a permission prompt, not exited)
     const canClear = !this.exited && !this.working && !this.awaitingPrompt;
     this.btnClear.style.display = canClear ? '' : 'none';
+    this.syncWaitChip();
+    this.syncSubagents();
   }
 
   flagAttention() {
@@ -1099,6 +1171,34 @@ class Pane {
     const show = this.awaitingPrompt && this.promptAnswerable && !this.exited;
     this.btnApprove.style.display = show ? '' : 'none';
     this.btnDeny.style.display = show ? '' : 'none';
+  }
+
+  /* "▸ 2 subagents" — Claude Code's Task calls, which otherwise show up as one
+   * line of the parent's output and nothing else. */
+  syncSubagents() {
+    const live = this.subagents.filter((s) => !s.done).length;
+    const show = live > 0 && !this.exited;
+    const text = show ? `▸ ${live}` : '';
+    if (this.subEl.textContent !== text) this.subEl.textContent = text;
+    const display = show ? '' : 'none';
+    if (this.subEl.style.display !== display) this.subEl.style.display = display;
+    if (!show) return;
+    const names = this.subagents.filter((s) => !s.done).map((s) => s.desc || 'subagent');
+    this.subEl.dataset.tip = `${live} subagent${live > 1 ? 's' : ''} running: ${names.join(' · ')}`;
+  }
+
+  /* "waiting 4m" beside the status. Hidden the moment the agent is working
+   * again, so it can never show a stale age. */
+  syncWaitChip() {
+    const show = !this.exited && this.awaitingPrompt && this.waitingSince > 0;
+    const text = show ? 'waiting ' + fmtWait(Date.now() - this.waitingSince) : '';
+    if (this.waitEl.textContent !== text) this.waitEl.textContent = text;
+    const display = show ? '' : 'none';
+    if (this.waitEl.style.display !== display) this.waitEl.style.display = display;
+    if (!show) return;
+    const since = new Date(this.waitingSince).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const tip = `Blocked on you since ${since} — Ctrl+. jumps to whoever has waited longest`;
+    if (this.waitEl.dataset.tip !== tip) this.waitEl.dataset.tip = tip;
   }
 
   /* Quick-respond to a live numbered permission prompt from the pane header
@@ -1171,7 +1271,71 @@ class Pane {
     return true;
   }
 
-  applyHookEvent({ event, tool, message, model, usage, transcript, collision }) {
+  /* One row for a call that has just started. The file sets are only fed by the
+   * tools that genuinely name a file — a Grep pattern or a Bash command is not
+   * a path, and putting either in a "files read" list would make the list lie. */
+  noteCall(tool, target) {
+    const entry = { tool, target: target || '', t: Date.now(), ms: 0, failed: false, done: false };
+    // a Task call *is* a subagent starting — the only trace one ever leaves
+    if (tool === 'Task') {
+      entry.sub = { desc: target || 'subagent', t: entry.t, ms: 0, done: false };
+      this.subagents.push(entry.sub);
+      if (this.subagents.length > SUBAGENTS_MAX) this.subagents.shift();
+      this.syncSubagents();
+    }
+    this.activity.push(entry);
+    if (this.activity.length > ACTIVITY_MAX) this.activity.shift();
+    this.openCalls.push(entry);
+    // a swarm of never-closed calls would grow forever; the oldest is retired
+    if (this.openCalls.length > OPEN_CALLS_MAX) this.retire(this.openCalls.shift());
+    const set = WRITE_TOOLS.has(tool) ? this.writes : FILE_READ_TOOLS.has(tool) ? this.reads : null;
+    if (!set || !target) return;
+    set.set(target, (set.get(target) || 0) + 1);
+    if (set.size > TOUCHED_MAX) set.delete(set.keys().next().value);
+  }
+
+  /* Close the call a PostToolUse belongs to. Matched on tool *and* target
+   * rather than "whichever started last": Claude Code runs calls in parallel —
+   * several Task subagents at once is the normal case — so closing the newest
+   * one would report the wrong subagent as finished. */
+  closeCall(tool, target, failed) {
+    const want = target || '';
+    let idx = this.openCalls.findIndex((c) => c.tool === tool && c.target === want);
+    if (idx < 0) idx = this.openCalls.findIndex((c) => c.tool === tool);
+    if (idx < 0) return; // its PreToolUse was overwritten before the watcher saw it
+    const [entry] = this.openCalls.splice(idx, 1);
+    entry.done = true;
+    entry.ms = Date.now() - entry.t;
+    entry.failed = !!failed;
+    if (entry.sub) {
+      entry.sub.done = true;
+      entry.sub.ms = entry.ms;
+      this.syncSubagents();
+    }
+  }
+
+  /* A call that never reported back: the turn ended on it. A denied permission
+   * prompt emits no PostToolUse and — as the driven app showed — no Stop
+   * either, so this runs on the next turn's UserPromptSubmit as well. A row
+   * that says "running" for the rest of the session is worse than no row. */
+  retire(entry) {
+    if (!entry || entry.done) return;
+    entry.done = true;
+    entry.ms = Date.now() - entry.t;
+    entry.cancelled = true;
+    if (entry.sub) {
+      entry.sub.done = true;
+      entry.sub.ms = entry.ms;
+    }
+  }
+
+  retireOpenCalls() {
+    if (!this.openCalls.length) return;
+    for (const entry of this.openCalls.splice(0)) this.retire(entry);
+    this.syncSubagents();
+  }
+
+  applyHookEvent({ event, tool, message, model, usage, transcript, target, failed }) {
     if (this.exited) return;
     // /clear and --resume both move the agent onto another transcript file,
     // so the newest one the hooks reported wins
@@ -1182,13 +1346,6 @@ class Pane {
       // a null payload is the reset /clear sends: the tally starts over
       this.usage = usage || null;
       this.renderUsagePanel();
-      return;
-    }
-    // another agent is writing a file this one is writing — like UsageUpdate,
-    // a bookkeeping event that says nothing about this agent's own state, so
-    // it returns before the working/waiting handling below
-    if (event === 'Collision') {
-      if (collision) this.setCollision(collision);
       return;
     }
     const wasWorking = this.working;
@@ -1213,6 +1370,8 @@ class Pane {
       this.awaitingPrompt = false;
       this.noteTurnStart();
       this.setStatusText('');
+      this.retireOpenCalls(); // a new turn retires whatever the last one left open
+      Activity.sync(this);
     } else if (event === 'PreToolUse') {
       this.working = true;
       this.awaitingPrompt = false;
@@ -1223,8 +1382,19 @@ class Pane {
         if (READ_ONLY_TOOLS.has(tool)) this.readOnlyStreak++;
         else this.readOnlyStreak = 0;
         this.syncRightsize();
+        this.noteCall(tool, target);
       }
-      this.setStatusText(tool === 'Bash' ? 'vibing...' : (tool || ''));
+      // one word for every tool — which tool and what it was on are both in
+      // the activity popover, which the cost panel's tool trail opens
+      this.setStatusText('vibing...');
+      Activity.sync(this);
+    } else if (event === 'PostToolUse') {
+      // between two calls is still mid-turn — the agent is working, not idle
+      this.working = true;
+      this.awaitingPrompt = false;
+      this.noteTurnStart();
+      this.closeCall(tool, target, failed);
+      Activity.sync(this);
     } else if (event === 'Notification') {
       // claude is blocked on the user (permission prompt / waiting for input)
       this.working = false;
@@ -1242,6 +1412,10 @@ class Pane {
       this.turnStartedAt = 0;
       this.waitingSince = 0;
       this.setStatusText('done');
+      // calls still open when the turn ends never ran — a denied permission
+      // prompt or an interrupt, both of which skip PostToolUse entirely
+      this.retireOpenCalls();
+      Activity.sync(this);
       this.flagAttention();
       // completion must reach app.js even when flagAttention suppresses its
       // event (pane focused and watched, or attention already flagged) — a
@@ -1253,26 +1427,6 @@ class Pane {
     if (wasWorking !== this.working) {
       this.handlers.onStatusChange(this, this.working ? 'working' : 'idle');
     }
-  }
-
-  /* Name whoever else has written this file recently. The ids come from main,
-   * which has no idea what an agent is called — the names are resolved here,
-   * against the panes actually on screen, so a session that has since been
-   * closed simply drops out of the list instead of showing as a raw id. */
-  setCollision({ file, others }) {
-    const names = [];
-    for (const id of others || []) {
-      for (const pane of livePanes) if (pane.session.id === id) names.push(pane.session.agentName);
-    }
-    if (!names.length) return;
-    this.collisionEl.textContent = '⚠ ' + file.split(/[\\/]/).pop();
-    this.collisionEl.dataset.tip =
-      `${names.join(', ')} ${names.length > 1 ? 'have' : 'has'} also edited ${file} recently`;
-    this.collisionEl.style.display = '';
-    clearTimeout(this.collisionTimer);
-    this.collisionTimer = setTimeout(() => {
-      this.collisionEl.style.display = 'none';
-    }, COLLISION_SHOW_MS);
   }
 
   /* Offer a cheaper tier to an Opus agent that has done nothing but read.
@@ -1345,6 +1499,8 @@ class Pane {
       this.usageSparkEl.textContent = '';
       this.usageTurnsEl.textContent = '';
       this.usageShareEl.style.display = 'none';
+      this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : 'activity';
+      this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran — click for the full list';
       return;
     }
 
@@ -1399,8 +1555,10 @@ class Pane {
       this.usageShareEl.style.display = 'none';
     }
 
-    this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : '';
-    this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran';
+    // "activity" when nothing has run yet, so the way into the popover is
+    // there before the first tool call
+    this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : 'activity';
+    this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran — click for the full list';
   }
 
   /* ---- model chip ---- */
@@ -1556,7 +1714,16 @@ class Pane {
     const listEl = document.createElement('div');
     listEl.className = 'branch-list';
     listEl.textContent = 'fetching branches…';
-    menu.append(diffEl, listEl);
+    // the stat above is a summary; this opens the patch itself, with commit
+    // and — for an isolated agent — merge back into the workspace (diff.js)
+    const reviewBtn = document.createElement('button');
+    reviewBtn.className = 'branch-review';
+    reviewBtn.textContent = 'Review changes…';
+    reviewBtn.addEventListener('click', () => {
+      this.closeBranchMenu();
+      this.handlers.onReview(this);
+    });
+    menu.append(diffEl, reviewBtn, listEl);
     // fixed-position (the pane clips overflow), anchored under the chip
     const r = this.gitEl.getBoundingClientRect();
     menu.style.left = `${Math.round(Math.min(r.left, window.innerWidth - 470))}px`;
@@ -1649,6 +1816,41 @@ class Pane {
     return 'default';
   }
 
+  /* The dropdown as the user drives it — setMode is the mechanism, this is the
+   * intent, and `plan` is the one mode with a fallback behind it.
+   *
+   * "Stop editing" used to be its own chip beside this select, which meant two
+   * controls for one state that could disagree: the select is re-read off
+   * claude's footer every buffer scan, the chip held what the user asked for.
+   * The fallback is what the chip was worth keeping for — setMode verifies
+   * itself against the footer and gives up when a dialog is up or the agent is
+   * mid-turn, and "stop editing" is worth having anyway then, as a plain
+   * request down the same two-write channel the message box uses. It is not a
+   * rule the agent has to obey, so the select says `plan (asked)` rather than
+   * claiming plan mode it did not get. */
+  async pickMode(target) {
+    const wasAsked = this.planAsked;
+    this.planAsked = false;
+    const asking = target === 'plan';
+    const switched = await this.setMode(target, { quiet: asking });
+    if (asking && !switched) {
+      this.planAsked = true;
+      this.say(READ_ONLY_ASK);
+      if (window.toast) toast(`could not set plan mode — asked ${this.session.agentName} to stop editing instead`);
+    } else if (wasAsked && !asking) {
+      this.say(READ_ONLY_LIFT); // the request stands until it is taken back in words
+    }
+    this.syncMode();
+  }
+
+  /* Type a line into the agent and submit it, the way the message box does. */
+  say(text) {
+    window.swarm.writeSession(this.session.id, text);
+    setTimeout(() => {
+      if (!this.exited) window.swarm.writeSession(this.session.id, '\r');
+    }, DICTATE_SUBMIT_DELAY_MS);
+  }
+
   /* Step Shift+Tab until the footer shows the target. One full lap is at
    * most 4 presses; if the target never appears (bypass not enabled, or a
    * dialog is eating keys) walk on back to where we started. Returns whether
@@ -1689,9 +1891,21 @@ class Pane {
     }
   }
 
+  /* Runs on every buffer scan, so the label and tooltip only move when the
+   * asked state actually flips. While a request is standing the select holds
+   * `plan` rather than following the footer, which reads `default` — the footer
+   * is right about the permission mode and wrong about what was asked for. */
   syncMode(lines) {
     if (this.exited || this.modeBusy) return;
-    this.modeSel.value = this.detectMode(lines);
+    const asked = this.planAsked;
+    this.modeSel.value = asked ? 'plan' : this.detectMode(lines);
+    if (asked === this.modeAskedShown) return;
+    this.modeAskedShown = asked;
+    this.modeSel.classList.toggle('asked', asked);
+    this.planOpt.textContent = asked ? 'plan (asked)' : 'plan';
+    this.modeSel.dataset.tip = asked
+      ? `Asked ${this.session.agentName} to stop editing — plan mode could not be set from here, so it is a request, not a rule. Pick another mode to lift it.`
+      : MODE_TIP;
   }
 
   /* ---- focus view ---- */
@@ -1935,6 +2149,7 @@ class Pane {
     clearTimeout(this.idleTimer);
     clearTimeout(this.modeTimer);
     this.modeSel.disabled = true;
+    this.planAsked = false; // the agent it was asked of is gone
     this.setStatusText('');
     this.el.classList.add('exited');
     this.el.classList.toggle('detached', this.detached);
@@ -2011,9 +2226,9 @@ class Pane {
     if (this.stopDictation) this.stopDictation();
     clearTimeout(this.idleTimer);
     clearTimeout(this.modeTimer);
-    clearTimeout(this.collisionTimer);
     clearInterval(this.usageTimer);
     livePanes.delete(this);
+    Activity.closeFor(this); // a popover must not outlive the pane it describes
     this.observer.disconnect();
     // the webgl addon's dispose can throw (upstream bug) — detach it first
     // and never let any teardown error keep the pane element on screen
@@ -2023,6 +2238,14 @@ class Pane {
     this.el.remove();
   }
 }
+
+/* One ticker for every waiting chip rather than a timer per pane: the chips
+ * only move once a minute, and a swarm of per-pane intervals is exactly the
+ * per-beat cost CLAUDE.md's render-cost note warns about. Panes that are not
+ * waiting write nothing (syncWaitChip guards on the text it would set). */
+setInterval(() => {
+  for (const pane of livePanes) pane.syncWaitChip();
+}, 15000);
 
 /* app.js calls this on theme switch — and on a "Theme background overlay"
  * flip, after setting the attribute, since that changes --term-bg and hence

@@ -24,43 +24,35 @@ const { IS_WIN, exec, shQuote, toShellPath } = require('./platform');
  * read is incremental — only the bytes appended since the previous turn — so
  * the per-turn cost of all of this is one small read. */
 
-const HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'Notification', 'Stop', 'SessionStart'];
+/* PostToolUse is here for the pane's activity list only: it is what gives a
+ * finished call a duration and a pass/fail, which PreToolUse alone cannot. It
+ * costs one more hook write per tool call and says nothing about working /
+ * waiting — the renderer treats it as "still working", like PreToolUse. */
+const HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SessionStart'];
 
-/* ---- two agents editing one file ----
- *
- * The tools that change a file, and the `tool_input` field each keeps its path
- * in. Read/Grep/Glob are deliberately absent: two agents reading one file
- * collide over nothing, and recording every read would make the map below
- * enormous for no signal.
- *
- * PreToolUse fires *before* the write lands, so the second agent is flagged
- * while its edit is still being made rather than after both have written.
- * Observability only — nothing is blocked and no lock is taken; the pane says
- * who else is in the file and leaves the decision to the user. */
-const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+/* What a tool call is *about*, for the pane's status line and its activity
+ * list: the path for anything that names one, the command for Bash, the URL for
+ * a fetch. Display only. */
+const TARGET_FIELDS = ['file_path', 'notebook_path', 'path', 'pattern', 'command', 'url', 'description'];
 
-/* How long another agent's write stays interesting. Long enough to catch "we
- * are both working on this right now", short enough that a file two agents
- * touched hours apart stops being reported. */
-const COLLISION_WINDOW_MS = 30 * 60 * 1000;
-
-/* Distinct paths remembered before stale ones get swept. A busy swarm writes a
- * few hundred files an hour; this only has to stay bounded, not be exact. */
-const TOUCH_PATHS_MAX = 2000;
-
-function writeTarget(payload) {
-  if (!WRITE_TOOLS.has(payload.tool_name)) return null;
+function toolTarget(payload) {
   const input = payload.tool_input;
   if (!input || typeof input !== 'object') return null;
-  const p = input.file_path || input.notebook_path;
-  return typeof p === 'string' && p ? p.slice(0, 300) : null;
+  for (const field of TARGET_FIELDS) {
+    const v = input[field];
+    if (typeof v === 'string' && v) return v.slice(0, 200);
+  }
+  return null;
 }
 
-/* Shaped like every other hook event so the renderer's one handler can take it
- * — a bookkeeping event, like UsageUpdate, that says nothing about the agent's
- * own working/waiting state. */
-function collisionEvent(file, others) {
-  return { event: 'Collision', tool: null, message: null, model: null, collision: { file, others } };
+/* Whether a finished call failed. There is no one agreed error field across
+ * tools, so this reads the three shapes Claude Code actually emits and treats
+ * anything else as a pass — an activity row that wrongly reads red is worse
+ * than one that misses a failure the terminal shows anyway. */
+function toolFailed(payload) {
+  const res = payload.tool_response;
+  if (!res || typeof res !== 'object') return false;
+  return res.success === false || res.is_error === true || !!(typeof res.error === 'string' && res.error);
 }
 
 /* How much transcript to parse in one go. Only bytes appended since the last
@@ -163,8 +155,6 @@ class HookMonitor {
     // hook event, so it is known from SessionStart onwards rather than only
     // once a turn has ended (which is when `usage` first gets a path).
     this.transcripts = new Map();
-    // absolute file path -> Map(sessionId -> ts of its last write to it)
-    this.touches = new Map();
     this.watcher = null;
     this.sweepTimer = null;
     this.persistTimer = null; // coalesces the usage writes (see persistUsage)
@@ -272,61 +262,17 @@ class HookMonitor {
         ? path.basename(payload.transcript_path, '.jsonl')
         : null;
       if (transcript) this.transcripts.set(sessionId, transcript);
+      const isTool = event === 'PreToolUse' || event === 'PostToolUse';
       this.onEvent(sessionId, {
         event,
         tool: typeof payload.tool_name === 'string' ? payload.tool_name.slice(0, 40) : null,
         message: typeof payload.message === 'string' ? payload.message.slice(0, 200) : null,
         model: this.models.get(sessionId) || null,
         transcript,
+        // what the call is on, and — once it has finished — whether it worked
+        target: isTool ? toolTarget(payload) : null,
+        failed: event === 'PostToolUse' ? toolFailed(payload) : false,
       });
-      // after the event above, so the pane has already put the tool on its
-      // status line before the collision badge lands beside it
-      const target = event === 'PreToolUse' ? writeTarget(payload) : null;
-      if (target) this.reportCollision(sessionId, target);
-    }
-  }
-
-  /* Record a write, and tell everyone involved if somebody else wrote the same
-   * file inside the window. Both sides are notified: a collision that only the
-   * second agent's pane knew about would be half a warning. */
-  reportCollision(sessionId, file) {
-    const now = Date.now();
-    let bySession = this.touches.get(file);
-    if (!bySession) {
-      if (this.touches.size >= TOUCH_PATHS_MAX) this.sweepTouches(now);
-      bySession = new Map();
-      this.touches.set(file, bySession);
-    }
-    bySession.set(sessionId, now);
-
-    const others = [];
-    for (const [id, ts] of bySession) {
-      if (id === sessionId) continue;
-      if (now - ts > COLLISION_WINDOW_MS) bySession.delete(id);
-      else others.push(id);
-    }
-    if (!others.length) return;
-
-    this.debugLog(`[hooks] collision on ${file}: ${sessionId} + ${others.join(', ')}`);
-    // the newcomer hears about everyone; each incumbent hears about the newcomer
-    this.onEvent(sessionId, collisionEvent(file, others));
-    for (const other of others) this.onEvent(other, collisionEvent(file, [sessionId]));
-  }
-
-  /* Drop paths nobody has written inside the window. Only runs when the map
-   * hits its cap, which a normal session never reaches. */
-  sweepTouches(now) {
-    for (const [file, bySession] of this.touches) {
-      for (const [id, ts] of bySession) if (now - ts > COLLISION_WINDOW_MS) bySession.delete(id);
-      if (!bySession.size) this.touches.delete(file);
-    }
-  }
-
-  /* A closed session must stop being named as the other half of a collision. */
-  forgetTouches(sessionId) {
-    for (const [file, bySession] of this.touches) {
-      if (!bySession.delete(sessionId)) continue;
-      if (!bySession.size) this.touches.delete(file);
     }
   }
 
@@ -462,7 +408,6 @@ class HookMonitor {
       this.usage.delete(id);
       this.models.delete(id);
       this.transcripts.delete(id);
-      this.forgetTouches(id);
       dropped = true;
     }
     if (dropped) this.persistUsage();
@@ -597,7 +542,6 @@ class HookMonitor {
     this.models.delete(sessionId);
     this.usage.delete(sessionId);
     this.transcripts.delete(sessionId); // otherwise one entry per killed session for the app's lifetime
-    this.forgetTouches(sessionId);
     this.persistUsage();
     try { fs.unlinkSync(path.join(this.stateDir, sessionId + '.json')); } catch { /* ignore */ }
   }

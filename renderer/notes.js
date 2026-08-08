@@ -2,7 +2,7 @@
  *
  * What one agent learned about a repo, so the next one starts with it instead
  * of rediscovering it. Every agent launched in a workspace that has a non-empty
- * notes file is told the path (main/sessions.js NOTES_PROMPT) — a pointer, not
+ * notes file is told the path (main/sessions.js notesPrompt) — a pointer, not
  * the contents, so a long notebook costs one line of context rather than being
  * re-sent on every turn of every agent.
  *
@@ -16,6 +16,8 @@ const Notes = (() => {
   const hintEl = document.getElementById('notes-hint');
   const saveBtn = document.getElementById('notes-save');
   const closeBtn = document.getElementById('notes-close');
+
+  const SIZE_KEY = 'swarmeye.notesSize'; // drag the side; kept between opens
 
   let wsId = null;
   let loaded = ''; // what is on disk, to know whether anything actually changed
@@ -43,6 +45,7 @@ const Notes = (() => {
     hintEl.textContent = 'loading…';
     hintEl.classList.remove('warn');
     popEl.hidden = false;
+    Resizable.place(popEl, SIZE_KEY);
     const res = await window.swarm.readNotes(ws.id);
     // a second open while this one was in flight owns the box now
     if (wsId !== ws.id || popEl.hidden) return;
@@ -71,6 +74,7 @@ const Notes = (() => {
   function close() {
     if (popEl.hidden) return;
     if (dirty()) save();
+    Resizable.remember(popEl, SIZE_KEY);
     popEl.hidden = true;
     wsId = null;
   }

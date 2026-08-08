@@ -2,10 +2,13 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Notification, crashRep
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
-const { PtyManager, ROLES, NOTES_REL, MODELS, EFFORT_FLAGS, SESSION_ID_RE } = require('./sessions');
+const { PtyManager, NOTES_REL, MODELS, EFFORT_FLAGS, SESSION_ID_RE } = require('./sessions');
+const roles = require('./roles');
 const { UsageMonitor } = require('./usage');
 const { HookMonitor } = require('./hooks');
 const { GitMonitor, listBranches, checkoutBranch, diffStat } = require('./git');
+const worktree = require('./worktree');
+const attach = require('./attach');
 const { HealthMonitor } = require('./health');
 const { listSessions: listHistory, readSession: readHistory, deleteSessions: deleteHistory } = require('./history');
 const { IS_WIN } = require('./platform');
@@ -304,6 +307,18 @@ function registerIpc() {
     return { workspace: ws, workspaces: cfg.workspaces, selectedWorkspaceId: cfg.selectedWorkspaceId };
   });
 
+  // what the message box can attach to a prompt: a file from this workspace
+  // (the @ picker) or an image from the clipboard. Both resolve to a path the
+  // *agent* can open — see main/attach.js — and both take a workspace id
+  // rather than a path, like every other handler here.
+  ipcMain.handle('workspace:files', async (e, id) => {
+    const ws = config.load().workspaces.find((w) => w.id === id);
+    if (!ws) return [];
+    try { return await attach.listFiles(ws); } catch { return []; }
+  });
+
+  ipcMain.handle('attach:image', (e, dataUrl) => attach.saveImage(dataUrl));
+
   // per-workspace task categories — every workspace starts with the same
   // three defaults (config.DEFAULT_TASK_CATEGORIES) but can add/remove freely
   ipcMain.handle('workspace:add-category', (e, { id, name }) => {
@@ -415,6 +430,95 @@ function registerIpc() {
     return res;
   });
 
+  /* ---- isolated agents: a worktree each, and the way back ---- */
+
+  /* Every git call below addresses either a workspace or one agent's worktree,
+   * and resolves it here from an id — like notes:read, the renderer never names
+   * a path, so there is nothing to escape out of. The shape returned is the one
+   * git.js and worktree.js take: { id, path }. */
+  function repoTarget({ workspaceId, sessionId, worktreeName }) {
+    const cfg = config.load();
+    if (sessionId) {
+      const meta = (cfg.sessions || {})[sessionId];
+      return meta && meta.cwd ? { id: meta.id, path: meta.cwd } : null;
+    }
+    const ws = cfg.workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return null;
+    // a worktree whose agent is gone is still reviewable, and is named rather
+    // than pointed at — the path is built here and only if it is really there
+    if (worktreeName) {
+      const wt = restartWorktree(ws, { name: worktreeName });
+      return wt ? { id: ws.id + ':' + wt.name, path: wt.path } : null;
+    }
+    return ws;
+  }
+
+  /* The worktree a restarting agent goes back into, rebuilt from its name.
+   * Anything that no longer exists on disk (removed from the review popover
+   * while the pane sat exited) falls back to the workspace itself rather than
+   * failing the restart. */
+  function restartWorktree(ws, prev) {
+    const name = String((prev && prev.name) || '');
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) return null;
+    const p = worktree.worktreePath(ws, name);
+    if (!fs.existsSync(p)) return null;
+    const branch = String((prev && prev.branch) || '');
+    return { name, path: p, branch: /^[A-Za-z0-9][\w./-]*$/.test(branch) ? branch : 'swarmeye/' + name };
+  }
+
+  // whether agents started in this workspace get a worktree of their own.
+  // A workspace setting rather than a per-launch one: it is a property of the
+  // repo, and it reaches board tasks and + Agent without either of them asking
+  ipcMain.handle('workspace:set-isolate', (e, { id, isolate }) => {
+    const cfg = config.load();
+    const ws = cfg.workspaces.find((w) => w.id === id);
+    if (ws) ws.isolate = !!isolate;
+    config.save(cfg);
+    return { workspaces: cfg.workspaces };
+  });
+
+  ipcMain.handle('worktree:list', async (e, workspaceId) => {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return null;
+    const entries = await worktree.list(ws);
+    if (!entries) return null;
+    // which of them still have an agent in them — the rest are the leftovers
+    // the popover offers to remove
+    const live = new Set(Object.values(config.load().sessions || {})
+      .filter((m) => m.worktree)
+      .map((m) => m.worktree.name));
+    return entries.map((w) => ({ ...w, live: live.has(w.name) }));
+  });
+
+  ipcMain.handle('worktree:remove', async (e, { workspaceId, name }) => {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return { ok: false, error: 'unknown workspace' };
+    const res = await worktree.remove(ws, String(name || ''));
+    if (res.ok && git) git.tick();
+    return res;
+  });
+
+  ipcMain.handle('git:patch', (e, target) => {
+    const t = repoTarget(target || {});
+    return t ? worktree.patch(t) : null;
+  });
+
+  ipcMain.handle('git:commit', async (e, { workspaceId, sessionId, message }) => {
+    const t = repoTarget({ workspaceId, sessionId });
+    if (!t) return { ok: false, error: 'unknown target' };
+    const res = await worktree.commit(t, message);
+    if (res.ok && git) git.tick();
+    return res;
+  });
+
+  ipcMain.handle('git:merge', async (e, { workspaceId, branch }) => {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return { ok: false, error: 'unknown workspace' };
+    const res = await worktree.merge(ws, String(branch || ''));
+    if (git) git.tick(); // the workspace chip moved either way (merged, or aborted back)
+    return res;
+  });
+
   ipcMain.handle('workspace:reorder', (e, ids) => {
     const cfg = config.load();
     const byId = new Map(cfg.workspaces.map((w) => [w.id, w]));
@@ -499,7 +603,7 @@ function registerIpc() {
       model: MODELS.includes(model) ? model : 'default',
       // the role preset the task's agent launches with — same table and same
       // check session:create applies, since it ends up in the same flag
-      role: Object.hasOwn(ROLES, String(role || '')) ? role : '',
+      role: roles.has(role) ? role : '',
       // the named flag levels plus the two that only exist as typed commands
       effort: [...EFFORT_FLAGS, 'ultracode', 'auto'].includes(effort) ? effort : 'default',
       focus: !!focus,
@@ -655,27 +759,51 @@ function registerIpc() {
     return { ok: deleted === doomed.length, deleted, kept: wanted.length - doomed.length };
   });
 
-  // role presets for the + Coding Agent picker — main owns the prompts and the
-  // model each role is worth (sessions.js ROLES); the renderer only draws the
-  // labels, so the two can never disagree about what a role means
-  ipcMain.handle('roles:list', () => Object.entries(ROLES).map(([key, r]) => ({ key, label: r.label, model: r.model })));
+  // role presets for the + Agent picker and the coordinator. The prompt rides
+  // along now that the roles are editable (main/roles.js) — the editor has to
+  // show what it is editing — but the launch still reads main's own copy, so a
+  // renderer that sent a doctored prompt back would only be editing the table.
+  ipcMain.handle('roles:list', () => roles.list().map((r) => ({ ...r })));
+
+  // the whole table, not a patch: a role missing from what the editor sends is
+  // a role the user deleted. Everything is re-validated in roles.save — a role
+  // prompt is the one field whose text reaches a shell command line.
+  ipcMain.handle('roles:save', (e, list) => roles.save(list).map((r) => ({ ...r })));
 
   ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, resumeId, role, effort }) => {
     await ptysReady;
     const cfg = config.load();
     const ws = cfg.workspaces.find((w) => w.id === workspaceId);
     if (!ws) { debugLog('[session:create] no-workspace ' + workspaceId); return { ok: false, reason: 'no-workspace' }; }
+    /* An isolated workspace gives each agent its own worktree, which has to
+     * exist before node-pty can chdir into it — so the name is picked here
+     * rather than inside spawn, and the cap is checked before the directory is
+     * made rather than leaving an orphan behind when spawn refuses. */
+    let wt = null;
+    if (ws.isolate) {
+      if (ptys.runningCount() >= ptys.maxSessions) return { ok: false, reason: 'cap' };
+      const agentName = ptys.pickAgentName();
+      const made = await worktree.create(ws, agentName);
+      if (!made.ok) {
+        debugLog('[session:create] worktree FAIL ' + made.error);
+        return { ok: false, reason: made.error };
+      }
+      wt = { ...made, agentName };
+    }
     try {
       // resumeId is re-validated again in claudeBase, since it lands in a
       // shell command line. role is only ever a key into main's own table,
       // never free text.
       const session = ptys.spawn(ws, cols || 80, rows || 24, {
         model,
-        role: Object.hasOwn(ROLES, String(role || '')) ? role : undefined,
+        role: roles.has(role) ? role : undefined,
         resume: SESSION_ID_RE.test(String(resumeId || '')) ? resumeId : undefined,
         effort: EFFORT_FLAGS.includes(String(effort || '')) ? effort : undefined,
+        agentName: wt ? wt.agentName : undefined,
+        worktree: wt || undefined,
       });
-      debugLog('[session:create] ok ' + session.id + ' "' + session.agentName + '" in ' + ws.path);
+      if (wt && git) git.tick(); // the new pane's chip shows its own branch at once
+      debugLog('[session:create] ok ' + session.id + ' "' + session.agentName + '" in ' + session.cwd);
       return { ok: true, session };
     } catch (err) {
       debugLog('[session:create] FAIL ' + err.stack);
@@ -686,18 +814,27 @@ function registerIpc() {
   ipcMain.handle('session:restart', async (e, payload) => {
     await ptysReady;
     // resolve the folder server-side — the renderer only names a workspace
-    const ws = config.load().workspaces.find((w) => w.id === payload.workspaceId);
+    const cfg = config.load();
+    const ws = cfg.workspaces.find((w) => w.id === payload.workspaceId);
     if (!ws) return { ok: false, reason: 'no-workspace' };
+    /* An isolated agent comes back in the worktree it was working in. Its
+     * metadata is already gone by the time ↻ is pressed (a real exit drops it),
+     * so the pane hands back the worktree's *name* — an id, not a path: main
+     * still builds the path itself, and only if that directory is really
+     * there. */
+    const wt = restartWorktree(ws, payload.worktree);
     try {
       const { session, resumed } = await ptys.restart({
         workspaceId: ws.id,
         workspaceName: ws.name,
-        cwd: ws.path,
+        cwd: wt ? wt.path : ws.path,
+        workspacePath: ws.path,
+        worktree: wt ? { name: wt.name, branch: wt.branch } : undefined,
         agentName: String(payload.agentName || '').slice(0, 40).trim() || 'agent',
         cols: payload.cols,
         rows: payload.rows,
         resume: !!payload.resume,
-        role: Object.hasOwn(ROLES, String(payload.role || '')) ? payload.role : undefined,
+        role: roles.has(payload.role) ? payload.role : undefined,
         // same whitelist task:create applies — it lands in the same launch flag
         model: MODELS.includes(payload.model) ? payload.model : undefined,
       });
@@ -733,13 +870,17 @@ function registerIpc() {
   });
 
   // save a pane's scrollback; the renderer sends the text, we pick the file
-  ipcMain.handle('session:export', async (e, { name, text }) => {
+  // `ext` is html for the History screen's page export, txt for everything
+  // else; the renderer builds the document either way, so this only picks the
+  // dialog's filter and default name
+  ipcMain.handle('session:export', async (e, { name, text, ext }) => {
     const safe = String(name || 'agent').replace(/[^A-Za-z0-9 _.-]/g, '_').slice(0, 40).trim() || 'agent';
     const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
+    const html = ext === 'html';
     const res = await dialog.showSaveDialog(win, {
       title: 'Save transcript',
-      defaultPath: path.join(app.getPath('documents'), `${safe} ${stamp}.txt`),
-      filters: [{ name: 'Text', extensions: ['txt'] }],
+      defaultPath: path.join(app.getPath('documents'), `${safe} ${stamp}.${html ? 'html' : 'txt'}`),
+      filters: [html ? { name: 'HTML', extensions: ['html'] } : { name: 'Text', extensions: ['txt'] }],
     });
     if (res.canceled || !res.filePath) return { canceled: true };
     try {

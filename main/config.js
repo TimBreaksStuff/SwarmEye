@@ -23,6 +23,9 @@ const DEFAULTS = {
   tasks: [],
   // archivedTasks moved to archive.json (loadArchive below); the key may still
   // exist in an older config.json and is migrated out on first read
+  // role presets, seeded from main/roles.js's four built-ins the first time
+  // they are asked for and user-editable from then on
+  roles: [],
   skills: [],
   localActiveSkills: [], // ids of filesystem-discovered skills marked auto-invoke (see skills.js)
   autoUsageLimit: 85,

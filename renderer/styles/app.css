@@ -4330,26 +4330,40 @@ body::before {
   /* #history-view's own z-index opens a stacking context below the top bar's,
    * so no z-index here can lift the box over it — it clears it instead */
   z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 76px 24px 24px;
+  /* only the dim: the box inside is placed and sized by its own module */
   background: color-mix(in srgb, #000 55%, transparent);
 }
 #hist-modal[hidden],
 #coord-modal[hidden] { display: none; }
 #hist-modal-box,
 #coord-modal-box {
+  /* absolute, not flex-centred: the box is resizable, and a centred box grows
+   * in both directions under the grip. history.js/coordinator.js place it. */
+  position: absolute;
   display: flex;
   flex-direction: column;
-  width: min(980px, 100%);
-  max-height: 100%;
-  padding: 14px 16px;
+  width: min(980px, 96vw);
+  /* a set height, not one that follows the content: the box is centred once,
+   * when it opens, and a box that grew as the transcript arrived would walk
+   * off the bottom of the window */
+  height: min(760px, calc(100vh - 120px));
+  min-width: 460px;
+  min-height: 320px;
+  max-width: 96vw;
+  /* the box is centred in the whole window now, so this is also what keeps a
+   * tall one clear of the top bar */
+  max-height: calc(100vh - 120px);
+  overflow: hidden; /* `resize` does nothing while overflow is visible */
+  resize: both;
+  padding: 14px 16px 20px; /* the deeper bottom is the resize grip's room */
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
 }
+/* the coordinator opens on one textarea — a transcript's height would be empty
+   box until a plan comes back */
+#coord-modal-box { height: min(520px, calc(100vh - 120px)); }
 #hist-modal-head,
 #coord-modal-head {
   display: flex;
