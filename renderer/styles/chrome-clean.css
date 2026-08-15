@@ -122,39 +122,6 @@
 /* Options lives in the cluster now — no name, no rail tile look */
 #topbar-actions > #kbd-help .rail-tile-name { display: none !important; }
 
-/* the bell is amber only while something is unread — a permanent alert
- * colour makes the alert mean nothing */
-#topbar-actions > #notif-btn { color: var(--text2); }
-#topbar-actions > #notif-btn.unread,
-#topbar-actions > #notif-btn.unread:hover {
-  color: var(--amber);
-  background: color-mix(in srgb, var(--amber) 10%, transparent);
-  /* the cluster's hairlines are shared — an amber one here would read as the
-   * neighbouring button's border, not the bell's state */
-  border-color: var(--border2);
-  animation: none;
-  box-shadow: none;
-}
-/* muted (double-clicked): the bell greys out and wears a slash — still counts,
- * just doesn't interrupt */
-#topbar-actions > #notif-btn.muted,
-#topbar-actions > #notif-btn.muted.unread { color: var(--text3); background: transparent; }
-#topbar-actions > #notif-btn.muted::after {
-  content: '';
-  position: absolute;
-  left: 20%; right: 20%; top: 50%;
-  border-top: 1.6px solid currentColor;
-  transform: rotate(-45deg);
-  pointer-events: none;
-}
-
-#notif-n {
-  top: -4px; right: -1px;
-  min-width: 15px; height: 15px;
-  border-radius: 8px;
-  font-size: 9px; line-height: 15px;
-}
-
 /* keyboard focus is visible on every top-bar control */
 #topbar-actions > button:focus-visible,
 #topbar .topbar-chip:focus-visible,
@@ -350,6 +317,91 @@
 /* the radial gauges are replaced by the bars above */
 #leftbar.expanded #usage-gauges,
 #leftbar.hover-expanded #usage-gauges { display: none; }
+
+/* --- the two provider sections: "Anthropic Usage" / "OpenRouter Usage" ---
+ * the heads exist only in the expanded rail — the 57px rail has no room for a
+ * label. The bars themselves ride in both: the collapsed rail stacks the
+ * OpenRouter pair under the Anthropic pair, in the same mini-bar shape (each
+ * block keeps its own tooltip, which is what names them there) */
+.u-title { display: none; }
+#leftbar:not(.expanded):not(.hover-expanded) #usage-or {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 8px 0;
+  flex: none;
+  cursor: pointer;
+  user-select: none;
+}
+#leftbar.expanded .u-title,
+#leftbar.hover-expanded .u-title {
+  display: block;
+  order: 1;                      /* the rail's usage group — see the order map */
+  padding: 0 14px;
+  margin-top: 16px;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* first thing in the rail, and the expanded surface has no padding of its own —
+ * so the head carries the whole gap under the top bar itself. 14px matches the
+ * side padding, so the label is inset the same amount from both edges */
+#leftbar.expanded #usage-title,
+#leftbar.hover-expanded #usage-title { margin-top: 14px; }
+/* the head now carries the gap the block's own top padding used to */
+#leftbar.expanded #usage,
+#leftbar.hover-expanded #usage { padding-top: 10px; }
+#leftbar.expanded #usage-or,
+#leftbar.hover-expanded #usage-or {
+  display: flex;
+  order: 1;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 10px 14px 4px;
+  cursor: pointer;
+}
+/* today has no bar, so its dollar figure is the row's value, not an aside */
+#leftbar.expanded #u-or-today .u-in,
+#leftbar.hover-expanded #u-or-today .u-in {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+/* same horizontal track/fill as the Anthropic bars above */
+#leftbar.expanded #usage-or .u-track,
+#leftbar.hover-expanded #usage-or .u-track {
+  width: auto;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--border2);
+  overflow: hidden;
+}
+#leftbar.expanded #usage-or .u-fill,
+#leftbar.hover-expanded #usage-or .u-fill {
+  top: 0;
+  right: auto;
+  width: var(--u, 0%);
+  height: 100%;
+  box-shadow: none;
+  transition: width .4s ease;
+}
+/* no key saved, or the section switched off in Options: the display rules
+ * above — and app.css's, for the collapsed rail — would otherwise out-rank
+ * the hidden attribute */
+#usage[hidden],
+#usage-gauges[hidden],
+#leftbar:not(.expanded):not(.hover-expanded) #usage-or[hidden],
+#leftbar.expanded .u-title[hidden],
+#leftbar.hover-expanded .u-title[hidden],
+#leftbar.expanded #usage[hidden],
+#leftbar.hover-expanded #usage[hidden],
+#leftbar.expanded #usage-or[hidden],
+#leftbar.hover-expanded #usage-or[hidden] { display: none; }
 
 /* --- rows: workspaces and destinations share one 36px row --- */
 #leftbar.expanded .rail-tile,
@@ -548,15 +600,20 @@
  * the corners of a borderless tile only made it look busy. */
 #leftbar:not(.expanded):not(.hover-expanded) .rail-tile .rail-n,
 #leftbar:not(.expanded):not(.hover-expanded) .rail-tile .ws-pin { display: none; }
-/* the identity colour is the same 3px bar the expanded row uses, just left of
- * the glyph instead of left of the name */
+/* the initial is dropped in the 57px rail: one letter is a poor stand-in for a
+ * name (two workspaces starting with the same letter are indistinguishable),
+ * and it left the identity bar hanging off the tile's left edge with a gap
+ * between them. The colour bar alone is the tile — the name is in the hover
+ * flyout and in the expanded rail. */
+#leftbar:not(.expanded):not(.hover-expanded) .ws-tile .rail-tile-glyph { display: none; }
+/* the identity colour is the same 3px bar the expanded row uses, centred */
 #leftbar:not(.expanded):not(.hover-expanded) .rail-tile .ws-color-dot {
   top: 50%;
   bottom: auto;
-  left: 3px;
+  left: 50%;
   width: 3px;
   height: 16px;
-  margin-top: -8px;
+  margin: -8px 0 0 -1.5px;
   border: none;
   border-radius: 2px;
 }
@@ -635,9 +692,13 @@
   border-radius: 6px;
   padding: 2px 7px;
 }
-/* accent: the branch chip is the only one of the six you can click */
+/* accent: the branch chip is the loudest of the clickable ones */
 .pane-git { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 35%, var(--border2)); }
 .pane-git:hover { background: var(--hover); border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
+/* the model chip opens the model picker — clickable, but it stays neutral:
+   what the agent runs is not a call to action the way its branch is */
+.pane-llm { cursor: pointer; }
+.pane-llm:hover { background: var(--hover); border-color: var(--border); }
 .pane-git.dirty {
   color: var(--amber);
   border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
@@ -876,7 +937,17 @@
 
 /* --- the usage panel reads in the same voice --- */
 .pane-usage-spark { letter-spacing: 0; color: var(--text2); }
-.pane-usage-model { color: var(--text2); }
+/* the panel's spelling of the model chip, same picker behind it */
+.pane-usage-model { color: var(--text2); cursor: pointer; }
+.pane-usage-model:hover { color: var(--text); }
+/* which upstream the agent runs on, quiet like the effort next to it — the
+   panel's right edge reads as one run, "Anthropic / HIGH / opus-5" */
+.pane-usage-provider { color: var(--muted); white-space: nowrap; }
+.pane-usage-right > span + span::before {
+  content: '/';
+  margin-right: 8px;
+  color: var(--border3);
+}
 
 /* --- the actions: one segmented cluster, five buttons folded away --- */
 .pane-actions {
@@ -904,7 +975,6 @@
   background: color-mix(in srgb, var(--err) 20%, transparent);
   border-color: transparent;
 }
-.pane-actions .pane-btn.restart { color: var(--accent-text); }
 .pane-actions .pane-btn.mic.listening { color: var(--err); border-color: transparent; }
 .pane-actions .pane-btn.mic.hands-free { color: var(--accent-text); border-color: transparent; }
 
@@ -1336,7 +1406,8 @@
 .board-filters select,
 .board-archive-filters select,
 #board-category-filter,
-#history-ws {
+#history-ws,
+#history-provider {
   font-family: var(--font-ui);
   font-size: 12px;
   height: 30px;
@@ -1536,10 +1607,16 @@
 .launch-options {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
 }
+/* six while the OpenRouter Harness field is showing — hidden it leaves the
+ * grid altogether, so a Claude launch keeps exactly the five it had */
+.launch-options.has-harness { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .launch-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+/* Provider and Model name who is billed ("Anthropic Subscription: Sonnet"),
+ * which one column ellipsizes away — see LAUNCH_FIELDS in launcher.js */
+.launch-field--wide { grid-column: span 2; }
 .launch-field__label {
   font-family: var(--font-mono);
   font-size: 9.5px;
@@ -1574,6 +1651,7 @@
   transition: border-color .15s, background-color .15s;
 }
 .launch-field__select:hover { border-color: var(--border-hover); }
+.launch-field__select:disabled { opacity: .45; cursor: not-allowed; }
 .launch-field__select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -1608,79 +1686,11 @@
   outline-offset: 2px;
 }
 
-/* the four fields hold their row to 720px, then fold 2x2 */
+/* the fields hold their row to 720px, then fold two-up — .has-harness is the
+ * more specific selector, so it has to be named again to be overridden */
 @media (max-width: 720px) {
-  .launch-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .launch-options, .launch-options.has-harness { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .launcher-card { padding: 40px 22px; gap: 28px; }
-}
-
-/* ── Options popover sections ────────────────────────────────────────────
- * 26 flat rows was a wall; the rows now sit in <details> groups so only the
- * one you came for is open. Native disclosure, no JS — and because the
- * popover is only hidden rather than rebuilt, which groups you left open
- * survive until the app restarts. */
-.kbd-sect > summary {
-  list-style: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-top: 1px solid var(--border);
-  margin-top: 4px;
-  padding: 12px 0 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--accent-text);
-}
-.kbd-sect > summary::-webkit-details-marker { display: none; }
-.kbd-sect > summary::after {
-  content: '›';
-  font-family: var(--font-ui);
-  font-size: 15px;
-  font-weight: 400;
-  letter-spacing: normal;
-  color: var(--muted);
-  transition: transform 0.12s ease;
-}
-.kbd-sect[open] > summary::after { transform: rotate(90deg); }
-.kbd-sect > summary:hover { color: var(--text); }
-.kbd-sect > summary:hover::after { color: var(--accent-text); }
-.kbd-sect:first-of-type > summary { border-top: none; margin-top: 0; padding-top: 4px; }
-/* the swatch row keeps its stacked layout but no longer needs its own divider,
- * now that the section heading above it draws one */
-#kbd-pop .kbd-opt-theme { border-top: none; margin-top: 0; padding-top: 6px; }
-/* one height for every option row. Left to itself each row sized to whatever
- * control it carries — a 23px checkbox, a 24px stepper, a 27px select — and
- * the list stepped between 34, 36 and 39.5px down the panel. */
-#kbd-pop .kbd-opt {
-  box-sizing: border-box;
-  min-height: 40px;
-  padding: 2px 0;
-}
-#kbd-pop .kbd-opt-theme { min-height: 0; } /* stacked, sizes to its swatch rows */
-/* and one width for every select, so the four of them line up on both edges
- * instead of each sizing to its longest option */
-#kbd-pop .kbd-opt select { width: 132px; }
-/* the version row is the widest thing in the panel — label, version string,
- * Check, and Download once an update exists — and used to push 22px past the
- * popover edge. The version string is what gives way. */
-#kbd-pop .kbd-opt .opt-ctl { min-width: 0; }
-#update-status {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Check carries a word, so it can't stay in .opt-ctl button's 24x24 stepper
- * box the way a - or + does — it was being clipped to a quarter of its label. */
-#update-check-btn {
-  width: auto;
-  height: auto;
-  padding: 5px 10px;
-  font-size: 11px;
 }
 
 /* ---- flat popovers, the stragglers ----
@@ -1688,11 +1698,8 @@
  * per-frame GPU cost: while any of these floats over streaming terminals the
  * compositor re-blurs its backdrop on every frame the panes repaint. Same
  * opaque-surface treatment #notes-pop already got. */
-#notif-pop,
 .gs-box,
 #msg-pop,
-#kbd-pop,
-#kbd-shortcuts-pop,
 .branch-menu,
 .app-tooltip,
 #rail-flyout,
@@ -1940,7 +1947,7 @@
   --ws-ring: 50%;
   --ws-ring2: 25%;
 }
-:root[data-theme-overlay="on"]:is([data-theme="light"], [data-theme="blue"], [data-theme="neoblue"], [data-theme="purple"]) .ws-tint {
+:root[data-theme-overlay="on"]:is([data-theme="light"], [data-theme="blue"], [data-theme="neoblue"], [data-theme="purple"], [data-theme="teal"], [data-theme="rose"], [data-theme="violet"], [data-theme="sky"], [data-theme="indigo"], [data-theme="fuchsia"], [data-theme="emerald"], [data-theme="amber"], [data-theme="slate"]) .ws-tint {
   --ws-ink: oklch(from var(--ws) 0.47 c h);
   /* the map's links carry their agent's status as an alpha ramp (0.1 dead to
    * 0.42 busy), picked for a bright line on black. The same alpha on a dark
@@ -2268,6 +2275,9 @@
 }
 /* the menu row that opens all this is an action, not another agent to start */
 .branch-item-quiet { color: var(--muted); }
+/* the two plain-agent rows lead the + Coding Agent menu — the provider choice,
+ * pulled forward from the role presets under them */
+.branch-menu .branch-item-strong { color: var(--text); font-weight: 600; }
 
 /* --- the message box's @ file picker --- */
 .msg-mentions {
@@ -2339,3 +2349,131 @@
 /* the 0.16s width animation lags the pointer mid-drag */
 #leftbar.rail-dragging,
 #leftbar.rail-dragging #leftbar-surface { transition: none; }
+
+/* ---- OpenRouter key row (Options → Setup) ----
+ * The one text input in the options panel; .opt-ctl button's 24x24 stepper
+ * box would clip the worded Save button, same escape as #update-check-btn. */
+#or-key-input {
+  box-sizing: border-box;
+  width: 150px;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+}
+#or-key-input::placeholder { color: var(--muted); }
+#or-key-save {
+  width: auto;
+  height: auto;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+#or-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* errors get a full-width line under the row instead of ellipsizing into the
+ * sliver of space beside the input ("⚠ that d…") */
+#or-error {
+  padding: 2px 2px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--err);
+}
+
+/* the models `/model` offers inside an agent — the slugs are wider than the
+ * options panel's control column, so the picks wrap onto their own line under
+ * the row (same escape #or-error takes) and only the ＋ stays in the row */
+#or-alts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px 8px;
+}
+.or-alt-chip {
+  padding: 3px 8px;
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  background: var(--hover);
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.or-alt-chip:hover { color: var(--accent-text); border-color: var(--accent); }
+
+/* the + Agent menu's OpenRouter model picker — .branch-menu chrome with a
+ * filter on top; the catalog is ~300 rows, so the list scrolls, not the menu */
+.or-model-menu { max-height: 60vh; overflow: hidden; }
+.or-model-menu .branch-new-input { flex: none; }
+.or-model-list {
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+.or-model-list .branch-item { flex: none; }
+.or-model-none { padding: 5px 9px; color: var(--muted); }
+
+/* the History row's model badge — only non-Claude (OpenRouter) conversations
+ * carry one; same chip shape as the rest of the meta line's context */
+.hist-model {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text2);
+  font-size: 10px;
+  line-height: 1.5;
+  vertical-align: 1px;
+}
+
+/* Ctrl+N's Claude-or-OpenRouter question — .branch-menu chrome with a
+   remember checkbox under the two provider rows */
+.or-provider-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px 3px;
+  margin-top: 3px;
+  border-top: 1px solid var(--border2);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.or-provider-remember input { margin: 0; }
+
+/* Harness toggle above the catalog filter: which CLI the picked model runs
+ * in. One chip shape in two tones, like the rest of the chrome — the active
+ * one takes the accent, the others stay quiet. */
+.or-harness-row {
+  display: flex;
+  gap: 4px;
+  padding: 6px 9px 3px;
+}
+.or-harness {
+  flex: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.or-harness:hover { color: var(--text); border-color: var(--border3); }
+.or-harness.on {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.or-harness:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

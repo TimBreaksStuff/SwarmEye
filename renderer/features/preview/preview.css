@@ -1,0 +1,112 @@
+/* ---- preview: the localhost webview dock beside the grid ----
+ *
+ * Cut out of styles/app.css. Linked in app.css's own order and BEFORE
+ * chrome-clean.css, which exists to override these rules — a per-area sheet
+ * loading after it would flip every one of those overrides at once.
+ */
+
+/* ---------- preview dock ---------- */
+
+#preview-btn {
+  color: var(--text2);
+  background: var(--glass);
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+  padding: 0;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#preview-btn svg { width: 16px; height: 16px; }
+#preview-btn:hover,
+#preview-btn.active {
+  color: var(--accent-text);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px -4px var(--accent-glow);
+}
+
+/* a flex child of #body-wrap, like #notif-panel — the grid gives up the width */
+#preview {
+  position: relative;
+  flex: none;
+  z-index: 1;
+  width: 480px;
+  min-width: 320px;
+  min-height: 0;
+  display: flex;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+#preview[hidden] { display: none; }
+
+#preview-resizer {
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+}
+#preview-resizer:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+#preview-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#preview-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+#preview-bar button {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text2);
+  background: var(--glass);
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  cursor: pointer;
+  padding: 0;
+}
+#preview-bar button:hover { color: var(--accent-text); border-color: var(--accent); }
+#preview-url {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--term-bg);
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+}
+#preview-url:focus { border-color: var(--accent); }
+
+#preview-web {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  background: #fff; /* a page that hasn't painted yet shouldn't flash the chassis colour */
+}
+
+.preview-msg {
+  flex: none;
+  font-size: 11px;
+  color: var(--amber);
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+.preview-msg[hidden] { display: none; }

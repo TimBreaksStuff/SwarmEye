@@ -1,425 +1,15 @@
-/* Pane: one terminal card (DOM + xterm + addons). Exposes window.Pane. */
-
-/* terminal palettes matching the app themes in tokens.css.
+/* Pane: one terminal card (DOM + xterm + addons). Exposes window.Pane.
  *
- * The two dark themes (dark/orange) are one house ANSI ramp re-tinted: each
- * spreads ANSI_RAMP and then overrides only the hues that carry its identity.
- * Every field below a `...ANSI_RAMP` is therefore a deliberate difference from
- * the house ramp, not an incidental copy. The light themes share LIGHT_RAMP, a
- * complete ramp of their own, and differ only in cursor and selection. */
-const ANSI_RAMP = {
-  red: '#ff5a5a',
-  green: '#a3e635',
-  yellow: '#f5b544',
-  blue: '#58a6ff',
-  magenta: '#a78bfa',
-  cyan: '#6cd9d0',
-  brightRed: '#ff7a7a',
-  brightGreen: '#d6ff4b',
-  brightYellow: '#ffd27d',
-  brightBlue: '#83bcff',
-  brightMagenta: '#c4b0ff',
-  brightCyan: '#93ece4',
-};
-
-/* the light page's complete ramp, shared by `light` and its accent variants */
-const LIGHT_RAMP = {
-  background: '#ffffff',
-  foreground: '#1b1e23',
-  cursor: '#3f6212',
-  cursorAccent: '#ffffff',
-  selectionBackground: 'rgba(71, 109, 10, 0.25)',
-  black: '#1b1e23',
-  red: '#d92f2f',
-  green: '#4d7c0f',
-  yellow: '#c07c00',
-  blue: '#2563eb',
-  magenta: '#7c3aed',
-  cyan: '#0e7490',
-  white: '#e5e7eb',
-  brightBlack: '#70767f',
-  brightRed: '#ef4444',
-  brightGreen: '#65a30d',
-  brightYellow: '#d97706',
-  brightBlue: '#3b82f6',
-  brightMagenta: '#8b5cf6',
-  brightCyan: '#0891b2',
-  brightWhite: '#f9fafb',
-};
-
-const XTERM_THEMES = {
-  dark: {
-    background: '#0c0e11',
-    foreground: '#e8eaed',
-    cursor: '#d6ff4b',
-    cursorAccent: '#0a0b0d',
-    selectionBackground: 'rgba(214, 255, 75, 0.25)',
-    black: '#0a0b0d',
-    white: '#e8eaed',
-    brightBlack: '#5b616b',
-    brightWhite: '#ffffff',
-    ...ANSI_RAMP,
-  },
-  light: LIGHT_RAMP,
-  /* the three accent variants of `light` — same page, same ramp, only the
-   * cursor and selection follow the accent */
-  blue: {
-    ...LIGHT_RAMP,
-    cursor: '#1e40af',
-    selectionBackground: 'rgba(29, 78, 216, 0.25)',
-  },
-  neoblue: {
-    ...LIGHT_RAMP,
-    cursor: '#0043c7',
-    selectionBackground: 'rgba(0, 87, 255, 0.25)',
-  },
-  purple: {
-    ...LIGHT_RAMP,
-    cursor: '#5b21b6',
-    selectionBackground: 'rgba(109, 40, 217, 0.25)',
-  },
-  orange: {
-    background: '#0f0c09',
-    foreground: '#ede9e3',
-    cursor: '#ff9d2e',
-    cursorAccent: '#0d0b08',
-    selectionBackground: 'rgba(255, 157, 46, 0.25)',
-    black: '#0d0b08',
-    white: '#ede9e3',
-    brightBlack: '#6a6157',
-    brightWhite: '#ffffff',
-    ...ANSI_RAMP,
-    yellow: '#ffb04d',
-    brightGreen: '#c8f55e',
-    brightYellow: '#ffc879',
-  },
-};
-/* The terminal paints its own opaque background rather than letting a pane
- * tint show through (it used to be transparent, back when the panes were
- * glass; chrome-clean.css has filled .pane-term with a flat var(--term-bg)
- * since it took the design over). That is a legibility fix, not a cosmetic
- * one: with `allowTransparency` on, xterm rasterizes its glyph atlas into a
- * canvas created with `{alpha: true}`, and Chromium will only greyscale-
- * antialias into one of those. Opaque, it subpixel-antialiases instead —
- * which is most of the difference on Windows, where DirectWrite already
- * lays down lighter stems than CoreText and the text read washed out.
+ * Still a classic script, deliberately: seven other classic scripts read
+ * Pane's statics (app.js constructs it; board.js, launcher.js, coordinator.js,
+ * openrouter.js and roles.js read MODES/MODELS/EFFORTS; swarmview.js reads
+ * status and fmtDuration), and a classic script cannot import from a module.
  *
- * So the palette's background has to be the colour the CSS would have
- * painted, read from the same variable: it covers every theme and both
- * states of the background overlay, which pins --term-bg dark whatever the
- * theme is. xterm also measures its luminance for the contrast pass below,
- * so a wrong value there would mis-correct the light themes' foregrounds. */
-function paneTheme(palette) {
-  const css = getComputedStyle(document.documentElement).getPropertyValue('--term-bg').trim();
-  return { ...palette, background: /^#[0-9a-f]{6}$/i.test(css) ? css : palette.background };
-}
-
-/* ---- readability pass for the light-background themes ----
- *
- * Two problems the palettes above cannot fix on their own, both only hitting
- * the themes whose panes are near-white:
- *
- *  - agents assume a dark terminal. Claude Code's TUI paints its text in
- *    whites and pale greys, and sends most of them as *256-colour indices*
- *    (TERM=xterm-256color, so chalk drops to the fixed 16–255 table) — colours
- *    no palette entry covers, and invisible on a white pane.
- *  - with "Theme background overlay" off, app.css pins every pane dark, so
- *    those same themes would draw their near-black text on black.
- *
- * xterm's own `minimumContrastRatio` does exactly this job, and does it per
- * *cell*: it lightens or darkens the foreground until it reads against the
- * background that cell is really drawn on. Rewriting the palette instead
- * cannot, because the same entry serves as text one moment and as a filled
- * backdrop the next — darkening it for a white pane turned every grey/black
- * block the TUI paints (input box, selected row, diff gutter) into near-black
- * *with near-black text on it*. Hence the option, not a palette rewrite. */
-/* must match the overlay-off selector list in app.css */
-const LIGHT_THEMES = new Set(['light', 'blue', 'neoblue', 'purple']);
-
-// WCAG AA for text. Left at 1 (xterm's "off") for the dark themes, whose
-// panes are the backdrop agents already assume.
-const MIN_CONTRAST = 4.5;
-
-let activeXtermTheme = paneTheme(XTERM_THEMES.dark);
-let activeMinContrast = 1;
-
-// ↻ says something different depending on whether the agent is still running:
-// on a live one it throws away a session, so it asks for a second click first
-const LIVE_RESTART_TIP = 'Restart this agent — click twice to confirm. Continues the last conversation (shift-click: fresh session)';
-const DEAD_RESTART_TIP = 'Restart & continue last conversation (shift-click: fresh session)';
-
-const DEFAULT_FONT_SIZE = 13;
-// last font size the user picked (MOD+/- or the pane buttons) — persists
-// across restarts so reopened agent panes come back at the same text size
-let activeFontSize = Number(localStorage.getItem('swarmeye.paneFontSize')) || DEFAULT_FONT_SIZE;
-
-// Windows starts two steps heavier: DirectWrite rasterizes stems lighter than
-// macOS's Skia/CoreText, so the same 400 that looks right on a Mac reads thin
-// and washed out there. Still just a default — the Options knob overrides it.
-const DEFAULT_FONT_WEIGHT = window.swarm.isMac ? 400 : 600;
-// "Agent pane text weight" option in ⌨ Options — the light themes draw dark
-// text on a near-white pane, which reads thinner than the dark themes'
-// light-on-dark, so the weight is a knob rather than a constant. Capped at 600
-// (JetBrains Mono is a 300–700 variable font) so bold, which tracks 300 above,
-// stays heavier than body text at every step — 400 gives xterm's own 700.
-let activeFontWeight = Number(localStorage.getItem('swarmeye.paneFontWeight')) || DEFAULT_FONT_WEIGHT;
-const boldFor = (weight) => Math.min(700, weight + 300);
-
-// "Show last command in pane header" option in ⌨ Options — off by default;
-// app.js owns persistence, this just gates whether syncInitialCommandHeader
-// reveals the row it fills in on every pane
-let showInitialCommand = false;
-
-// "Auto-organize agent windows" option in ⌨ Options — on by default; when off,
-// the → / ↓ split buttons are how the user places new agents themselves, so
-// they only make sense to show while auto-organize is off
-let autoOrganize = true;
-
-// "Default agent permissions: auto" option in ⌨ Options — mirrored here by
-// app.js, which owns it, rather than read back over IPC: autoAcceptDialogs is
-// the only consumer and it used to pull the whole config across the boundary
-// to answer one boolean
-let skipPermissions = false;
-
-// "Fixed agent pane buttons" option in ⌨ Options — off by default, which folds
-// the five rarely-used header buttons behind the ⋯ tray; on keeps every button
-// inline the way it used to be
-let fixedActions = false;
-
-// every header glyph is drawn the same way — one stroke weight, one grid, so a
-// pane header reads as one row of icons rather than mono arrows beside SVGs
-const icon = (paths) =>
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" '
-  + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
-
-/* ---- cost & context panel ---- */
-
-// "Show cost & context panel" option in ⌨ Options — off by default, since the
-// panel costs every pane two rows of terminal height
-let showUsagePanel = false;
-// newest 5-hour usage window ({usedPct, resetsAt}), pushed by app.js — the
-// denominator for each agent's share of the quota
-let usageWindow = null;
-// every pane currently alive, so one pane's share can be measured against
-// what the whole swarm burned in the same window
-const livePanes = new Set();
-
-// Claude Code compacts against a 200k window; a session that ever reports a
-// bigger prompt than that is plainly running on the 1M one, so the meter
-// re-scales itself instead of guessing per model id.
-const CONTEXT_WINDOW = 200000;
-const CONTEXT_WINDOW_LARGE = 1000000;
-const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
-const SPARK_CHARS = '▁▂▃▄▅▆▇█';
-const TOOL_TRAIL_MAX = 3;
-
-/* ---- what this agent has actually been doing ----
- *
- * One row per tool call for the activity popover, opened by PreToolUse and
- * closed by the matching PostToolUse (which is where the duration and the
- * pass/fail come from). Both this and the touched-file sets are bounded and
- * renderer-only: main already sends every event the pane needs, so keeping a
- * second copy of it over there would buy nothing.
- *
- * The hook state file holds one event at a time, so a call whose PreToolUse was
- * overwritten before the watcher read it never appears — the list is what was
- * seen, not a guaranteed-complete log, and the popover says so. */
-const ACTIVITY_MAX = 60;
-const TOUCHED_MAX = 300;
-
-/* Claude Code's own Task subagents. They are invisible in a terminal — the
- * parent's pane is where all of their output lands — so the `Task` calls the
- * hook stream already reports are kept in their own short list, which is what
- * the header chip counts and the activity popover names. Their own tool calls
- * never reach us: a subagent runs in its own context and fires no hooks of its
- * own, so "what it is doing" is not answerable, only "it is still running". */
-const SUBAGENTS_MAX = 20;
-
-/* Calls started but not yet reported back. Parallel tool use is normal, a lost
- * PostToolUse is not rare, and this only has to stay bounded. */
-const OPEN_CALLS_MAX = 24;
-
-/* Asking a live agent to stop editing — the fallback behind picking `plan` in
- * the mode dropdown, for when the Shift+Tab cycle cannot land it. Deliberately
- * plain English sent as a normal message: SwarmEye cannot *enforce* read-only
- * without per-tool permissions, which agents only pick up at launch, so this
- * is a request — and the dropdown says so rather than implying a lock. */
-const READ_ONLY_ASK =
-  'Please stop editing for now: do not use Edit, Write, MultiEdit or NotebookEdit, '
-  + 'and do not run any command that changes files. Read and report only, until I say otherwise.';
-const READ_ONLY_LIFT = 'You can edit files again — the read-only request is lifted.';
-
-/* Tools that change a file, and the ones that only look at one — these two
- * only split a list in a popover. */
-const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-const FILE_READ_TOOLS = new Set(['Read', 'NotebookRead']);
-
-/* How long the agent has been blocked, in the coarsest unit that is still true:
- * the question this answers is "40 seconds or 40 minutes", never the seconds. */
-function fmtWait(ms) {
-  const min = Math.floor(ms / 60000);
-  if (min < 1) return '<1m';
-  if (min < 60) return min + 'm';
-  return Math.floor(min / 60) + 'h ' + (min % 60) + 'm';
-}
-
-/* ---- right-sizing the model ----
- *
- * Tools that only look. An agent that has made this many calls in a row
- * without touching a file is reading, and reading is work a cheaper tier does
- * about as well — the first rule in CLAUDE.md's cost list, which the app has
- * so far only documented. Bash is deliberately absent: it can do anything,
- * including write, so it ends a streak rather than extending it.
- *
- * The streak, not the turn count, is the signal: it resets the moment the
- * agent edits something, so an agent that reads for a while and then starts
- * building never gets the offer. */
-const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'NotebookRead', 'WebFetch', 'WebSearch']);
-const RIGHTSIZE_MIN_CALLS = 12;
-
-/* Roles that are Opus *because* they read and judge — a Reviewer or a Planner
- * doing nothing but reading is the job being done right, not a tier to save
- * on, so the streak says nothing about them. */
-const RIGHTSIZE_SKIP_ROLES = new Set(['reviewer', 'planner']);
-
-function fmtTokens(n) {
-  if (!n) return '0';
-  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M';
-  if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
-  return String(Math.round(n));
-}
-
-function fmtCost(n) {
-  if (!n) return '$0';
-  if (n < 0.01) return '<$0.01';
-  return '$' + n.toFixed(n >= 100 ? 0 : 2);
-}
-
-function fmtDuration(ms) {
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return s + 's';
-  const m = Math.floor(s / 60);
-  if (m < 60) return m + 'm' + String(s % 60).padStart(2, '0') + 's';
-  return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm';
-}
-
-/* One block character per turn, scaled to the biggest turn in the window —
- * a burn chart that costs nothing to draw and rescales with the font. */
-function sparkline(series) {
-  if (!series || !series.length) return '';
-  const peak = Math.max(...series.map((p) => p.tokens));
-  if (!peak) return '';
-  return series
-    .slice(-24)
-    .map((p) => SPARK_CHARS[Math.min(SPARK_CHARS.length - 1, Math.round((p.tokens / peak) * (SPARK_CHARS.length - 1)))])
-    .join('');
-}
-const IDLE_AFTER_MS = 2500;
-// output arriving this soon after a keystroke/mouse report is its echo, not
-// the agent working — typing or clicking must not light the busy indicator
-const INPUT_ECHO_MS = 400;
-
-// Saying this at the end of a dictated phrase submits it: the phrase itself is
-// stripped, dictation stops and Enter is pressed. Trailing punctuation is
-// allowed because whisper ends most utterances with a full stop.
-const DICTATE_SUBMIT = /[\s,]*\bsend it\b[\s.!?,]*$/i;
-// gap before Enter so it lands as its own keystroke rather than part of the
-// pasted chunk — the same reason tryInjectPrompt (app.js) splits its writes
-const DICTATE_SUBMIT_DELAY_MS = 150;
-
-/* Claude permission modes. There is no "set mode" API for a running claude —
- * the only control is Shift+Tab cycling — so we read the current mode from
- * the footer it draws above the input box and step the cycle until it shows
- * the one the user picked. */
-const MODES = [
-  ['default', 'manual'],
-  ['acceptEdits', 'accept edits'],
-  ['plan', 'plan'],
-  ['bypass', 'auto'],
-];
-const MODE_TIP = 'Claude mode — switches by cycling Shift+Tab in the agent';
-const MODE_MARKERS = [
-  ['bypass', /bypass(?:ing)? permissions/i],
-  ['plan', /plan mode on/i],
-  ['acceptEdits', /accept edits on/i],
-];
-
-/* Dialogs that stall a session waiting for a human even with auto mode on, as
- * [one-shot pane flag, buffer marker] — see Pane.autoAcceptDialogs.
- *
- * trust: the first-run "Do you trust the files in this folder?" boundary,
- *   which --dangerously-skip-permissions does NOT suppress; claude
- *   pre-highlights "1. Yes, proceed".
- * bypass: the machine-local, one-time-ever "WARNING: Claude Code running in
- *   Bypass Permissions mode" notice, shown the first time a user ever enters
- *   bypass mode on this machine and remembered afterwards; "Yes, I accept" is
- *   pre-highlighted. Without this, opting into auto mode stalls the agent on
- *   exactly the human approval the user asked to skip. */
-const AUTO_ACCEPT_DIALOGS = [
-  ['trustDialogHandled', /do you trust the files in this folder/i],
-  ['bypassDialogHandled', /running in Bypass Permissions mode/i],
-];
-/* Claude models selectable for a task — sent as a `/model <value>` command
- * once the agent starts, same mechanism a user typing it themselves uses. */
-const MODELS = [
-  ['default', 'default'],
-  ['sonnet', 'Sonnet'],
-  ['opus', 'Opus'],
-  ['haiku', 'Haiku'],
-  ['fable', 'Fable'],
-];
-
-/* Claude reasoning effort levels selectable for a task — sent as a
- * `/effort <value>` command once the agent starts, same mechanism as MODELS. */
-const EFFORTS = [
-  ['default', 'default'],
-  ['low', 'low'],
-  ['medium', 'medium'],
-  ['high', 'high'],
-  ['xhigh', 'xhigh'],
-  ['max', 'max'],
-  ['ultracode', 'ultracode'],
-  ['auto', 'auto'],
-];
-const SHIFT_TAB = '\x1b[Z';
-const MODE_STEP_MS = 300; // redraw grace between Shift+Tab presses
-// rows of `git diff --stat` the git chip's popover shows before eliding the
-// middle (git's own "N files changed" summary line is always kept)
-const DIFF_STAT_MAX_LINES = 14;
-
-// matches a menu line like "  1. Yes" or "❯ 2. No" — group 1 is the leading
-// whitespace/cursor marker (excluded from the clickable range), group 2 the digit
-const MENU_OPTION_RE = /^(\s*(?:[❯›>*]\s*)?)(\d{1,3})\.\s+\S.*$/;
-// a work burst at least this long that then goes quiet = "agent finished"
-const FINISHED_MIN_WORK_MS = 5000;
-
-/* Dropped files arrive with host-OS paths. Agents run in WSL on Windows, so
- * drive letters and \\wsl$ UNCs are rewritten to their WSL form; POSIX paths
- * (macOS port) pass through untouched. */
-function agentPath(p) {
-  const drive = /^([A-Za-z]):[\\/](.*)$/.exec(p);
-  if (drive) return '/mnt/' + drive[1].toLowerCase() + '/' + drive[2].replace(/\\/g, '/');
-  const unc = /^\\\\wsl(?:\$|\.localhost)\\[^\\]+(\\.*)$/.exec(p);
-  if (unc) return unc[1].replace(/\\/g, '/');
-  return p;
-}
-
-/* "claude-opus-4-8" -> "Opus 4.8", "claude-3-5-sonnet-20241022" -> "Sonnet
- * 3.5". Best-effort: drops the claude- prefix and any trailing date stamp,
- * then puts the family name first and joins version numbers with a dot —
- * covers both the new (name-first) and legacy (numbers-first) id shapes. */
-function prettyModelName(id) {
-  if (!id || typeof id !== 'string') return null;
-  const tokens = id.replace(/^claude-/, '').split('-')
-    .filter((t) => t && !/^\d{8}$/.test(t) && t !== 'latest');
-  if (!tokens.length) return id;
-  const words = tokens.filter((t) => /[a-z]/i.test(t));
-  const nums = tokens.filter((t) => /^\d+$/.test(t));
-  if (!words.length) return tokens.join(' ');
-  const family = words[words.length - 1]; // legacy ids put numbers before the family name
-  const label = family.charAt(0).toUpperCase() + family.slice(1);
-  return nums.length ? `${label} ${nums.join('.')}` : label;
-}
+ * What is left here is the class shell: the constructor that builds the header
+ * DOM, the buffer scans, the terminal lifecycle, and the statics. Three method
+ * groups live beside it in pane-status.js, pane-usage.js and pane-git.js,
+ * re-attached with Object.assign(Pane.prototype, ...) — load order in
+ * index.html is what makes that work, so they come after this file. */
 
 class Pane {
   /**
@@ -449,7 +39,7 @@ class Pane {
     this.idleTimer = null;
     this.bufferTextCache = null; // memoized getBufferText result
     this.writeSeq = 0; // bumped on every buffer change, so consumers (swarm view tails) can memoize reads
-    this.screenEl = null; // .xterm-screen and its rect, memoized for the wheel path (rowAtY)
+    this.screenEl = null; // .xterm-screen and its rect, memoized for the wheel path (cellAt)
     this.screenRect = null;
 
     // cost & context panel state — usage arrives per turn from the hooks'
@@ -508,8 +98,26 @@ class Pane {
     this.llmEl = document.createElement('span');
     this.llmEl.className = 'pane-llm';
     this.llmEl.style.display = 'none';
-    this.modelLabel = '';
-    this.modelTip = 'Claude model for this agent';
+    this.llmEl.addEventListener('click', () => this.openModelPicker());
+    // the launch model is session state (sessions.js persists meta.model for
+    // restarts), so the chip can show the pick from the first frame instead of
+    // waiting for the first turn's ModelUpdate. A Claude tier seeded this way
+    // ('Opus') is refined to the resolved id ('Opus 4.8') on that first turn;
+    // an agent launched on the account default has nothing to seed and still
+    // fills in then.
+    const viaOr = !!(session.model && session.model.startsWith('or:'));
+    // the harness this agent runs in: 'clean' (agent/clean.js), 'opencode' or
+    // 'pi' — all three drop the Claude Code harness entirely, so they share
+    // the same OpenRouter bookkeeping and differ only in their label
+    this.harness = OpenRouterUI.harnessOf(session.model);
+    this.viaClean = OpenRouterUI.isBare(session.model);
+    // the OpenRouter slug is also this pane's "not on the Anthropic quota"
+    // flag, and the key into the catalog for its real context window
+    this.orSlug = OpenRouterUI.slugOf(session.model);
+    this.orCtx = 0; // filled from the catalog on the first panel render
+    this.modelLabel = (session.model && prettyModelName(this.orSlug || session.model)) || '';
+    this.modelTip = this.viaClean ? `Model this agent runs — ${this.harness} agent, straight to OpenRouter`
+      : viaOr ? 'Model this agent runs, via OpenRouter' : 'Claude model for this agent';
     this.transcriptId = null; // Claude conversation id, from the hook payload
 
     this.gitEl = document.createElement('span');
@@ -525,6 +133,28 @@ class Pane {
     this.titleEl.dataset.tip = 'Click to rename';
     this.titleEl.addEventListener('click', () => this.startRename());
 
+    /* the area or folder this agent may edit inside (main/scope.js). The deny
+     * rules are in the settings file claude read at startup, so they cannot
+     * change under the running process — clicking the chip restarts it with
+     * --continue on the picked boundary instead (openScopePicker, pane-git.js),
+     * the model picker's mechanism. Every Claude pane wears the chip, dimmed
+     * while unscoped, so a boundary can be put on a running agent too; a bare
+     * harness (clean/opencode/pi) gets none — no permission layer to deny
+     * with, main refuses a scope there. */
+    if (!this.viaClean) {
+      this.scopeEl = document.createElement('span');
+      this.scopeEl.className = 'pane-scope';
+      this.scopeEl.addEventListener('click', () => this.openScopePicker());
+      if (session.scope && session.scope.paths) {
+        this.scopeEl.textContent = session.scope.label;
+        this.scopeEl.dataset.tip = `Scoped: may only edit ${session.scope.paths.join(', ')} — everything else in this workspace is denied. Click to switch or lift the boundary (restarts the agent, conversation continues).`;
+      } else {
+        this.scopeEl.classList.add('off');
+        this.scopeEl.textContent = '⊘ unscoped';
+        this.scopeEl.dataset.tip = 'May edit the whole workspace. Click to confine this agent to one area or folder (restarts the agent, conversation continues).';
+      }
+    }
+
     this.modeSel = document.createElement('select');
     this.modeSel.className = 'pane-mode';
     this.modeSel.dataset.tip = MODE_TIP;
@@ -535,6 +165,20 @@ class Pane {
       // relabelled while a plan-mode request is standing but not enforced
       if (value === 'plan') this.planOpt = opt;
       this.modeSel.appendChild(opt);
+    }
+    // a clean agent has no claude footer to steer — its select maps to the
+    // /yolo permission gate instead: manual (gate asks) or auto (gate off).
+    // Options skip-permissions launched it with the gate already off.
+    if (this.viaClean) {
+      this.modeSel.textContent = '';
+      for (const [value, label] of [['default', 'manual'], ['bypass', 'auto']]) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = label;
+        this.modeSel.appendChild(opt);
+      }
+      this.modeSel.value = skipPermissions ? 'bypass' : 'default';
+      this.modeSel.dataset.tip = 'Permission gate — auto runs every tool call without asking (types /yolo into the agent)';
     }
     this.modeSel.addEventListener('keydown', (e) => e.stopPropagation());
     this.modeSel.addEventListener('change', () => this.pickMode(this.modeSel.value));
@@ -615,21 +259,6 @@ class Pane {
         this.readOnlyStreak = 0;
         this.syncRightsize(); // the offer goes away with the agent it was for
         this.handlers.onRestart(this, { resume: true, model: 'haiku' });
-      });
-    });
-
-    this.btnRestart = document.createElement('button');
-    this.btnRestart.className = 'pane-btn restart';
-    this.btnRestart.dataset.tip = LIVE_RESTART_TIP;
-    this.btnRestart.innerHTML = icon('<path d="M20.5 9.5A8.5 8.5 0 1 0 21 14"/><path d="M21 4v5.5h-5.5"/>');
-    // A live agent's restart is destructive — it replaces a running session —
-    // so it arms first. An exited or detached one has nothing to lose and
-    // stays a single click, which is what ↻ has always meant there.
-    this.btnRestart.addEventListener('click', (e) => {
-      const fresh = e.shiftKey;
-      if (this.exited) { handlers.onRestart(this, { resume: !fresh }); return; }
-      Confirm.armOrFire(this.btnRestart, 'restart:' + this.session.id, () => {
-        handlers.onRestart(this, { resume: !fresh });
       });
     });
 
@@ -759,13 +388,16 @@ class Pane {
     const actions = document.createElement('span');
     actions.className = 'pane-actions';
     actions.append(
-      this.btnRestart, this.btnClear, btnMic, this.overflowEl, this.btnMore,
+      this.btnClear, btnMic, this.overflowEl, this.btnMore,
       btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
 
     header.append(
       this.dot, this.taskEl, this.roleEl, this.effortEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.waitEl, this.subEl, this.btnApprove, this.btnDeny, this.modeSel, this.rightsizeEl, this.badge, actions
     );
+    // its own statement rather than a slot in the append above: that line is
+    // the header's whole running order and every pane feature edits it
+    if (this.scopeEl) header.insertBefore(this.scopeEl, this.titleEl);
     this.syncActionsMode();
 
     // search row (hidden until toggled)
@@ -824,16 +456,31 @@ class Pane {
     this.usageCostEl.className = 'pane-usage-cost';
     this.usageCacheEl = document.createElement('span');
     this.usageCacheEl.className = 'pane-usage-cache';
+    // which upstream this agent talks to, left of the effort. Fixed at launch:
+    // main persists meta.model for OpenRouter agents alone, so the 'or:' prefix
+    // is the whole signal, and a restart builds a fresh Pane rather than
+    // mutating this one.
+    this.usageProviderEl = document.createElement('span');
+    this.usageProviderEl.className = 'pane-usage-provider';
+    this.usageProviderEl.textContent = this.viaClean ? 'OpenRouter · ' + this.harness : viaOr ? 'OpenRouter' : 'Anthropic';
+    this.usageProviderEl.dataset.tip = this.viaClean
+      // pi has no permission prompts at all — its author considers them
+      // security theatre — so it runs unattended whatever the Options toggle
+      // says, and the chip is where that is admitted
+      ? (this.harness === 'pi' ? 'pi agent — straight to OpenRouter, no Claude Code. Always auto: pi gates no tool calls'
+        : `${this.harness === 'clean' ? 'Clean' : this.harness} agent — straight to OpenRouter, no Claude Code`)
+      : viaOr ? 'Runs through OpenRouter' : 'Runs on Anthropic';
     this.usageEffortEl = document.createElement('span');
     this.usageEffortEl.className = 'pane-usage-effort';
     this.usageModelEl = document.createElement('span');
     this.usageModelEl.className = 'pane-usage-model';
-    // effort sits left of the model, and the pair rides to the right edge
-    // together — one wrapper instead of an auto margin that would move
-    // whenever the effort label is hidden
+    this.usageModelEl.addEventListener('click', () => this.openModelPicker());
+    // provider / effort / model ride to the right edge together — one wrapper
+    // instead of an auto margin that would move whenever the effort label is
+    // hidden
     const usageRight = document.createElement('span');
     usageRight.className = 'pane-usage-right';
-    usageRight.append(this.usageEffortEl, this.usageModelEl);
+    usageRight.append(this.usageProviderEl, this.usageEffortEl, this.usageModelEl);
     const usageTop = document.createElement('div');
     usageTop.className = 'pane-usage-row';
     usageTop.append(this.usageBarEl, this.usageCtxEl, this.usageCostEl, this.usageCacheEl, usageRight);
@@ -974,18 +621,25 @@ class Pane {
     // scrollback, so forward the notch to it as an SGR mouse event (see
     // WHEEL_LINES in sessions.js). Without tmux there is no alternate buffer
     // and xterm's native scrollback works — leave that case alone.
+    //
+    // The report carries the real cell, column included: tmux only reads the
+    // coordinates to pick a pane, but a harness that asked for the mouse gets
+    // the event forwarded and hit-tests it against its own layout. opencode
+    // ignores a notch on column 1 — its transcript starts further right — and
+    // scrolls on one over the text, which is why a hardcoded column 1 scrolled
+    // Claude panes but not opencode ones.
     this.termEl.addEventListener('wheel', (e) => {
       if (this.exited || this.term.buffer.active.type !== 'alternate') return;
       e.preventDefault();
       e.stopPropagation(); // capture phase: keep xterm from also alt-scrolling
       this.lastInputAt = Date.now(); // tmux repaints on scroll — not agent activity
       const up = e.deltaY < 0;
-      const row = this.rowAtY(e.clientY);
+      const [col, row] = this.cellAt(e.clientX, e.clientY);
       if (row >= this.inputBoxTop()) {
         window.swarm.writeSession(session.id, up ? '\x1b[A' : '\x1b[B');
         return;
       }
-      window.swarm.writeSession(session.id, `\x1b[<${up ? 64 : 65};1;${row + 1}M`);
+      window.swarm.writeSession(session.id, `\x1b[<${up ? 64 : 65};${col + 1};${row + 1}M`);
     }, { capture: true, passive: false });
 
     const sGo = (forward) => {
@@ -1047,7 +701,19 @@ class Pane {
 
   /* Take xterm's GPU renderer, or leave the DOM one in place if the context
    * can't be had. A lost context detaches it exactly the way dropRenderer
-   * does, so restoreRenderer can come back for it later. */
+   * does, so restoreRenderer can come back for it later.
+   *
+   * The GPU renderer keeps rasterised glyphs in a texture atlas of a few pages,
+   * and once it runs out of pages it merges the least-used ones. That merge has
+   * an upstream bug: glyphs that lived on a merged page come back blank, and
+   * the pane then draws a screen with, say, every bold `f` missing — a long
+   * colourful agent answer in one big pane is exactly what fills the atlas
+   * (seen for real on 2026-08-14). Nothing is wrong with the buffer, only with
+   * the GPU's cache of already-drawn characters, so the answer is to throw that
+   * cache away before the merging starts and let the visible cells rasterise
+   * again. A page is only added when the previous one fills, which makes the
+   * addon's own page event the cheapest possible signal — no timer, and nothing
+   * at all for a pane whose output is modest. */
   attachWebgl() {
     if (this.webgl) return;
     try {
@@ -1056,24 +722,58 @@ class Pane {
         try { webgl.dispose(); } catch { /* already gone */ }
         this.webgl = null;
       });
+      webgl.onAddTextureAtlasCanvas(() => {
+        if (++atlasPages < ATLAS_PAGE_LIMIT) return;
+        if (Date.now() - atlasClearedAt < ATLAS_CLEAR_MIN_MS) return; // never thrash
+        atlasPages = 0;
+        atlasClearedAt = Date.now();
+        this.redrawGlyphs(); // scheduled onto the next frame there
+      });
       this.term.loadAddon(webgl);
       this.webgl = webgl;
     } catch { /* DOM renderer it is */ }
   }
 
+  /* Drop the GPU glyph cache and draw the visible rows again. Safe at any
+   * time — it costs one re-rasterisation of what is on screen, which is what
+   * changing the font size already does.
+   *
+   * Every pane goes through it, not just this one, because the atlas behind it
+   * is shared (see the counters in pane-const.js). A pane that did not ask for
+   * the clear keeps a render model whose cells still point at the coordinates
+   * their glyphs used to sit on, and its renderer re-rasterises a cell only
+   * when the model says it changed — so it goes on drawing whatever landed on
+   * those coordinates afterwards, i.e. shredded fragments of other characters
+   * (seen for real on 2026-08-14). Clearing every pane's model in the same
+   * frame is what makes them all come back correct: no pane can re-fill the
+   * atlas until the loop is done and rendering resumes on the next frame. */
+  redrawGlyphs() {
+    if (!this.webgl || atlasRebuild) return;
+    atlasRebuild = requestAnimationFrame(() => {
+      atlasRebuild = 0;
+      for (const pane of livePanes) {
+        if (!pane.webgl) continue;
+        try { pane.webgl.clearTextureAtlas(); } catch { /* addon disposed under us */ }
+        try { pane.term.refresh(0, pane.term.rows - 1); } catch { /* terminal gone */ }
+      }
+    });
+  }
+
   /* ---- wheel scrolling (see the wheel listener above) ---- */
 
-  /* 0-based terminal row under a viewport y coordinate. Both the screen
+  /* 0-based terminal cell [col, row] under a viewport point. Both the screen
    * element and its rect are cached: this runs once per wheel notch — around a
    * hundred a second on a trackpad flick — and getBoundingClientRect forces a
    * layout flush. refit() drops the rect, which covers everything that moves
    * or resizes the terminal. */
-  rowAtY(y) {
+  cellAt(x, y) {
     const screen = this.screenEl || (this.screenEl = this.termEl.querySelector('.xterm-screen'));
-    if (!screen) return 0;
+    if (!screen) return [0, 0];
     const r = this.screenRect || (this.screenRect = screen.getBoundingClientRect());
+    const col = Math.floor((x - r.left) / (r.width / this.term.cols));
     const row = Math.floor((y - r.top) / (r.height / this.term.rows));
-    return Math.min(this.term.rows - 1, Math.max(0, row));
+    return [Math.min(this.term.cols - 1, Math.max(0, col)),
+      Math.min(this.term.rows - 1, Math.max(0, row))];
   }
 
   /* First row of Claude's input box. The prompt marker is the only reliable
@@ -1102,500 +802,6 @@ class Pane {
     return this.working ? 'working' : 'idle';
   }
 
-  syncStatus() {
-    const status = this.status;
-    this.dot.classList.toggle('idle', status === 'idle');
-    this.dot.classList.toggle('attn', status === 'attention');
-    this.el.classList.toggle('attn', status === 'attention');
-    this.busyEl.style.display = status === 'working' ? '' : 'none';
-    // /clear appears once the agent is done working and free (not mid-turn, not
-    // blocked on a permission prompt, not exited)
-    const canClear = !this.exited && !this.working && !this.awaitingPrompt;
-    this.btnClear.style.display = canClear ? '' : 'none';
-    this.syncWaitChip();
-    this.syncSubagents();
-  }
-
-  flagAttention() {
-    if (this.exited) return;
-    // no attention for output the user is already looking at — which requires
-    // the pane to actually be on screen (isConnected), not focused-but-hidden
-    // in a non-selected workspace
-    if (this.el.isConnected && this.el.classList.contains('focused') && document.hasFocus()) return;
-    const was = this.attention;
-    this.attention = true;
-    this.syncStatus();
-    if (!was) this.handlers.onStatusChange(this, 'attention');
-  }
-
-  clearAttention() {
-    if (!this.attention) return;
-    this.attention = false;
-    this.syncStatus();
-    this.handlers.onStatusChange(this, 'cleared');
-  }
-
-  noteActivity() {
-    // once hook events flow they own the working/idle state — output timing
-    // would only second-guess them (long thinking looks idle, redraws look busy)
-    if (this.exited || this.hookAlive) return;
-    if (Date.now() - this.lastInputAt < INPUT_ECHO_MS) return;
-    if (!this.working) {
-      this.workStart = Date.now();
-      this.working = true;
-      this.syncStatus();
-      this.handlers.onStatusChange(this, 'working');
-    }
-    clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => {
-      this.working = false;
-      this.syncStatus();
-      this.handlers.onStatusChange(this, 'idle');
-      // sustained output that stops = the agent finished its turn or is
-      // waiting on a prompt — surface it like a bell
-      if (Date.now() - this.workStart >= FINISHED_MIN_WORK_MS + IDLE_AFTER_MS) {
-        this.flagAttention();
-      }
-    }, IDLE_AFTER_MS);
-  }
-
-  /* ---- precise state from Claude Code hooks ---- */
-
-  setStatusText(text) {
-    this.statusText = text || '';
-    this.statusEl.textContent = text || '';
-    this.statusEl.style.display = text ? '' : 'none';
-  }
-
-  syncPromptButtons() {
-    const show = this.awaitingPrompt && this.promptAnswerable && !this.exited;
-    this.btnApprove.style.display = show ? '' : 'none';
-    this.btnDeny.style.display = show ? '' : 'none';
-  }
-
-  /* "▸ 2 subagents" — Claude Code's Task calls, which otherwise show up as one
-   * line of the parent's output and nothing else. */
-  syncSubagents() {
-    const live = this.subagents.filter((s) => !s.done).length;
-    const show = live > 0 && !this.exited;
-    const text = show ? `▸ ${live}` : '';
-    if (this.subEl.textContent !== text) this.subEl.textContent = text;
-    const display = show ? '' : 'none';
-    if (this.subEl.style.display !== display) this.subEl.style.display = display;
-    if (!show) return;
-    const names = this.subagents.filter((s) => !s.done).map((s) => s.desc || 'subagent');
-    this.subEl.dataset.tip = `${live} subagent${live > 1 ? 's' : ''} running: ${names.join(' · ')}`;
-  }
-
-  /* "waiting 4m" beside the status. Hidden the moment the agent is working
-   * again, so it can never show a stale age. */
-  syncWaitChip() {
-    const show = !this.exited && this.awaitingPrompt && this.waitingSince > 0;
-    const text = show ? 'waiting ' + fmtWait(Date.now() - this.waitingSince) : '';
-    if (this.waitEl.textContent !== text) this.waitEl.textContent = text;
-    const display = show ? '' : 'none';
-    if (this.waitEl.style.display !== display) this.waitEl.style.display = display;
-    if (!show) return;
-    const since = new Date(this.waitingSince).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const tip = `Blocked on you since ${since} — Ctrl+. jumps to whoever has waited longest`;
-    if (this.waitEl.dataset.tip !== tip) this.waitEl.dataset.tip = tip;
-  }
-
-  /* Quick-respond to a live numbered permission prompt from the pane header
-   * or the notification bell, without opening the pane. Reuses the same
-   * menu-line shape the clickable option links already parse
-   * (MENU_OPTION_RE): scan the tail of the buffer for "N. <text>" lines and
-   * send just the matching option's digit — no Enter, same as those links.
-   *
-   * kind: 'yes' picks the first option whose text starts with "yes";
-   * 'no' the first starting with "no". always=true (shift-click ✓) prefers
-   * a "yes" option that also mentions "don't ask"/"always" (Claude's
-   * remember-this-choice variant) over a plain one, falling back to plain
-   * yes if no such option exists. No matching option = nothing sent; caller
-   * shows a toast instead of guessing. */
-  promptOptions(lines = this.tailLines(30)) {
-    const options = [];
-    for (const line of lines) {
-      const m = MENU_OPTION_RE.exec(line);
-      // the label only — the "1." itself has to come off, or every option
-      // starts with a digit and nothing ever matches ^yes / ^no
-      if (m) options.push({ digit: m[2], text: line.slice(m[1].length + m[2].length + 1).trim() });
-    }
-    return options;
-  }
-
-  pickPromptOption(kind, always, options = this.promptOptions()) {
-    const wantAlways = kind === 'yes' && always;
-    let pick = null;
-    for (const o of options) {
-      if (!new RegExp('^' + kind, 'i').test(o.text)) continue;
-      // "…and don't ask again", "…allow all edits during this session" — the
-      // remember-this-choice variant, whichever wording this prompt uses
-      const mentionsAlways = /don'?t ask|always|allow all/i.test(o.text);
-      if (wantAlways ? mentionsAlways : !mentionsAlways) return o;
-      if (!pick) pick = o; // fallback candidate of the right yes/no family
-    }
-    return pick;
-  }
-
-  /* Whether the ✓/✕ pair has anything to click — a numbered menu with both a
-   * yes and a no option on screen right now. The Notification hook fires for
-   * *any* block on the user, and its commonest form is the idle "Claude is
-   * waiting for your input" nudge, which has no menu behind it (in bypass
-   * permissions mode it is the only notification there is). Gating on
-   * awaitingPrompt alone therefore offered buttons that could only ever
-   * answer "couldn't read the prompt". Re-run whenever output settles, since
-   * the hook can land a beat before the TUI paints the menu. */
-  refreshPromptOptions(lines = this.tailLines(30)) {
-    const options = this.exited ? [] : this.promptOptions(lines);
-    const answerable = !!(this.pickPromptOption('yes', false, options)
-      && this.pickPromptOption('no', false, options));
-    if (answerable === this.promptAnswerable) return;
-    this.promptAnswerable = answerable;
-    this.syncPromptButtons();
-    // the bell and the swarm view carry their own copy of these buttons
-    this.handlers.onStatusChange(this, 'prompt');
-  }
-
-  respondToPrompt(kind, always) {
-    if (this.exited) return false;
-    const pick = this.pickPromptOption(kind, always);
-    if (!pick) {
-      this.refreshPromptOptions(); // the menu moved on — stop offering the buttons
-      return false;
-    }
-    this.awaitingPrompt = false;
-    this.syncPromptButtons();
-    this.clearAttention();
-    window.swarm.writeSession(this.session.id, pick.digit);
-    return true;
-  }
-
-  /* One row for a call that has just started. The file sets are only fed by the
-   * tools that genuinely name a file — a Grep pattern or a Bash command is not
-   * a path, and putting either in a "files read" list would make the list lie. */
-  noteCall(tool, target) {
-    const entry = { tool, target: target || '', t: Date.now(), ms: 0, failed: false, done: false };
-    // a Task call *is* a subagent starting — the only trace one ever leaves
-    if (tool === 'Task') {
-      entry.sub = { desc: target || 'subagent', t: entry.t, ms: 0, done: false };
-      this.subagents.push(entry.sub);
-      if (this.subagents.length > SUBAGENTS_MAX) this.subagents.shift();
-      this.syncSubagents();
-    }
-    this.activity.push(entry);
-    if (this.activity.length > ACTIVITY_MAX) this.activity.shift();
-    this.openCalls.push(entry);
-    // a swarm of never-closed calls would grow forever; the oldest is retired
-    if (this.openCalls.length > OPEN_CALLS_MAX) this.retire(this.openCalls.shift());
-    const set = WRITE_TOOLS.has(tool) ? this.writes : FILE_READ_TOOLS.has(tool) ? this.reads : null;
-    if (!set || !target) return;
-    set.set(target, (set.get(target) || 0) + 1);
-    if (set.size > TOUCHED_MAX) set.delete(set.keys().next().value);
-  }
-
-  /* Close the call a PostToolUse belongs to. Matched on tool *and* target
-   * rather than "whichever started last": Claude Code runs calls in parallel —
-   * several Task subagents at once is the normal case — so closing the newest
-   * one would report the wrong subagent as finished. */
-  closeCall(tool, target, failed) {
-    const want = target || '';
-    let idx = this.openCalls.findIndex((c) => c.tool === tool && c.target === want);
-    if (idx < 0) idx = this.openCalls.findIndex((c) => c.tool === tool);
-    if (idx < 0) return; // its PreToolUse was overwritten before the watcher saw it
-    const [entry] = this.openCalls.splice(idx, 1);
-    entry.done = true;
-    entry.ms = Date.now() - entry.t;
-    entry.failed = !!failed;
-    if (entry.sub) {
-      entry.sub.done = true;
-      entry.sub.ms = entry.ms;
-      this.syncSubagents();
-    }
-  }
-
-  /* A call that never reported back: the turn ended on it. A denied permission
-   * prompt emits no PostToolUse and — as the driven app showed — no Stop
-   * either, so this runs on the next turn's UserPromptSubmit as well. A row
-   * that says "running" for the rest of the session is worse than no row. */
-  retire(entry) {
-    if (!entry || entry.done) return;
-    entry.done = true;
-    entry.ms = Date.now() - entry.t;
-    entry.cancelled = true;
-    if (entry.sub) {
-      entry.sub.done = true;
-      entry.sub.ms = entry.ms;
-    }
-  }
-
-  retireOpenCalls() {
-    if (!this.openCalls.length) return;
-    for (const entry of this.openCalls.splice(0)) this.retire(entry);
-    this.syncSubagents();
-  }
-
-  applyHookEvent({ event, tool, message, model, usage, transcript, target, failed }) {
-    if (this.exited) return;
-    // /clear and --resume both move the agent onto another transcript file,
-    // so the newest one the hooks reported wins
-    if (transcript) this.transcriptId = transcript;
-    // per-turn totals from the transcript — a bookkeeping event, not a state
-    // change, so it returns before any of the working/waiting handling below
-    if (event === 'UsageUpdate') {
-      // a null payload is the reset /clear sends: the tally starts over
-      this.usage = usage || null;
-      this.renderUsagePanel();
-      return;
-    }
-    const wasWorking = this.working;
-    if (!this.hookAlive) {
-      this.hookAlive = true;
-      clearTimeout(this.idleTimer); // heuristics are off duty now
-      // and whatever they last decided is stale: boot output marks the pane
-      // working, and if the first hook event is one that doesn't set
-      // `working` itself (SessionStart, ModelUpdate), that true would be
-      // frozen forever — idle timer cancelled, nothing left to clear it
-      this.working = false;
-    }
-    // model only updates on these two event types: SessionStart (in case a
-    // future Claude Code version populates it) and ModelUpdate (the main
-    // process's own follow-up after tailing the transcript on Stop, since
-    // the model isn't in the common hook payload — see hooks.js). Every
-    // other event type ignores it, so a stale cached value never stomps a
-    // fresher one from the /model-confirmation buffer scan below.
-    if ((event === 'SessionStart' || event === 'ModelUpdate') && model) this.setModel(prettyModelName(model));
-    if (event === 'UserPromptSubmit') {
-      this.working = true;
-      this.awaitingPrompt = false;
-      this.noteTurnStart();
-      this.setStatusText('');
-      this.retireOpenCalls(); // a new turn retires whatever the last one left open
-      Activity.sync(this);
-    } else if (event === 'PreToolUse') {
-      this.working = true;
-      this.awaitingPrompt = false;
-      this.noteTurnStart();
-      if (tool) {
-        this.toolTrail.push(tool);
-        if (this.toolTrail.length > TOOL_TRAIL_MAX) this.toolTrail.shift();
-        if (READ_ONLY_TOOLS.has(tool)) this.readOnlyStreak++;
-        else this.readOnlyStreak = 0;
-        this.syncRightsize();
-        this.noteCall(tool, target);
-      }
-      // one word for every tool — which tool and what it was on are both in
-      // the activity popover, which the cost panel's tool trail opens
-      this.setStatusText('vibing...');
-      Activity.sync(this);
-    } else if (event === 'PostToolUse') {
-      // between two calls is still mid-turn — the agent is working, not idle
-      this.working = true;
-      this.awaitingPrompt = false;
-      this.noteTurnStart();
-      this.closeCall(tool, target, failed);
-      Activity.sync(this);
-    } else if (event === 'Notification') {
-      // claude is blocked on the user (permission prompt / waiting for input)
-      this.working = false;
-      this.awaitingPrompt = true;
-      this.turnStartedAt = 0;
-      this.waitingSince = this.waitingSince || Date.now();
-      this.setStatusText(message || 'waiting for you');
-      // a permission prompt is usually already painted by the time its hook
-      // lands; a plain "waiting for your input" nudge never has a menu at all
-      this.refreshPromptOptions();
-      this.flagAttention();
-    } else if (event === 'Stop') {
-      this.working = false;
-      this.awaitingPrompt = false;
-      this.turnStartedAt = 0;
-      this.waitingSince = 0;
-      this.setStatusText('done');
-      // calls still open when the turn ends never ran — a denied permission
-      // prompt or an interrupt, both of which skip PostToolUse entirely
-      this.retireOpenCalls();
-      Activity.sync(this);
-      this.flagAttention();
-      // completion must reach app.js even when flagAttention suppresses its
-      // event (pane focused and watched, or attention already flagged) — a
-      // board task's completion handling hangs off this dedicated status
-      this.handlers.onStatusChange(this, 'done');
-    }
-    this.syncPromptButtons();
-    this.syncStatus();
-    if (wasWorking !== this.working) {
-      this.handlers.onStatusChange(this, this.working ? 'working' : 'idle');
-    }
-  }
-
-  /* Offer a cheaper tier to an Opus agent that has done nothing but read.
-   * The offer states what it will do before it does it and takes two clicks —
-   * a model swap that happened silently mid-task would be the worst possible
-   * version of this. Hidden again the moment the agent edits something. */
-  syncRightsize() {
-    const n = this.readOnlyStreak;
-    const eligible = n >= RIGHTSIZE_MIN_CALLS
-      && !this.exited
-      && /^opus\b/i.test(this.modelLabel || '')
-      && !RIGHTSIZE_SKIP_ROLES.has(this.session.role);
-    this.rightsizeEl.style.display = eligible ? '' : 'none';
-    if (!eligible) return;
-    this.rightsizeEl.dataset.tip =
-      `${this.session.agentName} has run ${n} read-only tool calls in a row on `
-      + `${this.modelLabel}. Click twice to restart it on Haiku — the conversation `
-      + 'is kept (--continue), so it picks up where it left off. The thread so far '
-      + 'is re-sent once at the cheaper rate.';
-  }
-
-  /* ---- cost & context panel ---- */
-
-  noteTurnStart() {
-    this.waitingSince = 0;
-    if (!this.turnStartedAt) this.turnStartedAt = Date.now();
-  }
-
-  /* Show or hide the panel, and keep the terminal's row count honest — two
-   * rows of panel are two rows the terminal no longer has. */
-  syncUsagePanel() {
-    const was = this.usageEl.style.display !== 'none';
-    this.usageEl.style.display = showUsagePanel ? '' : 'none';
-    clearInterval(this.usageTimer);
-    this.usageTimer = null;
-    if (showUsagePanel) {
-      this.renderUsagePanel();
-      // the turn timer and the 5h share both move on their own
-      this.usageTimer = setInterval(() => this.renderUsagePanel(), 1000);
-    }
-    this.syncModelChip(); // the panel takes the model over from the header
-
-    if (showUsagePanel !== was && this.fit) this.refit();
-  }
-
-  /* Tokens this agent burned inside the current 5-hour usage window. Also the
-   * numerator and (summed across panes) the denominator of its quota share. */
-  windowTokens() {
-    if (!this.usage || !this.usage.series) return 0;
-    const start = (usageWindow && usageWindow.resetsAt ? usageWindow.resetsAt : Date.now() + FIVE_HOURS_MS) - FIVE_HOURS_MS;
-    let total = 0;
-    for (const point of this.usage.series) if (point.t >= start) total += point.tokens;
-    return total;
-  }
-
-  renderUsagePanel() {
-    // display is the option flag, not visibility: a pane in a workspace nobody
-    // is looking at is detached from the DOM, and its 1s tick would still sum
-    // windowTokens() over every live pane for a panel that isn't on screen
-    if (!this.el.isConnected || this.usageEl.style.display === 'none') return;
-    const u = this.usage;
-    if (!u) {
-      // no turn counted yet — either a brand-new agent or one just /clear'ed,
-      // in which case last conversation's figures must not linger
-      this.usageCtxEl.textContent = 'waiting for the first turn…';
-      this.usageBarFillEl.style.width = '0%';
-      this.usageEl.classList.remove('warn', 'hot');
-      this.usageCostEl.textContent = '';
-      this.usageCacheEl.textContent = '';
-      this.usageSparkEl.textContent = '';
-      this.usageTurnsEl.textContent = '';
-      this.usageShareEl.style.display = 'none';
-      this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : 'activity';
-      this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran — click for the full list';
-      return;
-    }
-
-    const limit = u.context > CONTEXT_WINDOW ? CONTEXT_WINDOW_LARGE : CONTEXT_WINDOW;
-    const filled = Math.min(100, Math.round((u.context / limit) * 100));
-    this.usageBarFillEl.style.width = filled + '%';
-    this.usageEl.classList.toggle('warn', filled >= 70 && filled < 90);
-    this.usageEl.classList.toggle('hot', filled >= 90);
-    this.usageBarEl.dataset.tip = `Context in use: ${u.context.toLocaleString()} of ${fmtTokens(limit)} tokens — Claude Code compacts the conversation as this fills`;
-    this.usageCtxEl.textContent = `${fmtTokens(u.context)} / ${fmtTokens(limit)}`;
-
-    this.usageCostEl.textContent = (u.partial ? '≈' : '') + fmtCost(u.cost);
-    this.usageCostEl.dataset.tip = 'Estimated spend for this agent at list prices — in '
-      + fmtTokens(u.input) + ' · out ' + fmtTokens(u.output)
-      + ' · cache read ' + fmtTokens(u.cacheRead) + ' · cache write ' + fmtTokens(u.cacheWrite)
-      + (u.partial ? ' (session was already long when SwarmEye started counting, so this is a floor)' : '');
-
-    const cached = u.cacheRead + u.cacheWrite + u.input;
-    const hit = cached ? Math.round((u.cacheRead / cached) * 100) : 0;
-    this.usageCacheEl.textContent = hit + '% cached';
-    this.usageCacheEl.dataset.tip = 'Share of input served from the prompt cache at a tenth of the price — higher is cheaper';
-    // the transcript's model is the same one ModelUpdate carries, but it can
-    // arrive first on a reattach — take it when the chip is still blank
-    if (!this.modelLabel && u.model) this.setModel(prettyModelName(u.model));
-
-    // the sparkline and the tool trail are the only two values in the row that
-    // don't say what they are — everything else carries its own unit
-    const spark = sparkline(u.series);
-    this.usageSparkEl.textContent = spark ? 'per turn ' + spark : '';
-    this.usageSparkEl.dataset.tip = 'Tokens per turn, most recent on the right';
-    this.usageTurnsEl.textContent = u.turns + (u.turns === 1 ? ' turn' : ' turns');
-
-    const now = Date.now();
-    if (this.turnStartedAt) this.usageTimeEl.textContent = 'working ' + fmtDuration(now - this.turnStartedAt);
-    else if (this.waitingSince) this.usageTimeEl.textContent = 'waiting ' + fmtDuration(now - this.waitingSince);
-    else this.usageTimeEl.textContent = 'idle';
-
-    // this agent's slice of the 5-hour quota: its share of everything the
-    // swarm burned this window, applied to the window's own percentage. The
-    // API reports a percentage rather than tokens, so this is an estimate —
-    // hence the ≈.
-    const mine = this.windowTokens();
-    let swarm = 0;
-    for (const pane of livePanes) swarm += pane.windowTokens();
-    const used = usageWindow && typeof usageWindow.usedPct === 'number' ? usageWindow.usedPct : null;
-    if (used != null && swarm > 0) {
-      const share = (mine / swarm) * used;
-      this.usageShareEl.textContent = '≈' + (share < 1 ? share.toFixed(1) : Math.round(share)) + '% of 5h';
-      this.usageShareEl.dataset.tip = `This agent burned ${fmtTokens(mine)} of the swarm's ${fmtTokens(swarm)} tokens this session window, which is ${used}% used overall`;
-      this.usageShareEl.style.display = '';
-    } else {
-      this.usageShareEl.style.display = 'none';
-    }
-
-    // "activity" when nothing has run yet, so the way into the popover is
-    // there before the first tool call
-    this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : 'activity';
-    this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran — click for the full list';
-  }
-
-  /* ---- model chip ---- */
-
-  setModel(label) {
-    if (!label) return;
-    this.modelLabel = label;
-    this.syncModelChip();
-    // the tier usually lands after the first tool calls, so the streak can
-    // already be long by the time we learn it is Opus
-    this.syncRightsize();
-  }
-
-  setEffort(label) {
-    if (!label) return;
-    this.effortLabel = label;
-    this.syncModelChip();
-  }
-
-  /* One model, one place: the cost & context panel owns it whenever that
-   * panel is on, and the header chip only fills in when it is off. The
-   * effort label rides along in both spots, left of the model. */
-  syncModelChip() {
-    const inPanel = this.usageEl.style.display !== 'none';
-    this.llmEl.textContent = this.modelLabel;
-    this.llmEl.dataset.tip = this.modelTip;
-    this.llmEl.style.display = this.modelLabel && !inPanel ? '' : 'none';
-    this.usageModelEl.textContent = this.modelLabel;
-    this.usageModelEl.style.display = this.modelLabel ? '' : 'none';
-    this.effortEl.textContent = this.effortLabel;
-    this.effortEl.dataset.tip = this.effortTip;
-    this.effortEl.style.display = this.effortLabel && !inPanel ? '' : 'none';
-    this.usageEffortEl.textContent = this.effortLabel;
-    this.usageEffortEl.dataset.tip = this.effortTip;
-    this.usageEffortEl.style.display = this.effortLabel ? '' : 'none';
-  }
-
   /* Last `n` buffer lines as plain text. Shared by every settle-time scan
    * (mode, model, trust/bypass dialogs) so a single pass over the buffer —
    * translateToString is the expensive part — serves all of them. */
@@ -1611,14 +817,17 @@ class Pane {
     return lines;
   }
 
-  /* Live /model switches print "Set model to X and saved as your default…" —
-   * caught straight from the rendered buffer, same technique as permission
-   * mode, so a mid-session switch updates the chip with no extra plumbing. */
+  /* Live /model switches print "Set model to X and saved as your default…",
+   * or "…for this session only" when the picker was left with `s` — caught
+   * straight from the rendered buffer, same technique as permission mode, so
+   * a mid-session switch updates the chip with no extra plumbing. */
   syncModelFromBuffer(lines = this.tailLines(30)) {
     if (this.exited) return;
     for (let i = lines.length - 1; i >= 0; i--) {
-      const m = /Set model to\s+([^\n]+?)(?:\s+and saved\b.*)?$/i.exec(lines[i]);
-      if (m) { this.setModel(m[1].trim()); return; }
+      const m = /Set model to\s+([^\n]+?)(?:\s+(?:and saved|for this session)\b.*)?$/i.exec(lines[i]);
+      // through prettyModelName like the launch and ModelUpdate paths, so a
+      // switch doesn't leave the chip spelling the same model differently
+      if (m) { this.setModel(prettyModelName(m[1].trim()) || m[1].trim()); return; }
     }
   }
 
@@ -1650,159 +859,6 @@ class Pane {
     }
   }
 
-  /* ---- git context chip ---- */
-
-  setGit(info) {
-    this.gitInfo = info || null;
-    if (!info || !info.branch) {
-      this.gitEl.style.display = 'none';
-      this.gitEl.textContent = '';
-      return;
-    }
-    this.gitEl.style.display = '';
-    this.gitEl.textContent = '⎇ ' + info.branch;
-    this.gitEl.classList.toggle('dirty', !!info.dirty);
-    // dirty is null when the status check timed out — saying "clean" there is a lie
-    this.gitEl.dataset.tip = (info.dirty === null
-      ? `branch ${info.branch} — could not read status`
-      : info.dirty
-        ? `branch ${info.branch} — uncommitted changes`
-        : `branch ${info.branch} — clean`) + ' · click for the diff and to switch branch';
-  }
-
-  /* Fill the popover's top section with what the workspace has changed since
-   * HEAD. Long stats are elided in the middle — the summary line (git's own
-   * "N files changed…") is the one that must survive, so it's kept explicitly
-   * rather than trusting a plain head(). */
-  renderDiffSummary(el, d) {
-    el.textContent = '';
-    if (!d) { el.textContent = 'could not read changes'; return; }
-    const lines = d.stat ? d.stat.split('\n') : [];
-    if (!lines.length && !d.untracked) { el.textContent = 'no changes since HEAD'; return; }
-    const shown = lines.length > DIFF_STAT_MAX_LINES
-      ? [...lines.slice(0, DIFF_STAT_MAX_LINES - 2), '…', lines[lines.length - 1]]
-      : lines;
-    for (const line of shown) {
-      const row = document.createElement('div');
-      row.className = 'branch-diff-line';
-      row.textContent = line;
-      el.appendChild(row);
-    }
-    if (d.untracked) {
-      const row = document.createElement('div');
-      row.className = 'branch-diff-line branch-diff-untracked';
-      row.textContent = `${d.untracked} untracked file${d.untracked === 1 ? '' : 's'}`;
-      el.appendChild(row);
-    }
-  }
-
-  /* Click on the git chip: a summary of the working tree's changes on top,
-   * then the repo's branches (local + remote, see main/git.js listBranches).
-   * Picking one runs `git checkout` in the workspace; the chip updates via
-   * the git:update push that follows.
-   *
-   * The two reads run concurrently rather than in sequence: listing branches
-   * does a network fetch first and is much the slower of the two, so awaiting
-   * it before asking for the diff would leave the popover blank the whole time. */
-  async openBranchMenu() {
-    if (this.branchMenuEl) { this.closeBranchMenu(); return; }
-    const menu = document.createElement('div');
-    menu.className = 'branch-menu';
-    const diffEl = document.createElement('div');
-    diffEl.className = 'branch-diff';
-    diffEl.textContent = 'checking changes…';
-    const listEl = document.createElement('div');
-    listEl.className = 'branch-list';
-    listEl.textContent = 'fetching branches…';
-    // the stat above is a summary; this opens the patch itself, with commit
-    // and — for an isolated agent — merge back into the workspace (diff.js)
-    const reviewBtn = document.createElement('button');
-    reviewBtn.className = 'branch-review';
-    reviewBtn.textContent = 'Review changes…';
-    reviewBtn.addEventListener('click', () => {
-      this.closeBranchMenu();
-      this.handlers.onReview(this);
-    });
-    menu.append(diffEl, reviewBtn, listEl);
-    // fixed-position (the pane clips overflow), anchored under the chip
-    const r = this.gitEl.getBoundingClientRect();
-    menu.style.left = `${Math.round(Math.min(r.left, window.innerWidth - 470))}px`;
-    menu.style.top = `${Math.round(r.bottom + 6)}px`;
-    document.body.appendChild(menu);
-    this.branchMenuEl = menu;
-    // now that it has been measured: a pane low in the grid would push a
-    // popover this tall (diff summary plus the branch list) off the bottom,
-    // so flip it above the chip instead
-    if (r.bottom + 6 + menu.offsetHeight > window.innerHeight - 8) {
-      menu.style.top = `${Math.round(Math.max(8, r.top - 6 - menu.offsetHeight))}px`;
-    }
-    this._branchDismiss = (e) => {
-      if (!menu.contains(e.target) && e.target !== this.gitEl) this.closeBranchMenu();
-    };
-    document.addEventListener('mousedown', this._branchDismiss, true);
-
-    window.swarm.gitDiff(this.session.workspaceId).then((d) => {
-      if (this.branchMenuEl !== menu) return; // dismissed while the read ran
-      this.renderDiffSummary(diffEl, d);
-    });
-
-    const branches = await window.swarm.listBranches(this.session.workspaceId);
-    if (this.branchMenuEl !== menu) return; // dismissed while the fetch ran
-    if (!branches || !branches.length) {
-      listEl.textContent = 'no branches found';
-      return;
-    }
-    const current = this.gitInfo && this.gitInfo.branch;
-    listEl.textContent = '';
-    for (const b of branches) {
-      const row = document.createElement('button');
-      row.className = 'branch-item' + (b === current ? ' current' : '');
-      row.textContent = b;
-      if (b !== current) row.addEventListener('click', () => this.pickBranch(b));
-      listEl.appendChild(row);
-    }
-
-    // "+ new branch…" swaps itself for an input; Enter runs checkout -b
-    const divider = document.createElement('div');
-    divider.className = 'branch-menu-divider';
-    listEl.appendChild(divider);
-    const add = document.createElement('button');
-    add.className = 'branch-item new';
-    add.textContent = '+ new branch…';
-    add.addEventListener('click', () => {
-      const input = document.createElement('input');
-      input.className = 'branch-new-input';
-      input.placeholder = 'new branch name';
-      input.spellcheck = false;
-      input.addEventListener('keydown', (e) => {
-        e.stopPropagation(); // typing must not trigger app shortcuts
-        if (e.key === 'Enter') {
-          const name = input.value.trim();
-          if (name) this.pickBranch(name, { create: true });
-        } else if (e.key === 'Escape') {
-          this.closeBranchMenu();
-        }
-      });
-      add.replaceWith(input);
-      input.focus();
-    });
-    listEl.appendChild(add);
-  }
-
-  closeBranchMenu() {
-    if (!this.branchMenuEl) return;
-    this.branchMenuEl.remove();
-    this.branchMenuEl = null;
-    document.removeEventListener('mousedown', this._branchDismiss, true);
-  }
-
-  async pickBranch(branch, { create = false } = {}) {
-    this.closeBranchMenu();
-    const res = await window.swarm.checkoutBranch(this.session.workspaceId, branch, create);
-    if (res && res.ok) toast(create ? `created ${branch}` : `switched to ${branch}`);
-    else toast(res && res.error ? res.error : 'checkout failed');
-  }
-
   /* ---- claude permission mode ---- */
 
   /* Read the mode from claude's footer ("⏸ plan mode on", "⏵⏵ accept edits
@@ -1822,6 +878,12 @@ class Pane {
    * in words, which the agent can ignore — so the select says `plan (asked)`
    * rather than claiming plan mode it did not get. */
   async pickMode(target) {
+    // clean agents: the pick is a /yolo command, not a Shift+Tab dance
+    if (this.viaClean) {
+      this.say('/yolo ' + (target === 'bypass' ? 'on' : 'off'));
+      this.modeSel.value = target === 'bypass' ? 'bypass' : 'default'; // no-op user-driven, honest when a task drives it
+      return;
+    }
     const wasAsked = this.planAsked;
     this.planAsked = false;
     const asking = target === 'plan';
@@ -1892,7 +954,9 @@ class Pane {
    * turns the request into the rule it asked for, any other mode takes it
    * back, and either way the footer is now the newer answer. */
   syncMode(lines) {
-    if (this.exited || this.modeBusy) return;
+    // a clean pane's select holds what the user picked — there is no footer
+    // to read back, and scanning would reset it to 'manual' on every write
+    if (this.exited || this.modeBusy || this.viaClean) return;
     const mode = this.detectMode(lines);
     if (this.planAsked && mode !== 'default') this.planAsked = false;
     const asked = this.planAsked;
@@ -2102,12 +1166,16 @@ class Pane {
   }
 
   refit() {
-    this.screenRect = null; // the terminal moved or resized — see rowAtY
+    this.screenRect = null; // the terminal moved or resized — see cellAt
     if (!this.el.isConnected) return;
     this.bufferTextCache = null; // a resize reflows/rewraps the buffer
     this.writeSeq++;
     try {
       this.fit.fit();
+      // ...and rebuild the glyph atlas while we are redrawing anyway: this is
+      // what makes resizing the window cure a pane already showing the blank
+      // glyphs described in attachWebgl, which is what anyone would try first
+      this.redrawGlyphs();
       if (!this.exited) {
         this.handlers.onResize(this, this.term.cols, this.term.rows);
       }
@@ -2133,7 +1201,7 @@ class Pane {
   }
 
   /* detached = the attach client died but the agent lives on in tmux
-   * (WSL hiccup, manual detach) — ↻ then reconnects instead of restarting */
+   * (WSL hiccup, manual detach) — the swarm view's Reattach brings it back */
   markExited(exitCode, detached) {
     this.exited = true;
     this.detached = !!detached;
@@ -2153,7 +1221,6 @@ class Pane {
     this.el.classList.toggle('detached', this.detached);
     this.badge.textContent = this.detached ? 'detached' : 'exited (' + exitCode + ')';
     this.badge.style.display = '';
-    this.btnRestart.dataset.tip = this.detached ? 'Reconnect to the running agent' : DEAD_RESTART_TIP;
     this.disarmClose();
     this.syncStatus();
   }
@@ -2166,7 +1233,6 @@ class Pane {
     this.modeSel.disabled = false;
     this.el.classList.remove('exited', 'detached');
     this.badge.style.display = 'none';
-    this.btnRestart.dataset.tip = LIVE_RESTART_TIP;
     this.syncStatus();
     requestAnimationFrame(() => this.refit());
   }

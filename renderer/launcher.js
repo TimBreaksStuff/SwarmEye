@@ -2,21 +2,63 @@
  * square tiles, and the four settings the agents start with. Exposes
  * window.Launcher.
  *
- * The four fields open on the ⚙ Options defaults and a change is a one-off for
+ * The fields open on the ⚙ Options defaults and a change is a one-off for
  * that launch: Options stays the one place a default is set, so the fields go
  * back to it the next time the card appears. They are keyed by the Options
- * storage names, so app.js mirrors them in exactly as it feeds Board. */
+ * storage names, so app.js mirrors them in exactly as it feeds Board — except
+ * Provider, which is derived from the model value rather than stored. */
 
 const LAUNCH_COUNTS = [1, 2, 4, 6, 8, 10, 12];
 const LAUNCH_DEFAULT_COUNT = 4;
 
+/* provider is derived from the model value ('or:' prefix), never stored — a
+ * launch's model already says which provider it is, so Options keeps a single
+ * defaultModel and the card just opens the right list */
+// labelled by who pays, like the model rows themselves — the value stays
+// 'claude', which is what fillModels and the launch path read
+const LAUNCH_PROVIDERS = [['claude', 'Anthropic Subscription'], ['openrouter', 'OpenRouter']];
+const launchClaudeModels = () => Pane.MODELS.filter(([v]) => !OpenRouterUI.isOpenRouter(v));
+/* the catalog rows carry the bare slug, not a finished model value: which
+ * harness it becomes is read from the Harness field at launch time, so
+ * switching harness never has to refill this list (openModelMenu does the
+ * same) */
+const launchOrModels = () =>
+  ((window.OpenRouterUI && OpenRouterUI.models) || []).map((m) => [m.id, m.id]);
+const launchHarnesses = () =>
+  ((window.OpenRouterUI && OpenRouterUI.HARNESSES) || []).map(([prefix, label]) => [prefix, label]);
+
+/* `wide` fields take two grid columns: a provider row and a model row both
+ * name who is billed ("Anthropic Subscription: Sonnet"), which a 151px column
+ * ellipsizes down to "Anthropic Subsc…" — hiding the very thing the field is
+ * for. Two columns fit the longest of them with room to spare, and the grid
+ * still comes out even: provider+model take four of the six, leaving the row
+ * to harness and effort. */
 const LAUNCH_FIELDS = [
-  { key: 'defaultModel', label: 'Model', table: () => Pane.MODELS },
+  { key: 'provider', label: 'Provider', wide: true, table: () => LAUNCH_PROVIDERS },
+  // which CLI an OpenRouter model runs in — hidden while Provider is Claude.
+  // The tip rides the field, not the options: a native <select>'s rows can't
+  // carry tooltip.js's data-tip, and pi's always-auto has to be said somewhere.
+  {
+    key: 'harness',
+    label: 'Harness',
+    tip: 'Which CLI runs the OpenRouter model: clean is our own minimal agent, opencode and pi are their own TUIs. pi gates nothing by design — it is always auto.',
+    table: () => launchHarnesses(),
+  },
+  { key: 'defaultModel', label: 'Model', wide: true, table: () => launchClaudeModels() },
   { key: 'defaultEffort', label: 'Effort', table: () => Pane.EFFORTS },
   // Claude Code's own /focus toggle, a checkbox in Options — a two-value
   // select here so the row reads as four of the same control
   { key: 'defaultFocus', label: 'Focus', table: () => [['off', 'off'], ['on', 'on']] },
   { key: 'defaultStartMode', label: 'Permissions', table: () => Pane.MODES },
+  // which folder of the workspace these agents may edit. The list is the
+  // workspace's own (renderer/scope.js), filled in as the card comes into
+  // view — an empty value is the whole workspace, i.e. no boundary at all.
+  {
+    key: 'scope',
+    label: 'Scope',
+    tip: 'Confine these agents to one area or folder: they can read the whole workspace but only edit inside it. Areas come from .swarmeye/areas.json in the repo.',
+    table: () => [['', 'whole workspace']],
+  },
 ];
 
 const Launcher = {
@@ -25,6 +67,7 @@ const Launcher = {
   hintEl: null,
   tiles: [], // [{n, btn}]
   selects: {}, // Options key -> <select>
+  scopes: null, // Scope option value -> { label, paths }
   goEl: null,
   count: LAUNCH_DEFAULT_COUNT,
   free: 0,
@@ -35,6 +78,7 @@ const Launcher = {
     defaultEffort: 'default',
     defaultFocus: 'off',
     defaultStartMode: 'default',
+    scope: '', // never an Options default: a boundary is asked for per launch
   },
 
   /* host is #empty-state; headline and hint are the two lines the card
@@ -76,7 +120,8 @@ const Launcher = {
 
     const options = launchEl('div', 'launch-options');
     for (const f of LAUNCH_FIELDS) {
-      const field = launchEl('div', 'launch-field');
+      const field = launchEl('div', 'launch-field' + (f.wide ? ' launch-field--wide' : ''));
+      if (f.tip) field.dataset.tip = f.tip;
       field.appendChild(launchEl('span', 'launch-field__label', f.label));
       const sel = document.createElement('select');
       sel.className = 'launch-field__select';
@@ -91,6 +136,7 @@ const Launcher = {
       field.appendChild(sel);
       options.appendChild(field);
     }
+    this.selects.provider.addEventListener('change', () => this.fillModels());
     card.appendChild(options);
 
     const foot = launchEl('div', 'launcher-card__foot');
@@ -144,12 +190,102 @@ const Launcher = {
       if (!sel) continue;
       const v = key === 'defaultFocus' ? (value ? 'on' : 'off') : value;
       this.defaults[key] = v;
-      sel.value = v;
+      if (key === 'defaultModel') this.applyModel(v);
+      else sel.value = v;
     }
   },
 
   applyDefaults() {
-    for (const [key, sel] of Object.entries(this.selects)) sel.value = this.defaults[key];
+    for (const [key, sel] of Object.entries(this.selects)) {
+      if (key === 'provider' || key === 'harness' || key === 'defaultModel') continue;
+      sel.value = this.defaults[key];
+    }
+    this.applyModel(this.defaults.defaultModel);
+  },
+
+  /* provider and harness both follow the model value: an OpenRouter default
+   * opens the card on OpenRouter (if the catalog is there to show) and on the
+   * harness its own prefix names, anything else on Claude */
+  applyModel(want) {
+    this.syncProviders();
+    const v = String(want || '');
+    const or = OpenRouterUI.isOpenRouter(v) && launchOrModels().length;
+    this.selects.provider.value = or ? 'openrouter' : 'claude';
+    /* a value saved before clean-everywhere ('or:') is a clean pick; a value
+     * with no prefix to read at all opens on the habit the + Agent menu
+     * remembers. The card only ever *reads* that habit — every field here is a
+     * one-off for this launch, so a pick made in it must not quietly change
+     * what Ctrl+N launches later. */
+    const prefix = (OpenRouterUI.HARNESSES.find(([p]) => v.startsWith(p)) || [])[0]
+      || (v.startsWith('or:') ? 'oc:' : OpenRouterUI.harnessPrefix());
+    this.selects.harness.value = prefix;
+    this.fillModels(or ? OpenRouterUI.slugOf(v) : v);
+  },
+
+  // the OpenRouter option is only offerable once a catalog exists (key saved)
+  syncProviders() {
+    const opt = this.selects.provider.querySelector('option[value="openrouter"]');
+    opt.disabled = !launchOrModels().length;
+  },
+
+  /* the Model list follows the provider: Claude's fixed tiers, or the catalog
+   * (bare slugs — getSettings glues the harness prefix on). The Harness field
+   * only means anything on OpenRouter, and Effort greys out there — main drops
+   * the flag for those models (claudeBase). */
+  fillModels(want) {
+    const or = this.selects.provider.value === 'openrouter';
+    const sel = this.selects.defaultModel;
+    sel.textContent = '';
+    for (const [value, label] of (or ? launchOrModels() : launchClaudeModels())) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    }
+    if (want != null) sel.value = want;
+    if (sel.selectedIndex < 0) sel.selectedIndex = 0;
+    // hidden, not disabled: a Claude launch has no harness to pick, and the
+    // grid drops the field entirely rather than leaving a greyed gap
+    this.selects.harness.parentElement.hidden = !or;
+    this.selects.harness.parentElement.parentElement.classList.toggle('has-harness', or);
+    const effortField = this.selects.defaultEffort.parentElement;
+    this.selects.defaultEffort.disabled = or;
+    if (or) effortField.dataset.tip = 'effort is Claude-only — OpenRouter models ignore it';
+    else delete effortField.dataset.tip;
+  },
+
+  /* what this workspace can be scoped to, once its areas and file list are
+   * in: the areas its `.swarmeye/areas.json` names, then the raw folders,
+   * under a heading each. Rebuilt rather than merged — it arrives while the
+   * card is coming into view, before anyone has picked out of it. */
+  fillScope(entries) {
+    const sel = this.selects.scope;
+    if (!sel) return;
+    const keep = sel.value;
+    this.scopes = new Map(entries.map((e) => [e.value, e.scope]));
+    sel.textContent = '';
+    sel.appendChild(Object.assign(document.createElement('option'), { value: '', textContent: 'whole workspace' }));
+    let group = null;
+    for (const e of entries) {
+      if (e.group !== (group && group.label)) {
+        group = Object.assign(document.createElement('optgroup'), { label: e.group });
+        sel.appendChild(group);
+      }
+      const opt = document.createElement('option');
+      opt.value = e.value;
+      opt.textContent = e.label;
+      opt.title = e.tip; // a native <select>'s rows can't carry tooltip.js's data-tip
+      group.appendChild(opt);
+    }
+    sel.value = keep;
+    if (sel.selectedIndex < 0) sel.selectedIndex = 0;
+  },
+
+  /* the catalog landed after init (boot config read, or a key saved in
+   * Options) — unlock the provider option without touching a pick already
+   * made in the visible card */
+  catalogChanged() {
+    if (this.selects.provider) this.syncProviders();
   },
 
   select(n) {
@@ -186,7 +322,8 @@ const Launcher = {
       : `Launch ${this.count} agent${this.count === 1 ? '' : 's'}`;
   },
 
-  /* workspace: one is selected, so there is somewhere to put the agents.
+  /* workspace: the selected workspace's id — somewhere to put the agents, and
+   * whose folders the Scope field offers.
    * free: slots left under the agent cap, counted across all workspaces. */
   sync({ workspace, free }) {
     if (!this.el) return;
@@ -203,6 +340,9 @@ const Launcher = {
     // coming back into view: the last launch's one-off picks are spent, so the
     // fields go back to what Options says
     if (!this.shown) { this.applyDefaults(); this.shown = true; }
+    // the folder list follows the workspace, so it is fetched on the change
+    // this method already guards on rather than on every chrome beat
+    Scope.entries(workspace).then((list) => { if (this._syncWs === workspace) this.fillScope(list); });
 
     this.free = free;
     for (const { n, btn } of this.tiles) {
@@ -220,11 +360,16 @@ const Launcher = {
   },
 
   getSettings() {
+    const or = this.selects.provider.value === 'openrouter';
     return {
-      model: this.selects.defaultModel.value,
+      // the catalog rows are bare slugs — the harness prefix is what turns one
+      // into a launchable value (main/providers.js decodes it)
+      model: (or ? this.selects.harness.value : '') + this.selects.defaultModel.value,
       effort: this.selects.defaultEffort.value,
       focus: this.selects.defaultFocus.value === 'on',
       startMode: this.selects.defaultStartMode.value,
+      // { label, paths } — an area is several paths, a folder is one
+      scope: (this.scopes && this.scopes.get(this.selects.scope.value)) || undefined,
     };
   },
 };

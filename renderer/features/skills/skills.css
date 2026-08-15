@@ -1,0 +1,330 @@
+/* ---- skills: the Skills screen ----
+ *
+ * Cut out of styles/app.css. Linked in app.css's own order and BEFORE
+ * chrome-clean.css, which exists to override these rules — a per-area sheet
+ * loading after it would flip every one of those overrides at once.
+ */
+
+/* ---------- skills screen ---------- */
+
+#skills-btn.active {
+  color: var(--amber);
+  border-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 14%, transparent);
+  box-shadow: 0 0 14px -4px rgba(245, 181, 68, 0.55);
+}
+/* fills the same slot as #grid-wrap/#board — a full view swapped in, not a modal */
+#skills-view {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+}
+#skills-view[hidden] { display: none; }
+#skills-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border3) transparent;
+}
+/* the "+ Add Skill" pill is the primary action here, filled like #board-new-btn */
+#skills-add-btn {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+#skills-add-btn:hover { box-shadow: 0 0 14px -4px var(--accent-glow); background: var(--accent); color: var(--on-accent); }
+/* one glass card per number, Task Board "Shipped" panel look */
+#skills-stats {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.skills-stat-card {
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 26px 64px -30px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.skills-stat-n {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+}
+.skills-stat-card-enabled .skills-stat-n { color: var(--accent-text); }
+.skills-stat-card-active .skills-stat-n { color: var(--tag); }
+.skills-stat-card-updates .skills-stat-n { color: var(--amber); }
+/* only lights up amber while there's actually something to pull */
+.skills-stat-card-updates.has-updates { border-color: color-mix(in srgb, var(--amber) 40%, var(--border2)); }
+.skills-stat-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 4px;
+}
+#skills-form {
+  width: 100%;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 26px 64px -30px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+#skills-form[hidden] { display: none; }
+#skills-form-url {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--term-bg) 55%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  outline: none;
+}
+#skills-form-url:focus { border-color: var(--border-hover); }
+.skills-empty {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  padding: 20px 4px;
+}
+.skills-empty[hidden] { display: none; }
+/* each repo sits in its own hue-tinted box; hues cycle per repo so adjacent
+ * groups read apart at a glance (local on-disk sources stay grey) */
+.skill-repo-group {
+  --repo-hue: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--repo-hue) 45%, var(--border3));
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.skill-repo-group:last-child { margin-bottom: 0; }
+.skill-repo-hue-1 { --repo-hue: var(--tag); }
+.skill-repo-hue-2 { --repo-hue: var(--entry-dot); }
+.skill-repo-group-local { --repo-hue: var(--muted2); }
+.skill-repo-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--repo-hue) 35%, var(--border));
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.skill-repo-header:hover { border-bottom-color: color-mix(in srgb, var(--repo-hue) 60%, var(--border)); }
+.skill-repo-group-collapsed .skill-repo-header {
+  border-bottom-color: transparent;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+.skill-repo-chevron {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  color: var(--repo-hue);
+  background: color-mix(in srgb, var(--repo-hue) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--repo-hue) 45%, var(--border3));
+  border-radius: 6px;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.skill-repo-header:hover .skill-repo-chevron { background: color-mix(in srgb, var(--repo-hue) 28%, transparent); }
+.skill-repo-group-collapsed .skill-repo-chevron { transform: rotate(-90deg); }
+.skill-repo-label {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--repo-hue);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-repo-label:hover { text-decoration: underline; }
+/* a disk-discovered source is a folder, not a link — muted, and no hover
+ * underline promising a click that does nothing */
+.skill-repo-label-local { color: var(--muted2); }
+.skill-repo-label-local:hover { text-decoration: none; }
+.skill-repo-badge {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  padding: 2px 8px;
+}
+.skill-repo-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.skill-repo-remove-btn {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--err);
+  background: color-mix(in srgb, var(--err) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--err) 35%, transparent);
+  border-radius: 100px;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.skill-repo-remove-btn:hover { border-color: var(--err); }
+.skill-repo-remove-btn.armed {
+  border-color: var(--err);
+  background: color-mix(in srgb, var(--err) 20%, transparent);
+}
+.skill-repo-rows {
+  display: flex;
+  flex-direction: column;
+}
+.skill-repo-group-collapsed .skill-repo-rows { display: none; }
+/* the left edge carries the row's state: accent + glow = auto-invoked,
+ * grey = loaded, dark + dimmed = installed but off */
+.skill-row {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.skill-row:last-child { margin-bottom: 0; }
+.skill-row-state-on { border-left-color: var(--muted2); }
+.skill-row-state-active {
+  border-left-color: var(--accent);
+  box-shadow: 0 0 18px -8px var(--accent-glow);
+}
+.skill-row-state-off {
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+  opacity: 0.78;
+}
+.skill-row-state-off .skill-row-name { color: var(--muted2); }
+.skill-row-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.skill-row-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.skill-row-toggle input[type="checkbox"] { accent-color: var(--accent); }
+/* no checkbox to click on a local skill — don't hint at one */
+.skill-row-toggle-local { cursor: default; }
+.skill-row-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted2);
+}
+.skill-row-active input[type="checkbox"] { accent-color: var(--tag); }
+.skill-row-active:has(input:checked) { color: var(--tag); }
+.skill-row-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.skill-row-desc {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text2);
+}
+.skill-row-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.skill-row-meta {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  word-break: break-all;
+}
+.skill-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.skill-update-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-text);
+  background: none;
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.skill-update-btn:hover { border-color: var(--accent); box-shadow: 0 0 14px -4px var(--accent-glow); }
+.skill-update-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.skill-copy-btn,
+.skill-remove-btn {
+  font-size: 13px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  cursor: pointer;
+  flex: none;
+}
+.skill-copy-btn:hover { color: var(--text); border-color: var(--border-hover); }
+.skill-remove-btn:hover { color: var(--err); border-color: var(--err); }
+.skill-remove-btn.armed {
+  color: var(--err);
+  border-color: var(--err);
+  background: color-mix(in srgb, var(--err) 12%, transparent);
+}

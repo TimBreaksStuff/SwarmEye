@@ -1,0 +1,81 @@
+/* ---- message: the message composer popover ----
+ *
+ * Cut out of styles/app.css. Linked in app.css's own order and BEFORE
+ * chrome-clean.css, which exists to override these rules — a per-area sheet
+ * loading after it would flip every one of those overrides at once.
+ */
+
+/* ---------- message composer ---------- */
+
+#msg-btn {
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text2);
+  background: var(--glass);
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  flex: none;
+  padding: 0 0 1px;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#msg-btn:hover {
+  color: var(--accent-text);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px -4px var(--accent-glow);
+}
+
+#msg-pop {
+  position: fixed;
+  z-index: 30;
+  width: min(560px, 90vw);
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(18px);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
+  border-radius: 14px;
+  box-shadow: 0 30px 70px -18px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+#msg-pop[hidden] { display: none; }
+#msg-input {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--term-bg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 16px;
+  outline: none;
+}
+.msg-hint {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 8px 16px 0;
+}
+.msg-hint.warn { color: var(--amber); }
+.msg-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px 14px;
+}
+.msg-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+  background: var(--glass);
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.msg-chip:hover { color: var(--accent-text); border-color: var(--accent); }
+.msg-chip-all { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.msg-none {
+  font-size: 11px;
+  color: var(--muted);
+}

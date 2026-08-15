@@ -1,0 +1,89 @@
+/* ---- timeline: the one-hour ribbon docked inside the swarm view, kept separate so the two can be worked on apart ----
+ *
+ * Cut out of styles/app.css. Linked in app.css's own order and BEFORE
+ * chrome-clean.css, which exists to override these rules — a per-area sheet
+ * loading after it would flip every one of those overrides at once.
+ */
+
+/* ---------- swarm timeline ---------- */
+/* A one-hour ribbon docked under the map (renderer/timeline.js). Fixed height
+ * with its own scroll, so turning it on shrinks the map by a known amount
+ * rather than letting a swarm of twenty agents push the map off screen. */
+#sv-timeline {
+  flex: none;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  max-height: 30vh;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+#sv-timeline[hidden] { display: none; }
+.tl-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+.tl-head-label {
+  flex: none;
+  width: 120px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.tl-head-scale {
+  position: relative;
+  flex: 1;
+  height: 12px;
+}
+.tl-mark {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+/* the two end labels would hang off the track otherwise */
+.tl-mark:first-child { transform: none; }
+.tl-mark:last-child { transform: translateX(-100%); }
+.tl-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tl-lane {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tl-lane-name {
+  flex: none;
+  width: 120px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl-track {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+  overflow: hidden;
+}
+.tl-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.tl-seg-busy { background: var(--accent); }
+.tl-seg-waiting { background: var(--amber); }
+.tl-seg-idle { background: var(--faint); }
+.tl-seg-exited { background: color-mix(in srgb, var(--err) 45%, transparent); }
+.tl-empty {
+  color: var(--muted);
+  padding: 6px 2px;
+}
+.tl-empty[hidden] { display: none; }

@@ -34,6 +34,9 @@ const Sounds = (() => {
     ping: (ac, t) => { tone(ac, 1400, t, 0.15, 0.22); },
     pop: (ac, t) => { tone(ac, 220, t, 0.12, 0.25, 'triangle'); },
     blip: (ac, t) => { tone(ac, 660, t, 0.06, 0.2, 'square'); tone(ac, 990, t + 0.07, 0.08, 0.18, 'square'); },
+    // not in OPTIONS: the fixed "needs your input" sound — a falling
+    // two-tone, so the ear can tell a blocked agent from a finished one
+    alert: (ac, t) => { tone(ac, 740, t, 0.15, 0.22); tone(ac, 554, t + 0.16, 0.22, 0.2); },
   };
 
   function play(name) {

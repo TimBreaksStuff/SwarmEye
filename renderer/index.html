@@ -8,7 +8,27 @@
   <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
   <link rel="stylesheet" href="styles/tokens.css" />
   <link rel="stylesheet" href="styles/app.css" />
+  <!-- Per-area sheets, one per features/<area>/. These were cut out of app.css
+       and load in app.css's own order, BEFORE chrome-clean.css — that sheet's
+       whole job is overriding these rules, so loading them after it would flip
+       every one of those overrides at once. -->
+  <link rel="stylesheet" href="features/rail/rail.css" />
+  <link rel="stylesheet" href="features/pane/pane.css" />
+  <link rel="stylesheet" href="features/preview/preview.css" />
+  <link rel="stylesheet" href="features/message/message.css" />
+  <link rel="stylesheet" href="features/board/board.css" />
+  <link rel="stylesheet" href="features/skills/skills.css" />
+  <link rel="stylesheet" href="features/swarmview/swarmview.css" />
+  <link rel="stylesheet" href="features/timeline/timeline.css" />
+  <link rel="stylesheet" href="features/history/history.css" />
   <link rel="stylesheet" href="styles/chrome-clean.css" />
+  <!-- these two took BOTH halves — app.css's and chrome-clean's — so they are
+       self-contained and belong after it rather than before -->
+  <link rel="stylesheet" href="features/settings/settings.css" />
+  <link rel="stylesheet" href="features/notifications/notifications.css" />
+  <!-- the lead-agent launch card carries its own flat-popover treatment, so it
+       belongs after chrome-clean.css rather than in the block above -->
+  <link rel="stylesheet" href="features/orchestrator/orchestrator.css" />
 </head>
 <body>
   <header id="topbar">
@@ -53,6 +73,7 @@
   <div id="body-wrap">
     <aside id="leftbar">
     <div id="leftbar-surface">
+      <div class="u-title" id="usage-title">Anthropic Usage</div>
       <div id="usage" data-tip="Claude usage — click to refresh">
         <div class="u-row" id="u-5h">
           <div class="u-head"><span class="u-label">Session</span><span class="u-pct" id="usage-5h-pct"></span><span class="u-in" id="usage-5h-in"></span></div>
@@ -61,6 +82,18 @@
         <div class="u-row" id="u-7d">
           <div class="u-head"><span class="u-label">Weekly</span><span class="u-pct" id="usage-7d-pct"></span><span class="u-in" id="usage-7d-in"></span></div>
           <span class="u-track" id="usage-7d"><span class="u-fill"></span></span>
+        </div>
+      </div>
+      <!-- both hidden until an OpenRouter key is saved (topbar.js) -->
+      <div class="u-title" id="or-usage-title" hidden>OpenRouter Usage</div>
+      <div id="usage-or" hidden>
+        <!-- today is a plain figure: a share of the credits bought says nothing -->
+        <div class="u-row" id="u-or-today">
+          <div class="u-head"><span class="u-label">Today</span><span class="u-in" id="usage-or-today-in"></span></div>
+        </div>
+        <div class="u-row" id="u-or-credits">
+          <div class="u-head"><span class="u-label">Credits</span><span class="u-pct" id="usage-or-credits-pct"></span><span class="u-in" id="usage-or-credits-in"></span></div>
+          <span class="u-track" id="usage-or-credits"><span class="u-fill"></span></span>
         </div>
       </div>
       <div id="usage-gauges">
@@ -169,7 +202,8 @@
             </div>
             <div class="board-form-row">
               <select id="board-form-startmode"></select>
-              <select id="board-form-model" data-tip="Claude model for this task"></select>
+              <select id="board-form-model" data-tip="Model for this task"></select>
+              <select id="board-form-harness" data-tip="Which CLI runs the OpenRouter model: clean is our own minimal agent, opencode and pi are their own TUIs. pi gates nothing by design — it is always auto." hidden></select>
               <select id="board-form-effort" data-tip="Claude reasoning effort for this task"></select>
               <select id="board-form-priority" data-tip="Priority — auto mode starts higher-priority tasks first">
                 <option value="low">low priority</option>
@@ -297,6 +331,11 @@
           </div>
           <div class="skills-filters">
             <input id="history-search" type="search" placeholder="filter past conversations…" spellcheck="false" />
+            <select id="history-provider" data-tip="Which provider ran the conversation — OpenRouter ones carry a vendor/model slug">
+              <option value="">all providers</option>
+              <option value="anthropic">anthropic</option>
+              <option value="openrouter">openrouter</option>
+            </select>
           </div>
           <div id="history-empty" class="skills-empty" hidden></div>
           <div id="history-list"></div>
@@ -505,6 +544,16 @@
         <input type="checkbox" id="leftbar-small-toggle" data-tip="Collapses the left menu to icons only, hover to preview the expanded view (workspace names and usage gauges).">
       </span>
     </div>
+    <div class="kbd-row kbd-opt"><span>Anthropic usage in the left menu</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="anthropic-usage-toggle" data-tip="Shows the Anthropic Usage section at the top of the left menu — the Session and Weekly bars from Claude's usage API. Off hides the section in both menu sizes.">
+      </span>
+    </div>
+    <div class="kbd-row kbd-opt"><span>OpenRouter usage in the left menu</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="openrouter-usage-toggle" data-tip="Shows the OpenRouter Usage section below it — today's spend and the credits you have left. Needs a saved OpenRouter key; without one the section stays hidden whatever this says.">
+      </span>
+    </div>
     <div class="kbd-row kbd-opt"><span>Menu bar size</span>
       <span class="opt-ctl">
         <button id="ui-font-down" data-tip="Smaller menu bar">−</button>
@@ -541,11 +590,20 @@
     <div class="kbd-row kbd-opt kbd-opt-theme"><span>Colour theme</span>
       <span class="opt-ctl" id="theme-opts">
         <button class="theme-dot" data-theme="dark" data-tip="Dark"></button>
-        <button class="theme-dot" data-theme="light" data-tip="Light"></button>
         <button class="theme-dot" data-theme="orange" data-tip="Orange"></button>
+        <button class="theme-dot" data-theme="light" data-tip="Light"></button>
         <button class="theme-dot" data-theme="blue" data-tip="Light Blue"></button>
         <button class="theme-dot" data-theme="neoblue" data-tip="Light Neoblue"></button>
         <button class="theme-dot" data-theme="purple" data-tip="Light Purple"></button>
+        <button class="theme-dot" data-theme="teal" data-tip="Light Teal"></button>
+        <button class="theme-dot" data-theme="rose" data-tip="Light Rose"></button>
+        <button class="theme-dot" data-theme="violet" data-tip="Light Violet"></button>
+        <button class="theme-dot" data-theme="sky" data-tip="Light Sky"></button>
+        <button class="theme-dot" data-theme="indigo" data-tip="Light Indigo"></button>
+        <button class="theme-dot" data-theme="fuchsia" data-tip="Light Fuchsia"></button>
+        <button class="theme-dot" data-theme="emerald" data-tip="Light Emerald"></button>
+        <button class="theme-dot" data-theme="amber" data-tip="Light Amber"></button>
+        <button class="theme-dot" data-theme="slate" data-tip="Light Slate"></button>
       </span>
     </div>
     </details>
@@ -613,6 +671,15 @@
         <select id="default-model-sel" data-tip="Claude model for new agents and new tasks alike"></select>
       </span>
     </div>
+    <div class="kbd-row kbd-opt"><span>New agent shortcut</span>
+      <span class="opt-ctl">
+        <select id="newagent-provider-sel" data-tip="What Ctrl+N launches: ask each time whether the new agent runs on Claude or an OpenRouter model, or always use one of them. Only asked once an OpenRouter key is saved (Setup below) — without one, Ctrl+N launches Claude directly.">
+          <option value="ask">ask every time</option>
+          <option value="claude">Anthropic Subscription</option>
+          <option value="openrouter">OpenRouter</option>
+        </select>
+      </span>
+    </div>
     <div class="kbd-row kbd-opt"><span>Default task effort</span>
       <span class="opt-ctl">
         <select id="default-effort-sel"></select>
@@ -670,6 +737,22 @@
       </span>
     </div>
     <pre id="tts-log" hidden></pre>
+    <div class="kbd-row kbd-opt"><span>OpenRouter API key</span>
+      <span class="opt-ctl">
+        <span id="or-status" class="stt-status"></span>
+        <input type="password" id="or-key-input" placeholder="sk-or-v1-…" data-tip="Lets agents run any OpenRouter model (Kimi, Qwen, GLM, GPT, …) — pick them in the model selects once the key is saved. Stored locally; those agents' conversations go only to OpenRouter.">
+        <button id="or-key-save" data-tip="Save the key and fetch the model catalog">Save</button>
+        <button id="or-key-refresh" data-tip="Re-fetch the model catalog" hidden>↻</button>
+        <button id="or-key-clear" data-tip="Forget the key and the cached catalog (click twice)" hidden>✕</button>
+      </span>
+    </div>
+    <div id="or-error" hidden></div>
+    <div class="kbd-row kbd-opt" id="or-alts-row" hidden><span>Models an agent can switch to</span>
+      <span class="opt-ctl">
+        <button id="or-alts-add" data-tip="Up to three more models that /model offers inside an OpenRouter agent, next to the one it was launched with — Claude Code's picker has room for four. Applies to agents started afterwards.">＋</button>
+      </span>
+    </div>
+    <div id="or-alts-list" hidden></div>
     </details>
 
     <button type="button" id="kbd-shortcuts-btn" class="kbd-row kbd-opt kbd-submenu-btn kbd-title-mid">
@@ -685,6 +768,7 @@
     <div class="kbd-row"><span>Next / previous workspace</span><kbd data-keep-ctrl>Ctrl+Tab · Ctrl+Shift+Tab</kbd></div>
     <div class="kbd-row"><span>Command palette — jump to anything</span><kbd>Ctrl+K</kbd></div>
     <div class="kbd-row"><span>New agent</span><kbd>Ctrl+N</kbd></div>
+    <div class="kbd-row"><span>New agent copying the active one</span><kbd>Ctrl+M</kbd></div>
     <div class="kbd-row"><span>Go to whoever has waited longest (again: next)</span><kbd>Ctrl+.</kbd></div>
     <div class="kbd-row"><span>Close focused agent (again: confirm kill)</span><kbd>Ctrl+X</kbd></div>
     <div class="kbd-row"><span>New task (dashboard)</span><kbd>Ctrl+T</kbd></div>
@@ -711,8 +795,18 @@
   <script src="icons.js"></script>
   <script src="resizable.js"></script>
   <script src="speech.js"></script>
-  <script src="pane.js"></script>
+  <!-- The pane, split across six classic scripts sharing one script scope.
+       Order matters twice: the vocabulary files must precede the class that
+       closes over their consts, and the three prototype mixins must follow it
+       because they reach for Pane.prototype. -->
+  <script src="features/pane/pane-theme.js"></script>
+  <script src="features/pane/pane-const.js"></script>
+  <script src="features/pane/pane.js"></script>
+  <script src="features/pane/pane-status.js"></script>
+  <script src="features/pane/pane-usage.js"></script>
+  <script src="features/pane/pane-git.js"></script>
   <script src="grid.js"></script>
+  <script src="scope.js"></script>
   <script src="launcher.js"></script>
   <script src="topbar.js"></script>
   <script src="railgrip.js"></script>
@@ -731,6 +825,10 @@
   <script src="prompts.js"></script>
   <script src="preview.js"></script>
   <script src="sounds.js"></script>
-  <script src="app.js"></script>
+  <script src="openrouter.js"></script>
+  <!-- app.js is a module: it imports the features/ modules, which is why it has
+       no <script> tag of its own. Module scripts are deferred, so every classic
+       script above has already run and its window global is there to read. -->
+  <script type="module" src="app.js"></script>
 </body>
 </html>

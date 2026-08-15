@@ -1,0 +1,144 @@
+/* The orchestrator's launch card, and the workers chip it hangs on the lead's
+ * pane header. Same modal chrome as the coordinator's — a dim backdrop, and a
+ * box the module places and the user can resize. Loaded after chrome-clean.css
+ * because the box carries its own flat-popover treatment. */
+
+#orch-pop {
+  /* fixed, not absolute: the grid behind is laid out wider than the window */
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+#orch-pop[hidden] { display: none; }
+
+.orch-box {
+  /* absolute, not flex-centred: the box is resizable, and a centred one grows
+   * in both directions under the grip. orchestrator.js places it. */
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(680px, 94vw);
+  height: min(480px, calc(100vh - 120px));
+  min-width: 420px;
+  min-height: 300px;
+  max-width: 96vw;
+  max-height: calc(100vh - 120px);
+  overflow: hidden; /* `resize` does nothing while overflow is visible */
+  resize: both;
+  padding: 14px 16px 20px; /* the deeper bottom is the resize grip's room */
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.orch-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: space-between;
+}
+.orch-head .kbd-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.orch-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.orch-input {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  padding: 10px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+}
+.orch-input:focus { outline: none; border-color: var(--accent); }
+
+.orch-rows { display: flex; flex-direction: column; gap: 8px; }
+.orch-row { display: flex; align-items: center; gap: 8px; }
+.orch-label {
+  width: 64px;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.orch-row select {
+  min-width: 0;
+  flex: 1;
+  height: 26px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+}
+/* the harness sits beside the model and names a CLI, not a model — it needs
+   only its own width */
+.orch-row select + select { flex: none; width: 110px; }
+
+.orch-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+.orch-note {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* the lead pane's own chip: which model its next workers run on. Appended to
+   the header by orchestrator.js, so it is styled here rather than in pane.css */
+.pane-workers {
+  flex: none;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border3);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.pane-workers:hover { color: var(--text); border-color: var(--accent); }
+
+/* the crew switcher: this lead and its workers share one grid slot, and this
+   picks which of them the slot shows. Appended to the header of whichever one
+   is showing, so it is styled here beside the chip it sits next to. */
+.pane-crew {
+  flex: none;
+  max-width: 200px;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border3);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.pane-crew:hover { border-color: var(--accent); }

@@ -75,11 +75,14 @@ const Skills = (() => {
 
     const activeToggle = document.createElement('label');
     activeToggle.className = 'skill-row-active';
-    activeToggle.dataset.tip = skill.local
+    // Claude agents only — a typed /command means nothing to the bare
+    // harnesses, which is what the toggle beside this one is for
+    const BARE_NOTE = ' Claude agents only: for clean, opencode and pi use the next toggle.';
+    activeToggle.dataset.tip = (skill.local
       ? `Auto-invoke this skill ("/${skill.invokeName}") right when a new agent starts` +
         (skill.workspaceId ? ' in this workspace' : '') + ', instead of waiting on the model to notice it\'s relevant.'
       : `Auto-invoke this skill ("/${skill.id}") right when every new agent starts, instead of ` +
-        'waiting on the model to notice it\'s relevant. Turning this on also enables the skill.';
+        'waiting on the model to notice it\'s relevant. Turning this on also enables the skill.') + BARE_NOTE;
     const activeCheckbox = document.createElement('input');
     activeCheckbox.type = 'checkbox';
     activeCheckbox.checked = !!skill.active;
@@ -94,10 +97,33 @@ const Skills = (() => {
     activeToggle.appendChild(activeCheckbox);
     activeToggle.appendChild(activeLabel);
 
+    // third toggle: inject this skill into bare-harness agents at launch
+    // (they have no on-demand skill mechanism — startup is the only way in)
+    const orToggle = document.createElement('label');
+    orToggle.className = 'skill-row-active';
+    orToggle.dataset.tip = 'Load this skill into every new clean, opencode and pi agent\'s system prompt '
+      + 'at launch — the three harnesses where "Active in new sessions" cannot reach. '
+      + 'Its full text rides every turn of those agents — leave off unless it earns its tokens.'
+      + (skill.local ? '' : ' Turning this on also enables the skill.');
+    const orCheckbox = document.createElement('input');
+    orCheckbox.type = 'checkbox';
+    orCheckbox.checked = !!skill.orStartup;
+    orCheckbox.addEventListener('change', async () => {
+      orCheckbox.disabled = true;
+      const res = await window.swarm.setSkillOrStartup(skill.id, orCheckbox.checked);
+      if (!res || !res.ok) toast('could not update: ' + (res && res.reason));
+      await refresh();
+    });
+    const orLabel = document.createElement('span');
+    orLabel.textContent = 'In OpenRouter agents';
+    orToggle.appendChild(orCheckbox);
+    orToggle.appendChild(orLabel);
+
     const header = document.createElement('div');
     header.className = 'skill-row-header';
     header.appendChild(toggle);
     header.appendChild(activeToggle);
+    header.appendChild(orToggle);
     row.appendChild(header);
 
     if (skill.description) {

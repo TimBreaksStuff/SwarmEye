@@ -1,7 +1,7 @@
 {
   "name": "swarmeye",
   "productName": "SwarmEye",
-  "version": "1.60.14",
+  "version": "1.63.6",
   "description": "Parallel Claude Code session cockpit",
   "main": "main/main.js",
   "private": true,
@@ -29,11 +29,13 @@
       "main/**",
       "renderer/**",
       "preload.js",
-      "scripts/**"
+      "scripts/**",
+      "agent/**"
     ],
     "asarUnpack": [
       "node_modules/node-pty/**",
-      "scripts/**"
+      "scripts/**",
+      "agent/**"
     ],
     "win": {
       "target": [

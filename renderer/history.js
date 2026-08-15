@@ -18,6 +18,7 @@ const History = (() => {
   const emptyEl = document.getElementById('history-empty');
   const wsSel = document.getElementById('history-ws');
   const searchEl = document.getElementById('history-search');
+  const providerEl = document.getElementById('history-provider');
   const refreshBtn = document.getElementById('history-refresh-btn');
   const archiveBtn = document.getElementById('history-archive-btn');
   const headTitleEl = document.getElementById('history-list-title');
@@ -36,6 +37,7 @@ const History = (() => {
   let workspaces = [];
   let workspaceId = null;
   let query = '';
+  let provider = ''; // '' | 'anthropic' | 'openrouter'
   let handlers = null;
   let loading = false;
   let failed = false;
@@ -64,17 +66,25 @@ const History = (() => {
     return bytes + ' B';
   }
 
+  // an OpenRouter conversation is the one whose last model id is a vendor slug
+  // ('qwen/qwen3-coder') — the same test the row badge uses — or one a harness
+  // wrote, since all three only ever talk to OpenRouter. A transcript whose
+  // model couldn't be read counts as Anthropic, since that is what a plain
+  // `claude` launch is.
+  const isOpenRouter = (s) => !!s.harness || (!!s.model && s.model.includes('/'));
+
   function matches(s) {
+    if (provider && (provider === 'openrouter') !== isOpenRouter(s)) return false;
     if (!query) return true;
     return (s.preview || '').toLowerCase().includes(query) || s.id.toLowerCase().includes(query);
   }
 
-  function makeTurn(t) {
+  function makeTurn(t, answerer) {
     const el = document.createElement('div');
     el.className = 'hist-turn hist-turn-' + t.role + (t.sub ? ' hist-turn-sub' : '');
     const who = document.createElement('div');
     who.className = 'hist-who';
-    who.textContent = (t.role === 'user' ? 'you' : 'claude')
+    who.textContent = (t.role === 'user' ? 'you' : answerer)
       + (t.sub ? ' · subagent' : '')
       + (t.at ? ' · ' + new Date(t.at).toLocaleString() : '');
     const text = document.createElement('pre');
@@ -104,7 +114,8 @@ const History = (() => {
     modalBody.innerHTML = '';
     if (!turns) { modalBody.textContent = 'could not read this transcript'; return; }
     if (!turns.length) { modalBody.textContent = 'this transcript has no readable turns'; return; }
-    for (const t of turns) modalBody.appendChild(makeTurn(t));
+    // whichever CLI answered — 'claude' would be a lie on a harness transcript
+    for (const t of turns) modalBody.appendChild(makeTurn(t, s.harness || 'claude'));
   }
 
   function closeModal() {
@@ -198,16 +209,32 @@ ${rows}
     const meta = document.createElement('div');
     meta.className = 'hist-meta';
     meta.textContent = `${fmtAgo(s.modifiedAt)} · ${fmtSize(s.size)} · ${s.id}`;
+    // a non-Claude conversation (an OpenRouter slug like 'qwen/…') gets a
+    // badge, and its resume relaunches on that model rather than Claude. One a
+    // harness wrote is named by it too: the CLI is half of what that
+    // conversation was, and it is the only thing that can reopen it.
+    if (s.harness || (s.model && s.model.includes('/'))) {
+      const badge = document.createElement('span');
+      badge.className = 'hist-model';
+      badge.textContent = [s.harness, s.model && s.model.split('/').pop()].filter(Boolean).join(' · ');
+      badge.dataset.tip = s.harness
+        ? `Ran in the ${s.harness} agent${s.model ? ' on ' + s.model : ''} via OpenRouter`
+          + ' — resume reopens the conversation in that CLI'
+        : `Ran on ${s.model} via OpenRouter — resume reopens it on that model`;
+      meta.appendChild(badge);
+    }
     body.append(prev, meta);
 
     const resume = document.createElement('button');
     resume.className = 'hist-resume';
     Icons.set(resume, 'play', 'Resume');
-    resume.dataset.tip = 'Open this conversation in a new agent pane (claude --resume)';
+    resume.dataset.tip = s.harness
+      ? `Open this conversation in a new ${s.harness} agent pane, carrying on where it left off`
+      : 'Open this conversation in a new agent pane (claude --resume)';
     resume.addEventListener('click', async (e) => {
       e.stopPropagation(); // the row itself opens the transcript
       resume.disabled = true;
-      await handlers.onResume(s.workspaceId, s.id);
+      await handlers.onResume(s.workspaceId, s.id, s.model, s.harness);
       resume.disabled = false;
     });
 
@@ -358,6 +385,10 @@ ${rows}
   archiveBtn.addEventListener('click', () => toggleArchive(!archiveShown));
   deleteAllBtn.addEventListener('click', () => {
     Confirm.armOrFire(deleteAllBtn, purgeKey(), purge);
+  });
+  providerEl.addEventListener('change', () => {
+    provider = providerEl.value;
+    render();
   });
   searchEl.addEventListener('input', () => {
     query = searchEl.value.trim().toLowerCase();

@@ -1,0 +1,318 @@
+/* ---- Notifications: the bell, its popover and the docked panel ----
+ *
+ * Cut out of styles/app.css and styles/chrome-clean.css, in that order, and
+ * loaded after both. Both sheets styled #notif-n and #notif-btn, chrome-clean
+ * winning; moving only app.css's half would have flipped that, so both halves
+ * came across in their original order and the same rules still win.
+ *
+ * Left behind on purpose: chrome-clean's shared `button > svg` sizing rule,
+ * which #notif-panel only appears in alongside seven other views.
+ */
+
+/* ---- from styles/app.css ---- */
+
+/* ---------- notification center ---------- */
+
+#notif-btn {
+  position: relative;
+  line-height: 1;
+  color: var(--muted); /* grey at rest — amber only while something is unread */
+  background: var(--glass);
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  flex: none;
+  padding: 0;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#notif-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  margin: 0 auto;
+}
+#notif-btn:hover {
+  color: var(--text2);
+  border-color: var(--border-hover);
+}
+#notif-btn.unread,
+#notif-btn.unread:hover {
+  color: var(--amber);
+  border-color: var(--amber);
+  animation: notif-glow 2s ease-in-out infinite;
+}
+@keyframes notif-glow {
+  0%, 100% { box-shadow: 0 0 6px -3px var(--amber); }
+  50% { box-shadow: 0 0 14px -2px var(--amber); }
+}
+#notif-n {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 100px;
+  background: var(--amber);
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+/* flat surface carried here rather than taken from chrome-clean.css's shared
+ * "flat popovers" rule, which this sheet now loads after and would outrank —
+ * same fix settings.css needed. Renders identically; off that shared list. */
+#notif-pop {
+  position: fixed;
+  top: 70px;
+  right: 16px;
+  z-index: 20;
+  background: var(--surface);
+  backdrop-filter: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
+  border-radius: 14px;
+  padding: 14px 16px;
+  min-width: 360px;
+  max-width: 480px;
+  max-height: 60vh;
+  overflow-y: auto;
+  box-shadow: 0 30px 70px -18px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+#notif-pop .kbd-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  margin-bottom: 0;
+}
+.notif-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.notif-clear {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.notif-clear:hover { color: var(--accent-text); border-color: var(--accent); }
+.notif-empty {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 0 2px;
+}
+.notif-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.notif-row:first-of-type { border-top: none; }
+.notif-row:hover .notif-who { color: var(--accent-text); }
+.notif-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.notif-dot.done { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+.notif-dot.wait { background: var(--amber); box-shadow: 0 0 8px rgba(245, 181, 68, 0.5); }
+.notif-dot.exit { background: var(--muted2); }
+.notif-dot.detach { background: var(--amber); }
+.notif-body { flex: 1; min-width: 0; }
+.notif-who {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notif-what {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notif-cmd {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 2px;
+  min-width: 0;
+}
+.notif-cmd .notif-what { flex: 1; }
+.notif-time {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted2);
+}
+.notif-respond { display: flex; gap: 4px; flex: none; }
+
+/* per-notification actions: jump to the agent / read its transcript. Wraps
+ * rather than pushing the row wide — a narrow notification panel would
+ * otherwise grow a horizontal scrollbar (same fix as the history rows). */
+.notif-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.notif-act {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.notif-act:hover:not(:disabled) {
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+.notif-act:disabled { opacity: 0.4; cursor: default; }
+
+/* notification panel: docked right sidebar (mirrors #leftbar's flex slot on
+ * the other edge of #body-wrap) — full untruncated detail, no row cap. */
+#notif-panel {
+  flex: none;
+  z-index: 1;
+  width: 380px;
+  min-width: 300px;
+  min-height: 0;
+  display: flex;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+#notif-panel[hidden] { display: none; }
+/* drag handle on the panel's own edge — same split as #preview/#preview-body,
+ * so the handle stays put while the list scrolls behind it */
+#notif-panel-resizer {
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+}
+#notif-panel-resizer:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+#notif-panel-body {
+  flex: 1;
+  min-width: 0;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+#notif-panel .board-head { margin-bottom: 12px; flex: none; }
+#notif-panel-list { display: flex; flex-direction: column; }
+.notif-panel-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.notif-panel-row:first-child { border-top: none; }
+.notif-panel-row:hover .notif-panel-who { color: var(--accent-text); }
+.notif-panel-row .notif-dot { margin-top: 5px; }
+.notif-panel-who {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text);
+}
+.notif-panel-what {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 2px;
+}
+.notif-panel-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted2);
+  margin-top: 6px;
+}
+.notif-panel-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted2);
+  margin-top: 2px;
+}
+
+/* ---- from styles/chrome-clean.css ---- */
+
+/* the bell takes the accent only while something is unread — a permanent alert
+ * colour makes the alert mean nothing. Accent, not amber, so it follows the
+ * theme picked in Options */
+#topbar-actions > #notif-btn { color: var(--text2); }
+#topbar-actions > #notif-btn.unread,
+#topbar-actions > #notif-btn.unread:hover {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  /* the cluster's hairlines are shared — a coloured one here would read as the
+   * neighbouring button's border, not the bell's state */
+  border-color: var(--border2);
+  animation: none;
+  box-shadow: none;
+}
+/* muted (double-clicked): the bell greys out and wears a slash — still counts,
+ * just doesn't interrupt */
+#topbar-actions > #notif-btn.muted,
+#topbar-actions > #notif-btn.muted.unread { color: var(--text3); background: transparent; }
+#topbar-actions > #notif-btn.muted::after {
+  content: '';
+  position: absolute;
+  left: 20%; right: 20%; top: 50%;
+  border-top: 1.6px solid currentColor;
+  transform: rotate(-45deg);
+  pointer-events: none;
+}
+
+#notif-n {
+  top: -4px; right: -1px;
+  min-width: 15px; height: 15px;
+  border-radius: 8px;
+  font-size: 9px; line-height: 15px;
+  /* accent fill, so the unread count matches the theme's colour */
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* per-row dismiss — quiet until the row is hovered */
+.notif-dismiss {
+  flex: none;
+  width: 18px; height: 18px;
+  padding: 0;
+  line-height: 1;
+  font-size: 10px;
+  color: var(--muted2);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+}
+.notif-row:hover .notif-dismiss,
+.notif-panel-row:hover .notif-dismiss { opacity: 1; }
+.notif-dismiss:hover { color: var(--text); background: var(--glass); }
+
+/* panel filter chips */
+.notif-filter { display: flex; gap: 6px; margin-bottom: 10px; }
+.notif-filter .notif-act.on { color: var(--accent-text); border-color: var(--accent); }

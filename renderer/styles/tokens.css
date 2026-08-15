@@ -110,7 +110,7 @@
   --diff-hunk: #1d4ed8;
 }
 
-/* Three more light themes — the same white page and neutral ramp as "light",
+/* Twelve more light themes — the same white page and neutral ramp as "light",
  * with only the accent hue swapped. Each --accent still has to clear 4.5:1
  * against --bg *and* carry white text as a fill, so they are picked, not
  * hue-rotated. Everything not listed inherits the light block above, which
@@ -118,7 +118,16 @@
  * not, so the shared values are repeated via a grouped selector). */
 :root[data-theme="blue"],
 :root[data-theme="neoblue"],
-:root[data-theme="purple"] {
+:root[data-theme="purple"],
+:root[data-theme="teal"],
+:root[data-theme="rose"],
+:root[data-theme="violet"],
+:root[data-theme="sky"],
+:root[data-theme="indigo"],
+:root[data-theme="fuchsia"],
+:root[data-theme="emerald"],
+:root[data-theme="amber"],
+:root[data-theme="slate"] {
   --bg: #eef0f3;
   --surface: #f7f8fa;
   --hover: #e7eaee;
@@ -171,6 +180,69 @@
   --accent-text: #5b21b6;
   --accent-glow: rgba(109, 40, 217, 0.35);
   --pill-hover: rgba(109, 40, 217, 0.1);
+}
+
+:root[data-theme="teal"] {
+  --accent: #0f766e;
+  --accent-text: #115e59;
+  --accent-glow: rgba(15, 118, 110, 0.35);
+  --pill-hover: rgba(15, 118, 110, 0.1);
+}
+
+:root[data-theme="rose"] {
+  --accent: #be123c;
+  --accent-text: #9f1239;
+  --accent-glow: rgba(190, 18, 60, 0.35);
+  --pill-hover: rgba(190, 18, 60, 0.1);
+}
+
+:root[data-theme="violet"] {
+  --accent: #7c3aed;
+  --accent-text: #6d28d9;
+  --accent-glow: rgba(124, 58, 237, 0.35);
+  --pill-hover: rgba(124, 58, 237, 0.1);
+}
+
+:root[data-theme="sky"] {
+  --accent: #0369a1;
+  --accent-text: #075985;
+  --accent-glow: rgba(3, 105, 161, 0.35);
+  --pill-hover: rgba(3, 105, 161, 0.1);
+}
+
+:root[data-theme="indigo"] {
+  --accent: #4338ca;
+  --accent-text: #3730a3;
+  --accent-glow: rgba(67, 56, 202, 0.35);
+  --pill-hover: rgba(67, 56, 202, 0.1);
+}
+
+:root[data-theme="fuchsia"] {
+  --accent: #a21caf;
+  --accent-text: #86198f;
+  --accent-glow: rgba(162, 28, 175, 0.35);
+  --pill-hover: rgba(162, 28, 175, 0.1);
+}
+
+:root[data-theme="emerald"] {
+  --accent: #047857;
+  --accent-text: #065f46;
+  --accent-glow: rgba(4, 120, 87, 0.35);
+  --pill-hover: rgba(4, 120, 87, 0.1);
+}
+
+:root[data-theme="amber"] {
+  --accent: #9a5b00;
+  --accent-text: #7a4700;
+  --accent-glow: rgba(154, 91, 0, 0.35);
+  --pill-hover: rgba(154, 91, 0, 0.1);
+}
+
+:root[data-theme="slate"] {
+  --accent: #475569;
+  --accent-text: #334155;
+  --accent-glow: rgba(71, 85, 105, 0.35);
+  --pill-hover: rgba(71, 85, 105, 0.1);
 }
 
 :root[data-theme="orange"] {

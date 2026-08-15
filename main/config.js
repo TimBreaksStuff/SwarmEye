@@ -28,9 +28,13 @@ const DEFAULTS = {
   roles: [],
   skills: [],
   localActiveSkills: [], // ids of filesystem-discovered skills marked auto-invoke (see skills.js)
+  localOrSkills: [], // ids of filesystem-discovered skills injected into clean OpenRouter agents
   autoUsageLimit: 85,
   lastUsageSnapshot: null, // legacy usage snapshot; usage.js reads it once and writes usage-snapshot.json from then on
   skipPermissions: false,
+  openrouterKey: '', // never crosses IPC — see providers.js
+  openrouterCatalog: null, // { fetchedAt, models: [{id,label,ctx,in,out,cr,cw}] }
+  openrouterAlts: [], // up to 3 slugs `/model` offers alongside the launch model (providers.js)
 };
 
 let cache = null;

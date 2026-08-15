@@ -320,6 +320,34 @@ const Topbar = (() => {
     return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
+  // "now" under a minute, then 5m / 2h / 3d — the popover's row times, with
+  // the full timestamp in the tooltip; the docked panel keeps fmtFull
+  function fmtAgo(t) {
+    const m = Math.floor((Date.now() - t) / 60000);
+    if (m < 1) return 'now';
+    if (m < 60) return `${m}m`;
+    if (m < 1440) return `${Math.floor(m / 60)}h`;
+    return `${Math.floor(m / 1440)}d`;
+  }
+
+  // a coalesced row says how many times it fired
+  function notifText(n) {
+    return n.count > 1 ? `${n.text} ×${n.count}` : n.text;
+  }
+
+  // per-row dismiss — splices exactly this row without clearing the rest
+  function notifDismissButton(n, handlers) {
+    const x = document.createElement('button');
+    x.className = 'notif-dismiss';
+    x.textContent = '✕';
+    x.dataset.tip = 'Dismiss this notification';
+    x.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handlers.onDismiss(n);
+    });
+    return x;
+  }
+
   // approve/deny buttons for a 'wait'-kind row — same quick-respond action as
   // the pane header's ✓/✕, so a permission prompt can be cleared straight
   // from the bell without switching workspace or opening the pane
@@ -444,7 +472,7 @@ const Topbar = (() => {
       who.textContent = `${n.agent} · ${n.ws}`;
       const what = document.createElement('div');
       what.className = 'notif-what';
-      what.textContent = n.text;
+      what.textContent = notifText(n);
       body.append(who, what);
       if (n.cmd) {
         // same accent-bar + mono-text treatment as the pane's initial-command row
@@ -462,10 +490,12 @@ const Topbar = (() => {
 
       const time = document.createElement('span');
       time.className = 'notif-time';
-      time.textContent = fmtClock(n.time);
+      time.textContent = fmtAgo(n.time);
+      time.dataset.tip = fmtFull(n.time);
 
       row.append(dot, body, time);
       if (n.kind === 'wait' && n.canRespond) row.append(notifRespondButtons(n, handlers));
+      row.append(notifDismissButton(n, handlers));
       notifPop.appendChild(row);
     }
   }
@@ -496,8 +526,15 @@ const Topbar = (() => {
     return fmtDur(Math.floor(ms / 60000));
   }
 
+  // which kinds the panel shows — a chip click re-renders off the captured
+  // list, so the filter flips without waiting for the next agent event
+  let notifFilter = 'all';
+  let panelNotifs = [], panelHandlers = null;
+
   function renderNotifPanel(notifs, handlers) {
     if (notifPanel.hidden) return; // same reason as the popover above
+    panelNotifs = notifs;
+    panelHandlers = handlers;
     notifPanelList.innerHTML = '';
     if (!notifs.length) {
       const empty = document.createElement('div');
@@ -507,7 +544,34 @@ const Topbar = (() => {
       return;
     }
 
-    for (const n of notifs) {
+    // Exited folds 'detach' in — both mean the pane is gone
+    const FILTERS = [['all', 'All'], ['wait', 'Needs input'], ['done', 'Done'], ['exit', 'Exited']];
+    const chips = document.createElement('div');
+    chips.className = 'notif-filter';
+    for (const [key, label] of FILTERS) {
+      const chip = document.createElement('button');
+      chip.className = 'notif-act' + (notifFilter === key ? ' on' : '');
+      chip.textContent = label;
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        notifFilter = key;
+        renderNotifPanel(panelNotifs, panelHandlers);
+      });
+      chips.appendChild(chip);
+    }
+    notifPanelList.appendChild(chips);
+
+    const shown = notifs.filter((n) => notifFilter === 'all'
+      || (notifFilter === 'exit' ? n.kind === 'exit' || n.kind === 'detach' : n.kind === notifFilter));
+    if (!shown.length) {
+      const empty = document.createElement('div');
+      empty.className = 'notif-empty';
+      empty.textContent = 'nothing yet — agent events land here';
+      notifPanelList.appendChild(empty);
+      return;
+    }
+
+    for (const n of shown) {
       const row = document.createElement('div');
       row.className = 'notif-panel-row';
       row.dataset.tip = 'Jump to this agent';
@@ -523,7 +587,7 @@ const Topbar = (() => {
       who.textContent = `${n.agent} · ${n.ws}`;
       const what = document.createElement('div');
       what.className = 'notif-panel-what';
-      what.textContent = n.text;
+      what.textContent = notifText(n);
       body.append(who, what);
       if (n.cmd) {
         const cmd = document.createElement('div');
@@ -553,6 +617,7 @@ const Topbar = (() => {
 
       row.append(dot, body);
       if (n.kind === 'wait' && n.canRespond) row.append(notifRespondButtons(n, handlers));
+      row.append(notifDismissButton(n, handlers));
       notifPanelList.appendChild(row);
     }
   }
@@ -733,9 +798,77 @@ const Topbar = (() => {
   // keep "resets in" countdowns fresh between polls
   setInterval(() => renderUsage(null), 30000);
 
+  /* --- OpenRouter usage: the second section under the Anthropic bars -------
+   * Two rows — what today cost, as a bare figure, and a bar for what is left
+   * of the credits bought. A key whose account balance is unreadable falls
+   * back to that key's own spend limit; with neither, the bar stays empty and the dollar
+   * figures still show. Five-minute poll — since 1.60.32 this is the app's
+   * only OpenRouter spend request; main still caches it for a minute, which
+   * is what keeps a click on the block from hammering the endpoint. */
+  const usageTitleEl = document.getElementById('usage-title');
+  const orTitleEl = document.getElementById('or-usage-title');
+  const orEl = document.getElementById('usage-or');
+  const fmtUsd = (v) => (v == null ? '—' : '$' + (v < 10 ? v.toFixed(2) : Math.round(v)));
+  let orSectionOn = true; // ⌨ Options; see setUsageSection below
+
+  function renderOrRow(rowId, pct, text) {
+    const fill = document.getElementById(rowId).querySelector('.u-fill');
+    const p = pct == null ? null : Math.max(0, Math.min(100, Math.round(pct)));
+    fill.style.setProperty('--u', (p == null ? 0 : p) + '%');
+    fill.classList.toggle('warn', p != null && p >= 75 && p < 90);
+    fill.classList.toggle('crit', p != null && p >= 90);
+    document.getElementById(rowId + '-pct').textContent = p == null ? '—' : p + '%';
+    document.getElementById(rowId + '-in').textContent = text;
+  }
+
+  function renderOrUsage(s) {
+    const total = s.credits ? s.credits.total : s.limit;
+    const used = s.credits ? s.credits.used
+      : (s.limit != null && s.remaining != null ? s.limit - s.remaining : null);
+    const left = total != null && used != null ? total - used : s.remaining;
+    const share = (v) => (total > 0 && v != null ? (v / total) * 100 : null);
+    document.getElementById('usage-or-today-in').textContent = fmtUsd(s.daily);
+    renderOrRow('usage-or-credits', share(used), left == null ? '—' : fmtUsd(left) + ' left');
+    orEl.dataset.tip = 'OpenRouter — today ' + fmtUsd(s.daily) + ' · week ' + fmtUsd(s.weekly)
+      + ' · month ' + fmtUsd(s.monthly)
+      + (total != null ? ' · ' + fmtUsd(left) + ' of ' + fmtUsd(total) + ' credits left' : '')
+      + ' — click to refresh';
+    // a poll in flight when the section was switched off must not unhide it
+    orTitleEl.hidden = orEl.hidden = !orSectionOn;
+  }
+
+  async function pollOrUsage() {
+    if (!orSectionOn) return;
+    const s = await window.swarm.openrouterSpend();
+    if (s) { renderOrUsage(s); return; }
+    // main answers null both for "no key saved" and for a failed fetch — only
+    // the first should hide the section; a transient error keeps the last
+    // numbers on screen rather than flickering the rail
+    const st = await window.swarm.openrouterStatus();
+    if (!st.configured) orTitleEl.hidden = orEl.hidden = true;
+  }
+  pollOrUsage();
+  setInterval(pollOrUsage, 5 * 60 * 1000);
+  // a key saved or forgotten in Options reaches the rail without a poll's wait
+  window.addEventListener('openrouter:changed', pollOrUsage);
+  orEl.addEventListener('click', pollOrUsage);
+
+  /* ⌨ Options can switch either section out of the rail entirely — head and
+   * bars, in both menu sizes. Switching the OpenRouter one off also stops its
+   * poll; switching it back on re-reads rather than waiting five minutes. */
+  function setUsageSection(which, on) {
+    if (which === 'anthropic') {
+      usageTitleEl.hidden = usageEl.hidden = usageGaugesEl.hidden = !on;
+      return;
+    }
+    orSectionOn = on;
+    if (on) pollOrUsage();
+    else orTitleEl.hidden = orEl.hidden = true;
+  }
+
   const setWorkspaceColors = (colors) => { WS_COLORS = colors || []; };
 
-  return { renderWorkspaces, renderNotifications, renderNotifPanel, updateAgentCap, renderUsage, renderSwarmMap, openWorkspaceFlyout, setWorkspaceColors, fmtIn, fmtClock };
+  return { renderWorkspaces, renderNotifications, renderNotifPanel, updateAgentCap, renderUsage, setUsageSection, renderSwarmMap, openWorkspaceFlyout, setWorkspaceColors, fmtIn, fmtClock };
 })();
 
 window.Topbar = Topbar;

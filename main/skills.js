@@ -160,6 +160,7 @@ class SkillsManager {
   listLocal() {
     const cfg = config.load();
     const activeIds = new Set(cfg.localActiveSkills || []);
+    const orIds = new Set(cfg.localOrSkills || []);
     // On Windows the agents' ~/.claude/skills lives inside WSL, which
     // os.homedir() does not point at — scanning the Windows home would list
     // the wrong folder (usually an empty one). Workspace-local skills below
@@ -176,7 +177,10 @@ class SkillsManager {
         workspaceId: ws.id,
       }));
     }
-    for (const s of found) s.active = activeIds.has(s.id);
+    for (const s of found) {
+      s.active = activeIds.has(s.id);
+      s.orStartup = orIds.has(s.id);
+    }
     return found;
   }
 
@@ -314,6 +318,46 @@ class SkillsManager {
     return { ok: true, skill };
   }
 
+  /* orStartup = injected into every new *bare-harness* agent's system prompt
+   * at launch — clean, opencode and pi. None of the three has an on-demand
+   * skill mechanism SwarmEye can drive (a typed `/skill` would just be
+   * submitted as a prompt there), so launch injection is the only way a skill
+   * reaches one. Same storage split and same enable rule as setActive above. */
+  async setOrStartup(id, on) {
+    const cfg = config.load();
+    if (String(id).startsWith('local:')) {
+      const local = this._findLocal(id);
+      if (!local) return { ok: false, reason: 'not-found' };
+      const ids = new Set(cfg.localOrSkills || []);
+      if (on) ids.add(id); else ids.delete(id);
+      cfg.localOrSkills = [...ids];
+      config.save(cfg);
+      return { ok: true, skill: { ...local, orStartup: !!on } };
+    }
+    const skill = (cfg.skills || []).find((s) => s.id === id);
+    if (!skill) return { ok: false, reason: 'not-found' };
+    if (on && !skill.enabled) {
+      const res = await this.setEnabled(id, true);
+      if (!res.ok) return res;
+    }
+    skill.orStartup = !!on;
+    config.save(cfg);
+    return { ok: true, skill };
+  }
+
+  /* The skill folders a bare-harness agent (clean, opencode, pi) launching in
+   * `workspaceId` should load, as shell paths — every route into the three
+   * names a file and lets the harness read it, so skill content never touches
+   * the command line. Workspace-local skills only reach agents in their
+   * workspace, like the claude injection path. */
+  orSkillDirs(workspaceId) {
+    return this.list()
+      .filter((s) => s.orStartup && (s.local || s.enabled)
+        && (!s.workspaceId || s.workspaceId === workspaceId))
+      .map((s) => toShellPath(s.local ? s.dir : this._skillDir(s)))
+      .filter(Boolean);
+  }
+
   /* Checks the shared clone once and applies the result to every skill
    * entry sharing it (a multi-skill repo updates as one git repo). */
   async checkUpdate(id) {
@@ -417,6 +461,9 @@ class SkillsManager {
       if (!local) return { ok: false, reason: 'not-found' };
       try { fs.rmSync(local.dir, { recursive: true, force: true }); } catch { return { ok: false, reason: 'delete-failed' }; }
       cfg.localActiveSkills = (cfg.localActiveSkills || []).filter((x) => x !== id);
+      // ids are deterministic (source + folder name), so a stale flag here
+      // would silently auto-inject a future same-named skill into clean agents
+      cfg.localOrSkills = (cfg.localOrSkills || []).filter((x) => x !== id);
       config.save(cfg);
       return { ok: true };
     }

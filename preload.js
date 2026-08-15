@@ -30,11 +30,20 @@ contextBridge.exposeInMainWorld('swarm', {
   purgeAllTasks: () => ipcRenderer.invoke('task:purge-all'),
   archivedTaskLog: (id) => ipcRenderer.invoke('task:archived-log', id),
   splitTask: (text, workspaceId) => ipcRenderer.invoke('coordinator:split', { text, workspaceId }),
+  // a lead agent's plan file: watch it while its pane lives, and take each
+  // wave of subtasks back through onOrchestratorPlan below
+  watchPlan: (sessionId, workspaceId) => ipcRenderer.invoke('orchestrator:watch', { sessionId, workspaceId }),
+  unwatchPlan: (sessionId) => ipcRenderer.invoke('orchestrator:unwatch', { sessionId }),
 
   listSessions: () => ipcRenderer.invoke('session:list'),
-  createSession: (workspaceId, cols, rows, model, resumeId, role, effort) =>
-    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, resumeId, role, effort }),
+  // continueFrom resumes a clean/opencode/pi conversation from the History
+  // screen: those harnesses own their transcripts, so there is no resumeId
+  // scope: a folder inside the workspace this agent may edit, and nothing else
+  createSession: (workspaceId, cols, rows, model, resumeId, role, effort, continueFrom, scope) =>
+    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, resumeId, role, effort, continueFrom, scope }),
   listWorkspaceFiles: (id) => ipcRenderer.invoke('workspace:files', id),
+  // the areas a workspace's .swarmeye/areas.json carves it into, for scoping
+  listAreas: (id) => ipcRenderer.invoke('areas:read', id),
   attachImage: (dataUrl) => ipcRenderer.invoke('attach:image', dataUrl),
   listRoles: () => ipcRenderer.invoke('roles:list'),
   saveRoles: (roles) => ipcRenderer.invoke('roles:save', roles),
@@ -76,6 +85,7 @@ contextBridge.exposeInMainWorld('swarm', {
   removeSkillRepo: (repoId) => ipcRenderer.invoke('skills:remove-repo', repoId),
   setSkillEnabled: (id, enabled) => ipcRenderer.invoke('skills:set-enabled', { id, enabled }),
   setSkillActive: (id, active) => ipcRenderer.invoke('skills:set-active', { id, active }),
+  setSkillOrStartup: (id, on) => ipcRenderer.invoke('skills:set-or-startup', { id, on }),
   updateSkill: (id) => ipcRenderer.invoke('skills:update', id),
   checkSkillUpdates: () => ipcRenderer.invoke('skills:check-updates'),
   skillTerminalCommand: (id) => ipcRenderer.invoke('skills:terminal-command', id),
@@ -101,7 +111,17 @@ contextBridge.exposeInMainWorld('swarm', {
   onSessionState: (cb) => ipcRenderer.on('session:state', (e, p) => cb(p)),
   onUsageUpdate: (cb) => ipcRenderer.on('usage:update', (e, p) => cb(p)),
   onGitUpdate: (cb) => ipcRenderer.on('git:update', (e, p) => cb(p)),
+  // one wave of subtasks a lead agent wrote: { sessionId, items } — or
+  // { sessionId, items: [], reason } when its plan file didn't parse
+  onOrchestratorPlan: (cb) => ipcRenderer.on('orchestrator:plan', (e, p) => cb(p)),
   onHealthUpdate: (cb) => ipcRenderer.on('health:update', (e, p) => cb(p)),
+  openrouterStatus: () => ipcRenderer.invoke('openrouter:status'),
+  openrouterSetKey: (key) => ipcRenderer.invoke('openrouter:set-key', key),
+  openrouterClearKey: () => ipcRenderer.invoke('openrouter:clear-key'),
+  openrouterRefresh: () => ipcRenderer.invoke('openrouter:refresh'),
+  openrouterSpend: () => ipcRenderer.invoke('openrouter:spend'),
+  openrouterSetAlts: (list) => ipcRenderer.invoke('openrouter:set-alts', list),
+
   getAppVersion: () => ipcRenderer.invoke('app:version'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),

@@ -16,7 +16,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { exec, shQuote, toShellPath } = require('./platform');
-const { ROLES, MODELS } = require('./sessions');
+const { MODELS } = require('./sessions');
+const roles = require('./roles');
 
 // a bad split must not be able to queue fifty agents
 const MAX_SUBTASKS = 8;
@@ -25,12 +26,12 @@ const MAX_TEXT = 4000;
 // whole session around it and the default 20s exec timeout is not enough
 const SPLIT_TIMEOUT_MS = 180000;
 
-/* The role menu the splitter picks from, built from ROLES rather than
+/* The role menu the splitter picks from, built from roles.list() rather than
  * restated here — the same reason roles:list hands the renderer main's own
  * table: the two can never drift into disagreeing about what a role is. */
 function roleMenu() {
-  return Object.entries(ROLES)
-    .map(([key, r]) => `- ${key} (${r.label}, ${r.model}): ${r.prompt}`)
+  return roles.list()
+    .map((r) => `- ${r.key} (${r.label}, ${r.model}): ${r.prompt}`)
     .join('\n');
 }
 
@@ -93,7 +94,7 @@ function clean(items) {
   return items
     .map((it) => ({
       text: String((it && it.text) || '').slice(0, MAX_TEXT).trim(),
-      role: Object.hasOwn(ROLES, String((it && it.role) || '')) ? it.role : '',
+      role: roles.has(String((it && it.role) || '')) ? it.role : '',
       model: MODELS.includes(it && it.model) ? it.model : 'default',
     }))
     .filter((it) => it.text)

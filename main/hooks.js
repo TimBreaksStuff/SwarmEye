@@ -1,12 +1,16 @@
 const { app } = require('electron');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
+const providers = require('./providers');
+const { claudeProjectDirName } = require('./sessions');
 const { IS_WIN, exec, shQuote, toShellPath } = require('./platform');
 
 /* Precise agent state via Claude Code hooks instead of output-timing guesses.
  * Every spawned claude gets `--settings <hook-settings.json>` whose hooks
- * pipe their stdin JSON into <userData>/hook-state/<sessionId>.json, which
+ * pipe their stdin JSON into <userData>/hook-state/$SWARMEYE_SESSION.json (an
+ * id plus that launch's token — see TOKEN_BYTES below), which
  * the main process watches. On Windows that dir lives on the Windows side
  * and is reachable from WSL as /mnt/..., so fs.watch still works natively. Last event wins: UserPromptSubmit / PreToolUse =
  * working, Notification = waiting on the user, Stop = turn finished.
@@ -29,6 +33,37 @@ const { IS_WIN, exec, shQuote, toShellPath } = require('./platform');
  * costs one more hook write per tool call and says nothing about working /
  * waiting — the renderer treats it as "still working", like PreToolUse. */
 const HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SessionStart'];
+
+/* Every agent writes into the same hook-state dir and names its own file, so
+ * the name alone proved nothing: a session's id is its tmux name, which any
+ * agent can read out of `tmux ls`, and writing <victim>.json there forged that
+ * victim's Stop / Notification / closing summary — which the lead agent's pane
+ * then acts on. So each launch gets a random token, the file is named
+ * <sessionId>-<token>.json, and a name whose token doesn't match the one this
+ * launch was given is somebody else's forgery. Hex only: SWARMEYE_SESSION is
+ * interpolated into a single-quoted tmux command. */
+const TOKEN_BYTES = 12;
+const TOKEN_RE = new RegExp(`^[0-9a-f]{${TOKEN_BYTES * 2}}$`);
+
+/* The token proves *who* wrote the state file; it says nothing about what is
+ * inside it. `transcript_path` is one of those fields, and everything below
+ * opens it — fs.read on macOS, wc -c / tail -c inside WSL on Windows — from a
+ * main process that is scoped to nothing. An agent restricted to its own
+ * subtree could name ~/.ssh/config there and have its size, its existence and
+ * its contents come back as that pane's cost panel and closing summary, or
+ * name another session's transcript and misattribute its spend. So a path is
+ * used only when its name looks like a transcript and it sits in a directory
+ * this session is entitled to (see safeTranscript).
+ *
+ * A conversation uuid, or the <sessionId>-<token> the foreign harnesses name
+ * their own file after, plus the .<n> a clean-agent /clear rotation adds.
+ * No dot or separator of its own, so a name that matches cannot climb out of
+ * the directory it was checked against. */
+const TRANSCRIPT_NAME_RE = /^[A-Za-z0-9_-]{8,64}(\.\d{1,4})?\.jsonl$/;
+
+/* The app's own harness transcripts, written beside hook-state under userData
+ * (see agent/clean.js, agent/opencode-plugin.js, agent/pi-extension.ts). */
+const HARNESS_TRANSCRIPT_DIRS = ['clean-transcripts', 'opencode-transcripts', 'pi-transcripts'];
 
 /* What a tool call is *about*, for the pane's status line and its activity
  * list: the path for anything that names one, the command for Bash, the URL for
@@ -75,6 +110,46 @@ const USAGE_PERSIST_MS = 3000;
  * (where completed tasks live) doesn't grow by a page per task. */
 const SUMMARY_MAX = 600;
 
+/* Claude Code fires the Stop hook *before* that turn's assistant message is in
+ * the transcript, so the read a Stop triggers finds the message from the turn
+ * *before* it — every closing summary was one turn behind. An agent that keeps
+ * going corrects itself on its next turn; a task's agent is closed the moment
+ * it completes, so its card kept whatever was there. For a worker with active
+ * skills that is the skill preamble ("Ready. What's the task?") — which, typed
+ * back to an orchestrator's lead as the worker's report, reads as a worker that
+ * did nothing, and the lead delegates the same work again. That is the wave
+ * after wave the orchestrator kept starting on 2026-08-13.
+ *
+ * So the transcript is read once more shortly after the Stop, and those reads
+ * say `settled`: a task files its summary from one of those only. Two passes,
+ * because the flush is a race and not a fixed delay, and a short tail rather
+ * than the whole file — only the newest message matters here, and on Windows
+ * every read is a WSL round trip. */
+const SUMMARY_SETTLE_MS = [700, 2500];
+const SUMMARY_TAIL = 128 * 1024;
+
+/* The newest thing the agent itself said in a slice of transcript. Same rules
+ * as the usage read's own scan: assistant entries only, no sub-agent
+ * (sidechain) turns, no synthetic local messages. */
+function closingText(text) {
+  let out = '';
+  for (const line of text.split('\n')) {
+    if (!line || line.charCodeAt(0) !== 123 /* { */) continue;
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; } // a partial first/last line
+    const msg = entry && entry.message;
+    if (!msg || entry.type !== 'assistant' || entry.isSidechain === true) continue;
+    if (msg.model === '<synthetic>' || !Array.isArray(msg.content)) continue;
+    const said = msg.content
+      .filter((c) => c && c.type === 'text' && typeof c.text === 'string')
+      .map((c) => c.text.trim())
+      .filter(Boolean)
+      .join('\n\n');
+    if (said) out = said;
+  }
+  return out;
+}
+
 /* List price per million tokens, matched against the model id. Cache reads
  * bill at 0.1x input; cache writes at 1.25x (5-minute TTL) or 2x (1-hour) —
  * the transcript reports that split per entry, so the cost is exact rather
@@ -92,6 +167,13 @@ const FALLBACK_PRICE = { input: 3, output: 15 };
 
 function priceFor(model) {
   const id = String(model || '');
+  // an OpenRouter slug ('provider/model') prices from the fetched catalog —
+  // exact rates, including the published cache read/write prices (carried as
+  // cacheRead/cacheWrite, which the cost formula below prefers over the
+  // Anthropic multipliers). A slug the catalog doesn't know bills zero and
+  // keeps counting tokens, rather than guessing a Claude-tier price that
+  // would be wrong by an order of magnitude.
+  if (id.includes('/')) return providers.priceFor(id) || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   for (const [re, price] of MODEL_PRICES) if (re.test(id)) return price;
   return FALLBACK_PRICE;
 }
@@ -148,13 +230,16 @@ class HookMonitor {
     this.stateDir = path.join(app.getPath('userData'), 'hook-state');
     this.settingsFile = path.join(app.getPath('userData'), 'hook-settings.json');
     this.usageFile = path.join(app.getPath('userData'), 'usage.json');
+    this.tokensFile = path.join(app.getPath('userData'), 'hook-tokens.json');
     this.seen = new Map(); // filename -> mtimeMs already processed
+    this.tokens = new Map(); // sessionId -> the token its launch was given (see claudeCmd)
     this.models = new Map(); // sessionId -> last known model id (from the transcript)
     this.usage = new Map(); // sessionId -> accumulated transcript usage (see usageState)
     // sessionId -> the conversation it is writing right now. Set from every
     // hook event, so it is known from SessionStart onwards rather than only
     // once a turn has ended (which is when `usage` first gets a path).
     this.transcripts = new Map();
+    this.settleTimers = new Map(); // sessionId -> its pending summary re-reads (see settleSummary)
     this.watcher = null;
     this.sweepTimer = null;
     this.persistTimer = null; // coalesces the usage writes (see persistUsage)
@@ -172,7 +257,10 @@ class HookMonitor {
         'mv -f "$SWARMEYE_STATE_DIR/$SWARMEYE_SESSION.json.tmp" "$SWARMEYE_STATE_DIR/$SWARMEYE_SESSION.json"';
       const hooks = {};
       for (const ev of HOOK_EVENTS) hooks[ev] = [{ hooks: [{ type: 'command', command }] }];
+      this.hookSpec = hooks; // a scoped agent's own settings file carries these too
       fs.writeFileSync(this.settingsFile, JSON.stringify({ hooks }, null, 2), 'utf8');
+      this.sweepScopedSettings();
+      this.restoreTokens();
       this.restoreUsage();
     } catch (err) {
       this.debugLog('[hooks] init FAILED — falling back to heuristics: ' + err.message);
@@ -191,15 +279,116 @@ class HookMonitor {
     this.debugLog('[hooks] watching ' + this.stateDir);
   }
 
+  /* An agent scoped to a subtree (main/scope.js) needs deny rules nobody else
+   * has, so it gets a settings file of its own: the same hooks every agent
+   * runs, plus its own permissions. Everyone else keeps the shared file.
+   *
+   * A write failure throws rather than falling back — the caller is inside
+   * spawn's try, and an agent that believes it is scoped and is not is worse
+   * than a launch that refuses. */
+  scopedSettingsFile(sessionId, denyEdit) {
+    if (!denyEdit || !denyEdit.length) return this.settingsFile;
+    const file = path.join(app.getPath('userData'), `hook-settings-${sessionId}.json`);
+    fs.writeFileSync(file, JSON.stringify({ hooks: this.hookSpec || {}, permissions: { deny: denyEdit } }, null, 2), 'utf8');
+    return file;
+  }
+
+  /* Those files outlive their launch on purpose: claude reads --settings once
+   * at startup, and an agent that survived the app in tmux is reattached, not
+   * relaunched. So this drops the ones whose session is gone rather than the
+   * lot — unlike hook-state above, which must not replay as fresh events. */
+  sweepScopedSettings() {
+    const live = config.load().sessions || {};
+    const dir = app.getPath('userData');
+    for (const f of fs.readdirSync(dir)) {
+      const m = /^hook-settings-(.+)\.json$/.exec(f);
+      if (!m || live[m[1]]) continue;
+      try { fs.unlinkSync(path.join(dir, f)); } catch { /* it can stay */ }
+    }
+  }
+
   /* Wrap the claude command line so its hooks know where to report.
    * Returns baseCmd unchanged when hook paths can't be expressed safely
-   * (they end up inside a single-quoted tmux command). */
-  claudeCmd(sessionId, baseCmd) {
+   * (they end up inside a single-quoted tmux command).
+   *
+   * `settings: false` keeps the env and drops the flag: an opencode or pi
+   * launch reports through the same env vars (its adapter writes the state
+   * file itself) but rejects `--settings` outright — opencode prints its
+   * usage and exits 1, pi answers "Unknown option". The clean agent tolerates
+   * the flag, so it still takes the default. */
+  claudeCmd(sessionId, baseCmd, { settings: withSettings = true, denyEdit } = {}) {
     const stateDir = toShellPath(this.stateDir);
-    const settings = toShellPath(this.settingsFile);
+    const settings = toShellPath(this.scopedSettingsFile(sessionId, denyEdit));
     if (!stateDir || !settings || /'/.test(stateDir + settings)) return baseCmd;
-    return `env SWARMEYE_SESSION=${sessionId} SWARMEYE_STATE_DIR="${stateDir}" ` +
-           `${baseCmd} --settings "${settings}"`;
+    // one fresh token per launch, minted only once the command is actually
+    // going out — a relaunch retires the old one, so a state file left by the
+    // previous incarnation can't speak for this one either
+    const token = crypto.randomBytes(TOKEN_BYTES).toString('hex');
+    this.tokens.set(sessionId, token);
+    this.persistTokens();
+    const env = `env SWARMEYE_SESSION=${sessionId}-${token} SWARMEYE_STATE_DIR="${stateDir}" `;
+    return withSettings ? `${env}${baseCmd} --settings "${settings}"` : `${env}${baseCmd}`;
+  }
+
+  /* Which session a state file speaks for, or null when nothing proves it. The
+   * writer names the file after its own $SWARMEYE_SESSION, which is
+   * <sessionId>-<token>: an agent can read any other agent's id, but not the
+   * token that launch was handed, so a name that doesn't match the token on
+   * record is a forgery and never becomes an event. */
+  ownerOf(filename) {
+    const cut = filename.lastIndexOf('-');
+    if (cut < 0) return null;
+    const id = filename.slice(0, cut);
+    return this.tokens.get(id) === filename.slice(cut + 1, -'.json'.length) ? id : null;
+  }
+
+  /* The transcript path a state file reported, or null when this session has
+   * no business reading it — see TRANSCRIPT_NAME_RE above for why.
+   *
+   * Both platforms check the path in the spelling readNew will use: on Windows
+   * that is the WSL one, which is also why Claude's own project dir is matched
+   * by suffix rather than spelled out — that directory lives inside WSL and
+   * this process cannot see the home it hangs off. The munged cwd in it is
+   * this session's own, so another session's conversation is not a match
+   * either. The app's harness dirs are ours, so those are exact.
+   *
+   * The path is normalised before it is checked and the normalised one is what
+   * the caller uses, so no '..' can mean something different afterwards. */
+  safeTranscript(sessionId, p) {
+    if (typeof p !== 'string' || !p) return null;
+    const full = path.posix.normalize(p);
+    if (!TRANSCRIPT_NAME_RE.test(path.posix.basename(full))) return null;
+    const dir = path.posix.dirname(full);
+    const meta = (config.load().sessions || {})[sessionId];
+    if (meta && meta.cwd && dir.endsWith('/.claude/projects/' + claudeProjectDirName(meta.cwd))) return full;
+    const userData = app.getPath('userData');
+    if (HARNESS_TRANSCRIPT_DIRS.some((d) => dir === toShellPath(path.join(userData, d)))) return full;
+    this.debugLog('[hooks] dropped event for ' + sessionId + ': transcript path out of bounds');
+    return null;
+  }
+
+  /* Tokens outlive the app for the same reason the totals do: closing SwarmEye
+   * leaves the agent running in tmux with the SWARMEYE_SESSION it was launched
+   * with, and a reattached agent that can't prove who it is would have every
+   * one of its events dropped. Its own file rather than config.json — this is
+   * main's bookkeeping, and nothing outside hooks needs to read it. */
+  restoreTokens() {
+    let saved = null;
+    try { saved = JSON.parse(fs.readFileSync(this.tokensFile, 'utf8')); } catch { /* first run */ }
+    for (const [id, tok] of Object.entries(saved || {})) {
+      // a hand-edited or corrupt file must not seed a token that isn't hex:
+      // it comes back out as a filename this process then trusts
+      if (typeof tok === 'string' && TOKEN_RE.test(tok)) this.tokens.set(id, tok);
+    }
+  }
+
+  persistTokens() {
+    try {
+      fs.writeFileSync(this.tokensFile + '.tmp', JSON.stringify(Object.fromEntries(this.tokens)));
+      fs.renameSync(this.tokensFile + '.tmp', this.tokensFile);
+    } catch (err) {
+      this.debugLog('[hooks] token persist failed: ' + err.message);
+    }
   }
 
   /* Just the file fs.watch named, or the whole directory when it named none.
@@ -221,6 +410,10 @@ class HookMonitor {
     }
     for (const f of files) {
       if (!f.endsWith('.json')) continue; // skip .tmp mid-write files
+      // before the file is even statted: an unowned name is another agent's
+      // forgery (or a leftover), and it costs nothing to say so early
+      const sessionId = this.ownerOf(f);
+      if (!sessionId) continue;
       const full = path.join(this.stateDir, f);
       let st;
       try { st = fs.statSync(full); } catch { continue; }
@@ -236,31 +429,35 @@ class HookMonitor {
       // instead of retrying on the next sweep
       try { payload = JSON.parse(fs.readFileSync(full, 'utf8')); } catch { continue; }
       this.seen.set(f, stamp);
-      const sessionId = f.slice(0, -'.json'.length);
       const event = payload.hook_event_name;
       if (!HOOK_EVENTS.includes(event)) continue;
+      // the one field in the payload this process acts on rather than merely
+      // displays: checked once here, so every consumer below is covered by
+      // that single call. A path that doesn't clear it is never opened — and
+      // the event carrying it is dropped rather than half-handled.
+      const tpath = payload.transcript_path ? this.safeTranscript(sessionId, payload.transcript_path) : null;
+      if (payload.transcript_path && !tpath) continue;
       // /clear rotates the agent onto a fresh transcript file, and that is the
       // one thing that ends a session's tally: the totals belong to the
       // conversation, not to the pane. A restart or resume reports the same
       // path and keeps counting.
-      if (event === 'SessionStart' && payload.transcript_path) {
+      if (event === 'SessionStart' && tpath) {
         const prev = this.usage.get(sessionId);
-        if (prev && prev.path !== payload.transcript_path) {
+        if (prev && prev.path !== tpath) {
           this.usage.delete(sessionId);
           this.persistUsage();
           this.onEvent(sessionId, { event: 'UsageUpdate', tool: null, message: null, model: null, usage: null });
         }
       }
-      if (event === 'Stop' && payload.transcript_path) {
-        this.usageState(sessionId, payload.transcript_path).turns++;
-        this.refreshFromTranscript(sessionId, payload.transcript_path);
+      if (event === 'Stop' && tpath) {
+        this.usageState(sessionId, tpath).turns++;
+        this.refreshFromTranscript(sessionId, tpath);
+        this.settleSummary(sessionId, tpath);
       }
       // which Claude conversation this agent is writing — the History screen
       // takes the same id, so a notification can open the full transcript, and
       // history:delete can refuse to unlink it
-      const transcript = typeof payload.transcript_path === 'string'
-        ? path.basename(payload.transcript_path, '.jsonl')
-        : null;
+      const transcript = tpath ? path.posix.basename(tpath, '.jsonl') : null;
       if (transcript) this.transcripts.set(sessionId, transcript);
       const isTool = event === 'PreToolUse' || event === 'PostToolUse';
       this.onEvent(sessionId, {
@@ -273,6 +470,39 @@ class HookMonitor {
         target: isTool ? toolTarget(payload) : null,
         failed: event === 'PostToolUse' ? toolFailed(payload) : false,
       });
+    }
+  }
+
+  /* The closing message of the turn that just ended, read a beat after its Stop
+   * (see SUMMARY_SETTLE_MS). Deliberately independent of the usage bookkeeping
+   * above: a task closes its agent the instant it completes, which drops that
+   * session's tally — and this read has to outlive it, because the message it
+   * is waiting for is written after the agent is already gone. It reads a tail
+   * and counts nothing, so it can neither double-bill nor disturb the totals.
+   *
+   * The handles are kept per session because "outlive the agent" has to stop
+   * somewhere: a killed session's pair still fired seconds later and re-read a
+   * path for a pane that no longer exists, so cleanup() cancels them. */
+  settleSummary(sessionId, transcriptPath) {
+    let timers = this.settleTimers.get(sessionId);
+    if (!timers) this.settleTimers.set(sessionId, timers = new Set());
+    for (const ms of SUMMARY_SETTLE_MS) {
+      const timer = setTimeout(async () => {
+        timers.delete(timer);
+        const res = await readNew(transcriptPath, 0, SUMMARY_TAIL);
+        const said = res ? closingText(res.text) : '';
+        if (!said) return;
+        this.onEvent(sessionId, {
+          event: 'UsageUpdate',
+          tool: null,
+          message: null,
+          model: null,
+          usage: this.snapshot(sessionId),
+          summary: said.slice(0, SUMMARY_MAX),
+          settled: true, // the renderer files a task's summary from these only
+        });
+      }, ms);
+      timers.add(timer);
     }
   }
 
@@ -299,6 +529,10 @@ class HookMonitor {
       this.usage.set(sessionId, st);
     }
     return st;
+  }
+
+  turnsOf(id) {
+    return (this.usage.get(id) || {}).turns || 0;
   }
 
   /* Has this message already been counted? Claude Code writes one JSONL line
@@ -411,6 +645,15 @@ class HookMonitor {
       dropped = true;
     }
     if (dropped) this.persistUsage();
+    // same pass for the tokens: a session that didn't survive can't come back
+    // with the one it was launched with, and its entry would sit there for good
+    let staleTokens = false;
+    for (const id of [...this.tokens.keys()]) {
+      if (live.has(id)) continue;
+      this.tokens.delete(id);
+      staleTokens = true;
+    }
+    if (staleTokens) this.persistTokens();
   }
 
   /* The conversation each of these sessions is writing right now. history:delete
@@ -492,11 +735,15 @@ class HookMonitor {
         // older entries only carry the flat total — bill those at the 5m rate
         const cacheWrite = (write1h + write5m) || u.cache_creation_input_tokens || 0;
         const price = priceFor(msg.model);
+        // Anthropic prices carry only input/output and bill cache by the
+        // multipliers; an OpenRouter price carries its own cacheRead /
+        // cacheWrite rates (0 is a real rate there, so `!= null`, not `||`)
         const cost = (input * price.input
           + output * price.output
-          + cacheRead * price.input * 0.1
-          + write1h * price.input * 2
-          + (cacheWrite - write1h) * price.input * 1.25) / 1e6;
+          + cacheRead * (price.cacheRead != null ? price.cacheRead : price.input * 0.1)
+          + (price.cacheWrite != null
+            ? cacheWrite * price.cacheWrite
+            : write1h * price.input * 2 + (cacheWrite - write1h) * price.input * 1.25)) / 1e6;
 
         st.input += input;
         st.output += output;
@@ -537,13 +784,25 @@ class HookMonitor {
 
   /* A killed/exited session must not leave a state file behind. */
   cleanup(sessionId) {
+    // before the name check below: those fire on a timer of their own and
+    // would otherwise re-read a dead session's transcript seconds from now
+    const timers = this.settleTimers.get(sessionId);
+    if (timers) {
+      for (const t of timers) clearTimeout(t);
+      this.settleTimers.delete(sessionId);
+    }
     if (!/^[A-Za-z0-9_]+$/.test(sessionId)) return;
-    this.seen.delete(sessionId + '.json');
+    const token = this.tokens.get(sessionId);
+    this.tokens.delete(sessionId);
+    this.persistTokens();
     this.models.delete(sessionId);
     this.usage.delete(sessionId);
     this.transcripts.delete(sessionId); // otherwise one entry per killed session for the app's lifetime
     this.persistUsage();
-    try { fs.unlinkSync(path.join(this.stateDir, sessionId + '.json')); } catch { /* ignore */ }
+    if (!token) return;
+    const file = `${sessionId}-${token}.json`;
+    this.seen.delete(file);
+    try { fs.unlinkSync(path.join(this.stateDir, file)); } catch { /* ignore */ }
   }
 
   stop() {

@@ -8,15 +8,19 @@ const { UsageMonitor } = require('./usage');
 const { HookMonitor } = require('./hooks');
 const { GitMonitor, listBranches, checkoutBranch, diffStat } = require('./git');
 const worktree = require('./worktree');
+const agentScope = require('./scope');
 const attach = require('./attach');
 const { HealthMonitor } = require('./health');
-const { listSessions: listHistory, readSession: readHistory, deleteSessions: deleteHistory } = require('./history');
+const { listSessions: listHistory, readSession: readHistory, deleteSessions: deleteHistory,
+  validId: validHistoryId, localSessionId } = require('./history');
 const { IS_WIN } = require('./platform');
 const { UpdateChecker } = require('./update');
 const { SpeechBridge } = require('./speech');
 const { SkillsManager } = require('./skills');
 const coordinator = require('./coordinator');
+const orchestrator = require('./orchestrator');
 const preview = require('./preview');
+const providers = require('./providers');
 
 let win = null;
 let ptys = null;
@@ -182,6 +186,13 @@ function createWindow() {
     });
   });
   win.webContents.session.setPermissionRequestHandler((wc, permission, cb) => cb(permission === 'media'));
+  // The preview partition is a separate Session, and a Session with no handler
+  // grants every permission. The dock only shows a local dev server, so deny
+  // the lot — both paths, since several permissions are read synchronously and
+  // never reach the request handler.
+  const previewSession = require('electron').session.fromPartition('persist:swarmeye-preview');
+  previewSession.setPermissionRequestHandler((wc, permission, cb) => cb(false));
+  previewSession.setPermissionCheckHandler(() => false);
 
   if (process.env.SWARMEYE_DEBUG) {
     debugLog('--- app started ---');
@@ -259,7 +270,56 @@ function registerIpc() {
       autoUsageLimit: cfg.autoUsageLimit,
       skipPermissions: cfg.skipPermissions,
       workspaceColors: config.WORKSPACE_COLORS,
+      // the OpenRouter catalog for the model pickers — the key itself never
+      // crosses IPC (providers.js)
+      openrouterModels: providers.catalog(),
+      openrouterConfigured: providers.hasKey(),
     };
+  });
+
+  ipcMain.handle('openrouter:status', () => providers.status());
+
+  ipcMain.handle('openrouter:set-key', async (e, key) => {
+    try {
+      providers.setKey(String(key || '').trim());
+      await providers.fetchCatalog();
+    } catch (err) {
+      return { ...providers.status(), error: String((err && err.message) || err) };
+    }
+    return providers.status();
+  });
+
+  // the extra models `/model` offers inside an OpenRouter agent — validated
+  // against the catalog in providers.js, since they land in a shell command
+  ipcMain.handle('openrouter:set-alts', (e, list) => {
+    try {
+      providers.setAlts(list);
+    } catch (err) {
+      return { ...providers.status(), error: String((err && err.message) || err) };
+    }
+    return providers.status();
+  });
+
+  ipcMain.handle('openrouter:clear-key', () => {
+    providers.clearKey();
+    return providers.status();
+  });
+
+  ipcMain.handle('openrouter:spend', async () => {
+    try {
+      return await providers.fetchSpend();
+    } catch {
+      return null; // the chip just stays as it was; the next poll retries
+    }
+  });
+
+  ipcMain.handle('openrouter:refresh', async () => {
+    try {
+      await providers.fetchCatalog();
+    } catch (err) {
+      return { ...providers.status(), error: String((err && err.message) || err) };
+    }
+    return providers.status();
   });
 
   ipcMain.handle('config:set-max-agents', (e, n) => {
@@ -318,6 +378,15 @@ function registerIpc() {
   });
 
   ipcMain.handle('attach:image', (e, dataUrl) => attach.saveImage(dataUrl));
+
+  /* The workspace's areas (main/scope.js): what its `.swarmeye/areas.json`
+   * carves it into, for the scope pickers. Resolved server-side from the id
+   * like every other workspace path, and re-read on each call — the file is
+   * the repo's, so an agent may have just rewritten it. */
+  ipcMain.handle('areas:read', (e, id) => {
+    const ws = config.load().workspaces.find((w) => w.id === id);
+    return { areas: ws ? agentScope.readAreas(ws.path) : [] };
+  });
 
   // per-workspace task categories — every workspace starts with the same
   // three defaults (config.DEFAULT_TASK_CATEGORIES) but can add/remove freely
@@ -466,6 +535,19 @@ function registerIpc() {
     return { name, path: p, branch: /^[A-Za-z0-9][\w./-]*$/.test(branch) ? branch : 'swarmeye/' + name };
   }
 
+  /* Resuming a harness conversation from the History screen: what the launch
+   * needs to carry one on, or {} when this is not one (a plain Claude resume
+   * rides `claude --resume` instead, and an id whose conversation the harness
+   * can no longer name simply starts fresh — the same rule ↻ follows). */
+  function harnessResume(model, historyId) {
+    const id = localSessionId(historyId);
+    if (!id) return {};
+    if (providers.cleanSlugOf(model)) return { continueFrom: id };
+    if (!providers.isForeign(model)) return {};
+    const resumeId = providers.foreignResumeId(hooks.stateDir, providers.foreignHarness(model), id);
+    return resumeId ? { continueFrom: id, resumeId } : {};
+  }
+
   // whether agents started in this workspace get a worktree of their own.
   // A workspace setting rather than a per-launch one: it is a property of the
   // repo, and it reaches board tasks and + Agent without either of them asking
@@ -600,7 +682,11 @@ function registerIpc() {
       workspaceId,
       mode: cleanMode,
       startMode: ['acceptEdits', 'plan', 'bypass'].includes(startMode) ? startMode : 'default',
-      model: MODELS.includes(model) ? model : 'default',
+      // Claude tiers or an OpenRouter value (providers.js) — including the
+      // foreign harnesses, which session:create has always accepted and this
+      // silently rewrote to 'default', so a board task could never run one
+      model: (MODELS.includes(model) || providers.slugOf(model)
+        || providers.cleanSlugOf(model) || providers.isForeign(model)) ? model : 'default',
       // the role preset the task's agent launches with — same table and same
       // check session:create applies, since it ends up in the same flag
       role: roles.has(role) ? role : '',
@@ -710,6 +796,27 @@ function registerIpc() {
     }
   });
 
+  /* The lead agent's plan file (main/orchestrator.js). A lead is an ordinary
+   * agent in a pane, so it hands work back the only way an agent always can:
+   * by writing a file. Watching starts when the renderer launches one and
+   * stops when its pane goes, and each wave is consumed off disk as it is
+   * read — so a second wave means the lead wrote the file a second time.
+   * Same rule as the notebook above: the path is resolved here from the
+   * workspace id, so the renderer never names a file. */
+  ipcMain.handle('orchestrator:watch', (e, { sessionId, workspaceId }) => {
+    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return { ok: false, reason: 'no-workspace' };
+    const id = String(sessionId || '');
+    if (!id) return { ok: false, reason: 'no-session' };
+    const ok = orchestrator.watch(id, ws.path, (wave) => sendToWin('orchestrator:plan', { sessionId: id, ...wave }));
+    return ok ? { ok: true } : { ok: false, reason: 'cannot-watch' };
+  });
+
+  ipcMain.handle('orchestrator:unwatch', (e, { sessionId }) => {
+    orchestrator.unwatch(String(sessionId || ''));
+    return { ok: true };
+  });
+
   // called once by the renderer at boot: reattach surviving tmux sessions
   ipcMain.handle('session:list', async () => {
     await ptysReady;
@@ -736,11 +843,11 @@ function registerIpc() {
   });
 
   // one whole past conversation, for the History screen's transcript modal.
-  // The id lands in a shell command line — re-validate it here, the same
-  // shape session:create checks before passing one to `claude --resume`.
+  // The id lands in a shell command line (or a path, for a harness's own
+  // transcript) — re-validated here against both shapes history.js hands out.
   ipcMain.handle('history:read', (e, { workspaceId, id }) => {
     const ws = config.load().workspaces.find((w) => w.id === workspaceId);
-    if (!ws || !SESSION_ID_RE.test(String(id || ''))) return null;
+    if (!ws || !validHistoryId(id)) return null;
     return readHistory(ws, id);
   });
 
@@ -754,7 +861,9 @@ function registerIpc() {
     if (!ws || !Array.isArray(ids)) return { ok: false, deleted: 0, kept: 0 };
     const live = new Set(hooks.transcriptIds(ptys.sessionIds()));
     const wanted = ids.filter((id) => typeof id === 'string');
-    const doomed = wanted.filter((id) => !live.has(id));
+    // a harness row's id carries its harness; what the running agent reports
+    // is the bare transcript name, so the prefix comes off before the compare
+    const doomed = wanted.filter((id) => !live.has(id.replace(/^(clean|opencode|pi):/, '')));
     const deleted = await deleteHistory(ws, doomed);
     return { ok: deleted === doomed.length, deleted, kept: wanted.length - doomed.length };
   });
@@ -770,11 +879,49 @@ function registerIpc() {
   // prompt is the one field whose text reaches a shell command line.
   ipcMain.handle('roles:save', (e, list) => roles.save(list).map((r) => ({ ...r })));
 
-  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, resumeId, role, effort }) => {
+  /* A scope is a permission boundary, so everything about it fails loudly: a
+   * path that is no longer there, or a harness with no permission layer to
+   * deny with (clean/opencode/pi answer to no settings file), refuses the
+   * launch rather than quietly starting an agent that can edit anything.
+   *
+   * `want` is { label, paths } — one folder, or an area's several. 1.60.75
+   * sent a bare path string and sessions persisted under it may still be
+   * running, so that shape is still read. Returns what main will act on. */
+  const MAX_SCOPE_PATHS = 40;
+
+  function checkScope(want, root, model) {
+    if (!want) return {};
+    const asked = typeof want === 'string' ? { label: want, paths: [want] } : want;
+    const list = [].concat(asked.paths || []);
+    if (!list.length) return {};
+    if (list.length > MAX_SCOPE_PATHS) return { error: 'that scope names too many paths' };
+    if (providers.cleanSlugOf(model) || providers.isForeign(model)) {
+      return { error: 'a folder scope needs a Claude agent' };
+    }
+    const paths = [];
+    for (const p of list) {
+      const at = agentScope.resolve(root, p);
+      if (!at) return { error: 'that folder is not in the workspace any more' };
+      if (!paths.includes(at.rel)) paths.push(at.rel);
+    }
+    // display only — it reaches the pane chip, never a command line
+    const label = String(asked.label || paths[0]).replace(/\s+/g, ' ').trim().slice(0, 60) || paths[0];
+    return { scope: { label, paths } };
+  }
+
+  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, resumeId, role, effort, continueFrom, scope }) => {
     await ptysReady;
     const cfg = config.load();
     const ws = cfg.workspaces.find((w) => w.id === workspaceId);
     if (!ws) { debugLog('[session:create] no-workspace ' + workspaceId); return { ok: false, reason: 'no-workspace' }; }
+    // an OpenRouter model can't launch without the key — fail loudly rather
+    // than silently falling back to a Claude launch the user didn't pick
+    if ((providers.slugOf(model) || providers.cleanSlugOf(model) || providers.isForeign(model)) && !providers.hasKey()) return { ok: false, reason: 'openrouter-key' };
+    // checked against the workspace before any worktree is cut, so a bad scope
+    // costs nothing to refuse. An isolated agent's rules are built against its
+    // worktree instead, inside spawn — same relative folder, fresh checkout.
+    const scoped = checkScope(scope, ws.path, model);
+    if (scoped.error) return { ok: false, reason: scoped.error };
     /* An isolated workspace gives each agent its own worktree, which has to
      * exist before node-pty can chdir into it — so the name is picked here
      * rather than inside spawn, and the cap is checked before the directory is
@@ -801,6 +948,17 @@ function registerIpc() {
         effort: EFFORT_FLAGS.includes(String(effort || '')) ? effort : undefined,
         agentName: wt ? wt.agentName : undefined,
         worktree: wt || undefined,
+        scope: scoped.scope,
+        // the skill folders flagged "In OpenRouter agents" — resolved here
+        // because the skills manager lives in main, not in the pty layer. All
+        // three bare harnesses take them; each builder has its own way in.
+        orSkills: providers.cleanSlugOf(model) || providers.isForeign(model) ? skills.orSkillDirs(ws.id) : undefined,
+        // resuming a clean/opencode/pi conversation from the History screen.
+        // Those harnesses keep their own transcripts, so there is no
+        // `claude --resume` to give: the launch is handed the conversation to
+        // carry on, and — for the two that name their own sessions — the id
+        // only their CLI can reopen, read back from beside that transcript.
+        ...harnessResume(model, continueFrom),
       });
       if (wt && git) git.tick(); // the new pane's chip shows its own branch at once
       debugLog('[session:create] ok ' + session.id + ' "' + session.agentName + '" in ' + session.cwd);
@@ -823,6 +981,28 @@ function registerIpc() {
      * still builds the path itself, and only if that directory is really
      * there. */
     const wt = restartWorktree(ws, payload.worktree);
+    // ↻ keeps the folder the agent was scoped to — the pane hands it back the
+    // way it hands back the role, since the deny rules live in the launch and
+    // not in the conversation being resumed
+    const scoped = checkScope(payload.scope, wt ? wt.path : ws.path, payload.model);
+    if (scoped.error) return { ok: false, reason: scoped.error };
+    // a clean agent's conversation lives in its own messages file, keyed by
+    // the pane's previous session id — resume is only offered when it exists
+    let continueFrom;
+    if (payload.resume && providers.cleanSlugOf(payload.model) && /^[A-Za-z0-9_-]{1,64}$/.test(String(payload.oldId || ''))) {
+      try {
+        const dir = path.join(hooks.stateDir, '..', 'clean-transcripts');
+        if (fs.readdirSync(dir).some((f) => f.startsWith(payload.oldId) && f.endsWith('.messages.json'))) continueFrom = payload.oldId;
+      } catch { /* nothing to continue */ }
+    }
+    // opencode and pi own their conversations; their adapter parked the id
+    // beside the transcript of the pane being restarted. No file means the
+    // pane never got that far — launch fresh rather than fail.
+    let resumeId;
+    if (payload.resume && providers.isForeign(payload.model)) {
+      resumeId = providers.foreignResumeId(hooks.stateDir, providers.foreignHarness(payload.model), String(payload.oldId || '')) || undefined;
+      if (resumeId) continueFrom = payload.oldId; // keep appending the old transcript, so the cost tally carries on
+    }
     try {
       const { session, resumed } = await ptys.restart({
         workspaceId: ws.id,
@@ -835,9 +1015,24 @@ function registerIpc() {
         rows: payload.rows,
         resume: !!payload.resume,
         role: roles.has(payload.role) ? payload.role : undefined,
-        // same whitelist task:create applies — it lands in the same launch flag
-        model: MODELS.includes(payload.model) ? payload.model : undefined,
+        // same whitelist task:create applies — it lands in the same launch
+        // flag — plus the third-party harnesses, which the board does not
+        // offer but a pane restart must not silently drop: an unlisted value
+        // comes back as a plain Claude agent nobody asked for
+        model: (MODELS.includes(payload.model) || providers.slugOf(payload.model)
+          || providers.cleanSlugOf(payload.model) || providers.isForeign(payload.model)) ? payload.model : undefined,
+        continueFrom,
+        resumeId,
+        orSkills: providers.cleanSlugOf(payload.model) || providers.isForeign(payload.model)
+          ? skills.orSkillDirs(ws.id) : undefined,
+        replaceId: /^s_[A-Za-z0-9]+$/.test(String(payload.oldId || '')) ? payload.oldId : undefined,
+        scope: scoped.scope,
       });
+      if (payload.oldId && session.id !== payload.oldId) {
+        const tasks = config.load().tasks || [];
+        const next = tasks.map((t) => t.paneId === payload.oldId ? { ...t, paneId: session.id } : t);
+        if (next.some((t, i) => t !== tasks[i])) config.patch({ tasks: next });
+      }
       debugLog('[session:restart] ok ' + session.id + ' "' + session.agentName + '" wanted-resume=' + !!payload.resume + ' resumed=' + resumed);
       return { ok: true, session, resumed };
     } catch (err) {
@@ -914,6 +1109,12 @@ function registerIpc() {
    * `silent`: the renderer already plays the notification sound the user
    * picked in Options, so letting the OS play its own would double it up. */
   ipcMain.on('notify', (e, payload = {}) => {
+    // dock badge: unread count from the renderer's bell — a badge-only
+    // payload never flashes or toasts. No-op on Windows (flashFrame covers it).
+    if (payload && payload.badge !== undefined) {
+      app.setBadgeCount(Math.max(0, payload.badge | 0));
+      return;
+    }
     if (!win || win.isDestroyed() || win.isFocused()) return;
     win.flashFrame(true);
     if (!payload || !payload.desktop || !Notification.isSupported()) return;
@@ -962,6 +1163,10 @@ function registerIpc() {
   });
   ipcMain.handle('skills:set-active', async (e, { id, active }) => {
     try { return await skills.setActive(id, active); }
+    catch (err) { return { ok: false, reason: err.message }; }
+  });
+  ipcMain.handle('skills:set-or-startup', async (e, { id, on }) => {
+    try { return await skills.setOrStartup(id, on); }
     catch (err) { return { ok: false, reason: err.message }; }
   });
   ipcMain.handle('skills:update', async (e, id) => {
@@ -1036,7 +1241,8 @@ app.whenReady().then(() => {
   ptys = new PtyManager({
     maxSessions: config.load().maxAgents || 10,
     debugLog,
-    decorateCmd: (id, cmd) => hooks.claudeCmd(id, cmd),
+    decorateCmd: (id, cmd, opts) => hooks.claudeCmd(id, cmd, opts),
+    turnsOf: (id) => hooks.turnsOf(id),
     onData: queuePtyData,
     onExit: (id, exitCode, detached) => {
       flushPtyBuffers(id); // the session's last output must not arrive after its exit event
@@ -1093,13 +1299,9 @@ app.whenReady().then(() => {
     win.webContents.once('did-finish-load', async () => {
       await new Promise((r) => setTimeout(r, 3000));
       try {
-        debugLog('[test] boot: ' + (await win.webContents.executeJavaScript(`(() => JSON.stringify({
-          total: state.panes.size,
-          visible: grid.panes.length,
-          selectedWs: state.selectedWorkspaceId,
-          names: [...state.panes.values()].map((p) => p.session.agentName),
-          status: [...state.panes.values()].map((p) => p.status),
-        }))()`)));
+        // app.js is a module, so its `state` and `grid` are not global — it
+        // publishes this one accessor for us
+        debugLog('[test] boot: ' + (await win.webContents.executeJavaScript('JSON.stringify(window.__swarmTestState())')));
       } catch (err) {
         debugLog('[test] THREW: ' + err.message);
       }

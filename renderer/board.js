@@ -21,6 +21,7 @@ const Board = (() => {
   const chainEl = document.getElementById('board-form-chain');
   const startModeSel = document.getElementById('board-form-startmode');
   const modelSel = document.getElementById('board-form-model');
+  const harnessSel = document.getElementById('board-form-harness');
   const effortSel = document.getElementById('board-form-effort');
   const focusToggle = document.getElementById('board-form-focus');
   const closeOnEndToggle = document.getElementById('board-form-closeonend');
@@ -203,9 +204,55 @@ const Board = (() => {
   function updateAutoHint() {
     const mode = selectedRadio();
     autoHint.hidden = mode === 'now';
-    if (mode === 'auto') autoHint.textContent = `starts once usage stays under ${autoUsageLimit}%`;
-    else if (mode === 'next-session') autoHint.textContent = 'starts once the current usage session ends and a new one begins';
+    // an OpenRouter task is billed to OpenRouter, so the scheduler starts it
+    // without waiting for Claude session headroom (scheduler.js runScheduler)
+    if (mode === 'auto') {
+      autoHint.textContent = isOrPick()
+        ? 'starts as soon as an agent slot is free — OpenRouter ignores Claude usage'
+        : `starts once usage stays under ${autoUsageLimit}%`;
+    } else if (mode === 'next-session') autoHint.textContent = 'starts once the current usage session ends and a new one begins';
     else if (mode === 'manual') autoHint.textContent = 'stays in Manual until you move it to Scheduled';
+  }
+
+  // openrouter.js loads after this file, so nothing here may read OpenRouterUI
+  // at load time — the harness options are filled on the first sync instead.
+  const isOrPick = () => !!window.OpenRouterUI && OpenRouterUI.isOpenRouter(modelSel.value);
+
+  /* An OpenRouter pick runs a bare harness: main drops `--effort` for those
+   * models and there is no Claude Code footer to `/focus`, so the two controls
+   * the scheduler would ignore grey out rather than lie — the same rule the
+   * launch card applies (launcher.js fillModels). The Harness picker is the
+   * mirror image: it only means anything here, so it appears only here. */
+  function syncModelDeps() {
+    const or = isOrPick();
+    if (or && !harnessSel.options.length) {
+      for (const [prefix, label] of OpenRouterUI.HARNESSES) {
+        const opt = document.createElement('option');
+        opt.value = prefix;
+        opt.textContent = label;
+        harnessSel.appendChild(opt);
+      }
+    }
+    harnessSel.hidden = !or;
+    effortSel.disabled = or;
+    focusToggle.disabled = or;
+    effortSel.dataset.tip = or
+      ? 'effort is Claude-only — OpenRouter models ignore it'
+      : 'Claude reasoning effort for this task';
+    focusToggle.parentElement.dataset.tip = or
+      ? '/focus is Claude Code only — an OpenRouter agent has no footer to toggle'
+      : '';
+    updateAutoHint();
+  }
+
+  /* What the model picker plus the harness picker mean together: the select
+   * only ever carries clean's 'oc:' spelling (OpenRouterUI.install), so the
+   * harness chosen beside it replaces that prefix on the way out. Like the
+   * launch card, the pick is a one-off for this task and never rewrites the
+   * remembered habit. */
+  function pickedModel() {
+    if (!isOrPick() || !harnessSel.value) return modelSel.value;
+    return harnessSel.value + OpenRouterUI.slugOf(modelSel.value);
   }
 
   // rebuilds the category select from the currently chosen workspace's
@@ -265,6 +312,8 @@ const Board = (() => {
       prioritySel.value = 'medium';
       repeatSel.value = 'none';
       if (categorySel.querySelector('option[value="maintenance"]')) categorySel.value = 'maintenance';
+      syncModelDeps(); // greys effort/focus and offers Harness when the default is an OpenRouter model
+      if (window.OpenRouterUI) harnessSel.value = OpenRouterUI.harnessPrefix();
       updateAutoHint();
       renderStats();
       textEl.focus();
@@ -349,6 +398,7 @@ const Board = (() => {
   newBtn.addEventListener('click', () => showForm(formEl.hidden));
   cancelBtn.addEventListener('click', () => showForm(false));
   wsSel.addEventListener('change', populateCategorySelect);
+  modelSel.addEventListener('change', syncModelDeps);
   submitBtn.addEventListener('click', () => {
     const text = textEl.value.trim();
     if (!text || !wsSel.value || !lastHandlers) return;
@@ -357,7 +407,7 @@ const Board = (() => {
       workspaceId: wsSel.value,
       mode: selectedRadio(),
       startMode: startModeSel.value,
-      model: modelSel.value,
+      model: pickedModel(),
       effort: effortSel.value,
       focus: focusToggle.checked,
       closeOnComplete: closeOnEndToggle.checked,

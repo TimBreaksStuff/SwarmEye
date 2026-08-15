@@ -1,0 +1,397 @@
+/* ---- Settings: the ⌨ Options popover ----
+ *
+ * Cut out of styles/app.css and styles/chrome-clean.css, in that order, and
+ * loaded after both — so these rules sit where they did in the cascade. Only
+ * settings-only selectors moved: shared classes the popover happens to use
+ * (.kbd-title, which notif-pop, the board head and the roles head style too)
+ * stayed behind.
+ *
+ * Redesigned to the settings-window mock (1.60.85): header bar carrying the
+ * filter and Reset, two bordered columns, muted uppercase group headers,
+ * bordered rows with toggle switches and chip controls, a footer bar for the
+ * shortcuts submenu. The mock's fixed light palette maps onto the theme
+ * tokens so all ten themes keep working.
+ */
+
+#kbd-pop, #kbd-shortcuts-pop {
+  position: fixed;
+  z-index: 20;
+  background: var(--surface);
+  backdrop-filter: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
+  border-radius: 10px;
+  padding: 16px 18px;
+  width: 400px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 24px 60px -12px rgba(0, 0, 0, 0.6);
+}
+/* Options alone goes wide and two-column: the sections flow into CSS columns
+ * (whole, never split — break-inside) with a divider rule between them. The
+ * shortcuts popover keeps the shared 400px above. */
+#kbd-pop {
+  width: min(940px, calc(100vw - 16px));
+  padding: 0 24px 20px;
+  columns: 2;
+  column-gap: 48px;
+  column-rule: 1px solid var(--border);
+  /* the full-bleed header/footer bars overhang the padding box by design;
+   * without this that overhang reads as a horizontal scrollbar */
+  overflow-x: hidden;
+}
+#kbd-pop .kbd-head, #kbd-pop .kbd-submenu-btn { column-span: all; }
+#kbd-pop .kbd-sect { break-inside: avoid; }
+
+#kbd-pop .kbd-title, #kbd-shortcuts-pop .kbd-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  margin-bottom: 10px;
+}
+#kbd-pop .kbd-head, #kbd-shortcuts-pop .kbd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+#kbd-pop .kbd-head .kbd-title, #kbd-shortcuts-pop .kbd-head .kbd-title { margin-bottom: 0; }
+
+/* the header bar — title left, filter + Reset right, full-bleed via negative
+ * margins so its border runs edge to edge */
+#kbd-pop .kbd-head {
+  margin: 0 -24px 0;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+}
+#kbd-pop .kbd-head .kbd-title { margin-right: auto; }
+#kbd-pop .kbd-title {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+
+/* the filter box in the header — rows that don't match hide, sections left
+ * empty disappear (settings.js) */
+#options-filter {
+  width: 230px;
+  height: 27px;
+  box-sizing: border-box;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--hover);
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  padding: 0 10px;
+}
+#options-filter::placeholder { color: var(--muted); }
+#options-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+#options-reset-btn {
+  height: 27px;
+  padding: 0 11px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text2);
+  background: none;
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#options-reset-btn:hover { color: var(--accent-text); border-color: var(--accent); }
+#options-reset-btn.armed { color: var(--err); border-color: var(--err); }
+
+#kbd-pop .kbd-row, #kbd-shortcuts-pop .kbd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 4px 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text2);
+}
+
+/* ── section headers ──────────────────────────────────────────────────────
+ * The <details> groups stopped being an accordion when the popover went
+ * two-column: every section is open all the time (settings.js forces it) and
+ * the summary is a plain header — inert, no chevron, no border of its own
+ * (the rows below carry the separators now). The markup stays <details>
+ * because index.html is contended and gains nothing from a swap. */
+.kbd-sect > summary {
+  list-style: none;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 0 6px;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.kbd-sect > summary::-webkit-details-marker { display: none; }
+
+/* ── option rows ──────────────────────────────────────────────────────────
+ * One height and one hairline separator for every row, whatever control it
+ * carries. */
+#kbd-pop .kbd-opt {
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 4px 0;
+  gap: 20px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.opt-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+#kbd-pop .kbd-opt .opt-ctl { min-width: 0; }
+
+/* chip buttons — the design's borderless soft-background rectangles */
+.opt-ctl button {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text2);
+  background: var(--hover);
+  border: none;
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+}
+.opt-ctl button:hover { color: var(--accent-text); }
+
+/* steppers — the − value + trio fuses into one chip; the buttons inside go
+ * transparent. :has picks out exactly the button+span+button pattern. */
+#kbd-pop .opt-ctl:has(> button + span + button) {
+  gap: 2px;
+  height: 26px;
+  padding: 0 2px;
+  background: var(--hover);
+  border-radius: 6px;
+}
+#kbd-pop .opt-ctl:has(> button + span + button) button {
+  background: none;
+  width: 22px;
+  height: 22px;
+}
+/* stepper value readouts (menu bar %, font px, agent cap, usage %) */
+.opt-ctl > span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  min-width: 44px;
+  text-align: center;
+}
+
+.opt-ctl select {
+  appearance: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background-color: var(--hover);
+  border: none;
+  border-radius: 6px;
+  height: 26px;
+  padding: 0 24px 0 9px;
+  cursor: pointer;
+  /* appearance:none drops the native arrow; mid-gray reads on every theme */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'><path d='M1 1l3 3 3-3' stroke='%238b959e' stroke-width='1.2' fill='none'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  /* the model select's OpenRouter entries are long — cap it or the chip
+   * blows the column open. Wide enough for the longest Anthropic Subscription
+   * label (pane-const.js MODELS), because that one names the tier at the end:
+   * clipped, the row read "Anthropic Subscri…" and no longer said which model
+   * it was. A catalog slug longer than this still ellipsizes. */
+  max-width: 268px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* checkboxes drawn as toggle switches — 32×19 pill, 15px knob */
+.opt-ctl input[type="checkbox"] {
+  appearance: none;
+  width: 32px;
+  height: 19px;
+  margin: 0;
+  border-radius: 10px;
+  background: var(--border3);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.opt-ctl input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.opt-ctl input[type="checkbox"]:checked { background: var(--accent); }
+.opt-ctl input[type="checkbox"]:checked::after { left: 15px; }
+.opt-ctl input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Setup rows ──────────────────────────────────────────────────────────
+ * The three rows whose button carries a word (dictation Install, voice
+ * Install, update Download/Restart) escape the 24×24 chip box. The min-width
+ * keeps the two engine rows' buttons the same size whether they read Install
+ * or Reinstall, so they line up down the panel. */
+#stt-install-btn,
+#tts-install-btn,
+#update-action-btn {
+  width: auto;
+  height: auto;
+  min-width: 82px; /* the widest of Install / Reinstall / Download / Restart */
+  padding: 6px 10px;
+  font-size: 11px;
+}
+#stt-install-btn:disabled,
+#tts-install-btn:disabled,
+#update-action-btn:disabled { opacity: 0.5; cursor: default; }
+#stt-install-btn:disabled:hover,
+#tts-install-btn:disabled:hover,
+#update-action-btn:disabled:hover { color: var(--text2); }
+.stt-status {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.stt-status.ok { color: var(--accent-text); }
+/* the setup scripts' output while they run — pip, the model and the voice
+ * download can take minutes, and silence reads as a hang */
+#stt-log,
+#tts-log {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+  background: var(--term-bg);
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  max-height: 120px;
+  overflow: auto;
+  padding: 8px;
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+#update-check-btn {
+  width: auto;
+  height: auto;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+/* the version row is the widest thing in the panel — label, version string,
+ * Check, and Download once an update exists. The version string gives way. */
+#update-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* colour-theme swatch row — label on its own line so the swatches get the
+ * full column width to wrap into */
+#kbd-pop .kbd-opt-theme {
+  min-height: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0 10px;
+}
+#kbd-pop .kbd-opt-theme .opt-ctl {
+  align-self: stretch;
+  flex-wrap: wrap;
+}
+.opt-ctl .theme-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  padding: 0;
+}
+.theme-dot[data-theme="dark"]   { background: linear-gradient(135deg, #0a0b0d 55%, #d6ff4b 55%); }
+.theme-dot[data-theme="light"]  { background: linear-gradient(135deg, #f2f3f5 55%, #476d0a 55%); }
+.theme-dot[data-theme="orange"] { background: linear-gradient(135deg, #0d0b08 55%, #ff9d2e 55%); }
+.theme-dot[data-theme="blue"]    { background: linear-gradient(135deg, #f2f3f5 55%, #1d4ed8 55%); }
+.theme-dot[data-theme="neoblue"] { background: linear-gradient(135deg, #f2f3f5 55%, #0057ff 55%); }
+.theme-dot[data-theme="purple"]  { background: linear-gradient(135deg, #f2f3f5 55%, #6d28d9 55%); }
+.theme-dot[data-theme="teal"]    { background: linear-gradient(135deg, #f2f3f5 55%, #0f766e 55%); }
+.theme-dot[data-theme="rose"]    { background: linear-gradient(135deg, #f2f3f5 55%, #be123c 55%); }
+.theme-dot[data-theme="violet"]  { background: linear-gradient(135deg, #f2f3f5 55%, #7c3aed 55%); }
+.theme-dot[data-theme="sky"]     { background: linear-gradient(135deg, #f2f3f5 55%, #0369a1 55%); }
+.theme-dot[data-theme="indigo"]  { background: linear-gradient(135deg, #f2f3f5 55%, #4338ca 55%); }
+.theme-dot[data-theme="fuchsia"] { background: linear-gradient(135deg, #f2f3f5 55%, #a21caf 55%); }
+.theme-dot[data-theme="emerald"] { background: linear-gradient(135deg, #f2f3f5 55%, #047857 55%); }
+.theme-dot[data-theme="amber"]   { background: linear-gradient(135deg, #f2f3f5 55%, #9a5b00 55%); }
+.theme-dot[data-theme="slate"]   { background: linear-gradient(135deg, #f2f3f5 55%, #475569 55%); }
+.theme-dot.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* ── footer ──────────────────────────────────────────────────────────────
+ * "Keyboard shortcuts ›" — a full-bleed bar at the bottom, opening its own
+ * nested popover. After the .kbd-opt rule above so its border-top wins. */
+#kbd-pop .kbd-submenu-btn {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: calc(100% + 48px);
+  margin: 16px -24px -20px;
+  padding: 13px 24px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+#kbd-pop .kbd-submenu-btn:hover { color: var(--text); }
+.kbd-submenu-arrow {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--muted);
+}
+#kbd-pop .kbd-submenu-btn:hover .kbd-submenu-arrow { color: var(--accent-text); }
+
+#kbd-pop kbd, #kbd-shortcuts-pop kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text);
+  background: var(--hover);
+  border: 1px solid var(--border3);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 3px 7px;
+  white-space: nowrap;
+}

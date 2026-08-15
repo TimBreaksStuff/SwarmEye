@@ -1,8 +1,86 @@
 /* App state + wiring. The grid shows only the selected workspace's agents;
- * agents in other workspaces keep running hidden. */
+ * agents in other workspaces keep running hidden.
+ *
+ * This is the one module script in the renderer — everything else is still a
+ * classic <script>, which is why the globals below (Pane, Board, Topbar, …)
+ * resolve without an import. Classic scripts all run before any module does,
+ * so a feature converted to a real module can still read them; the reverse is
+ * not true, which is why app.js is the file being converted first. */
 
-let maxAgents = 10; // cap on simultaneous agents — loaded from config at boot, adjustable in the ⌨ options
-let autoUsageLimit = 85; // usage-% ceiling for auto-scheduled tasks — loaded at boot, adjustable in the ⌨ options
+import {
+  init as initSettings,
+  applyConfig as applySettingsConfig,
+  kbdPop,
+  kbdShortcutsPop,
+  kbdHelpBtn,
+  themeDots,
+  applyTheme,
+  // live bindings: settings owns these values and reassigns them, and every
+  // read below sees the current one
+  maxAgents,
+  autoUsageLimit,
+  taskSummaries,
+  desktopNotifs,
+  notifSpeech,
+  notifSound,
+} from './features/settings/settings.js';
+
+import {
+  init as initNotifications,
+  notifPopEl,
+  notifPanelEl,
+  notifHandlers,
+  pushNotif,
+  renderNotifs,
+  closeNotifPop,
+  notifyOS,
+  speakDone,
+  notifMuted, // live binding: the bell's double-click mute
+} from './features/notifications/notifications.js';
+
+import {
+  init as initScheduler,
+  setUsageSnapshot,
+  // the launch-sequence bookkeeping app.js's session lifecycle adds to and
+  // clears — exported by reference, so no setter is needed
+  pendingTaskStarts,
+  skillInjectAttempted,
+  awaitingTaskTurn,
+  manualStartRun,
+  manualLaunchOpts,
+  sessionStarted,
+  TASK_INJECT_SETTLE_MS,
+  TASK_INJECT_FALLBACK_MS,
+  TASK_SUBMIT_DELAY_MS,
+  TASK_MODEL_SETTLE_MS,
+  waitForInjectionsToSettle,
+  startManualSession,
+  renderBoard,
+  renderArchive,
+  runScheduler,
+  effortFlagValue,
+  startTask,
+  tryInjectPrompt,
+  applyTaskSummary,
+  createTask,
+  startChain,
+  startRepeat,
+  noteStartFailure,
+  boardHandlers,
+} from './features/scheduler/scheduler.js';
+
+import {
+  init as initOrchestrator,
+  open as openOrchestratorCard,
+  close as closeOrchestratorCard,
+  popEl as orchPopEl,
+  restore as restoreLeads,
+  onWorkerDone,
+  onWorkerGaveUp,
+  isCrewWorker,
+  hiddenIds as crewHidden,
+  paintCrew,
+} from './features/orchestrator/orchestrator.js';
 
 const grid = new GridController(document.getElementById('grid'));
 const gridWrapEl = document.getElementById('grid-wrap');
@@ -36,6 +114,22 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
 }
+/* Same reason as modHeld below: notes.js, skills.js, history.js, roles.js,
+ * diff.js and speech.js call this by name, and pane.js guards every call with
+ * `window.toast` — so since app.js became a module the first six have been
+ * throwing and the panes have been silently swallowing their toasts. */
+window.toast = toast;
+
+/* Same reason again: main.js's SWARMEYE_TEST dump read `state` and `grid` off
+ * the global scope, and both became module-locals in the split — it has been
+ * logging `state is not defined` ever since. It asks through this instead. */
+window.__swarmTestState = () => ({
+  total: state.panes.size,
+  visible: grid.panes.length,
+  selectedWs: state.selectedWorkspaceId,
+  names: [...state.panes.values()].map((p) => p.session.agentName),
+  status: [...state.panes.values()].map((p) => p.status),
+});
 
 function panesForWs(wsId) {
   return [...state.panes.values()].filter((p) => p.session.workspaceId === wsId);
@@ -66,6 +160,12 @@ function syncChrome() {
 }
 
 function syncChromeNow() {
+  // a worker mounts through mountPane, which knows nothing about crews and puts
+  // it straight in the grid — and its task only learns its pane id a beat later.
+  // This is the first beat after that, so it is where the slot is reclaimed.
+  const hiddenCrew = crewHidden();
+  if (grid.panes.some((p) => hiddenCrew.has(p.session.id))) syncGrid();
+  else paintCrew(); // statuses in the crew select stay live on this beat too
   const counts = {};
   for (const pane of state.panes.values()) {
     const id = pane.session.workspaceId;
@@ -91,14 +191,24 @@ function syncChromeNow() {
   renderSwarmView(); // same coalesced beat as the rest of the chrome
   emptyState.style.display = grid.panes.length ? 'none' : '';
   Launcher.sync({
-    workspace: !!state.selectedWorkspaceId,
+    // the id, not a boolean: the card's Scope field offers this workspace's
+    // own folders (renderer/scope.js)
+    workspace: state.selectedWorkspaceId,
     free: Math.max(0, maxAgents - liveAgentCount()),
   });
   reattachAllBtn.hidden = ![...state.panes.values()].some((p) => p.detached);
 }
 
 function syncGrid() {
-  grid.setPanes(panesForWs(state.selectedWorkspaceId), state.selectedWorkspaceId);
+  // a lead agent and its workers share one cell (features/orchestrator): the
+  // members that aren't showing keep running unmounted, like the panes of an
+  // unselected workspace. Filtered here rather than in panesForWs, which every
+  // "all the agents in this workspace" caller — killing a workspace, above all
+  // — must keep seeing whole.
+  const hidden = crewHidden();
+  grid.setPanes(panesForWs(state.selectedWorkspaceId).filter((p) => !hidden.has(p.session.id)),
+    state.selectedWorkspaceId);
+  paintCrew();
   if (state.lastFocused && !grid.panes.includes(state.lastFocused)) state.lastFocused = null;
   syncRendererReclaim();
   requestAnimationFrame(() => grid.panes.forEach((p) => p.refit()));
@@ -291,6 +401,7 @@ function cycleAgent(dir) {
  *                      since Cmd+Tab is the macOS app switcher
  * MOD+'+' / '-' / 0    font size of the focused pane (bigger/smaller/reset)
  * MOD+N                new agent
+ * MOD+M                new agent copying the active one
  * MOD+.                focus the agent that has been blocked longest, then
  *                      the next one down on the press after that
  * MOD+X                close focused agent (again within 5s: confirm kill)
@@ -314,6 +425,12 @@ const IS_MAC = window.swarm.isMac;
 function modHeld(e) {
   return IS_MAC ? (e.metaKey || e.ctrlKey) : e.ctrlKey;
 }
+/* board.js, launcher.js, notes.js, coordinator.js and swarmview.js are classic
+ * scripts and call this by name: it was a global until app.js became a module,
+ * and their listeners have been throwing ReferenceError on every keydown since.
+ * A classic script cannot import from a module, so the predicate stays defined
+ * here — the one modifier rule — and is published for them. */
+window.modHeld = modHeld;
 
 function isShortcut(e) {
   if (e.type !== 'keydown' || e.altKey) return false;
@@ -323,6 +440,7 @@ function isShortcut(e) {
   if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') return true;
   if (e.key === '0' && !e.shiftKey) return true;
   if (e.code === 'KeyN' && !e.shiftKey) return true;
+  if (e.code === 'KeyM' && !e.shiftKey) return true;
   if (e.code === 'KeyX' && !e.shiftKey) return true;
   if (e.code === 'KeyT' && !e.shiftKey) return true;
   if (e.code === 'KeyR' && !e.shiftKey) return true;
@@ -372,7 +490,8 @@ function handleShortcut(e) {
 
   if (e.code === 'Period' && !e.shiftKey) { focusLongestWaiting(); return true; }
   if (e.code === 'KeyK' && !e.shiftKey) { Palette.toggle(); return true; }
-  if (e.code === 'KeyN' && !e.shiftKey) { addAgent(); return true; }
+  if (e.code === 'KeyN' && !e.shiftKey) { newAgentShortcut(); return true; }
+  if (e.code === 'KeyM' && !e.shiftKey) { cloneActiveAgent(); return true; }
   if (e.code === 'KeyX' && !e.shiftKey) { if (focused) focused.requestClose(); return true; }
   if (e.code === 'KeyT' && !e.shiftKey) { toggleBoard(true); return true; }
   if (e.code === 'KeyR' && !e.shiftKey) {
@@ -420,6 +539,7 @@ const ESCAPABLE = [
   // so it has to be the innermost thing Escape closes
   [() => document.getElementById('hist-modal'), () => History.closeModal()],
   [() => document.getElementById('coord-modal'), () => Coordinator.close()],
+  [() => orchPopEl, () => closeOrchestratorCard()],
   [() => notifPopEl, () => closeNotifPop()],
   [() => notifPanelEl, () => { notifPanelEl.hidden = true; }],
   [() => sessionViewEl, () => Board.closeSessionView()],
@@ -443,1265 +563,48 @@ document.addEventListener('keydown', (e) => {
   if (handleShortcut(e)) e.preventDefault();
 });
 
-/* keyboard-shortcuts / options popover */
-const kbdPop = document.getElementById('kbd-pop');
-const kbdHelpBtn = document.getElementById('kbd-help');
-kbdHelpBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  if (kbdPop.hidden) {
-    closeNotifPop(); // popovers are mutually exclusive
-    // anchor the popover below the gear button — it sits in the top bar's
-    // icon group, so it drops down right-aligned with the button
-    const r = kbdHelpBtn.getBoundingClientRect();
-    kbdPop.style.bottom = '';
-    kbdPop.style.left = '';
-    kbdPop.style.top = Math.round(r.bottom + 8) + 'px';
-    kbdPop.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
-  }
-  kbdPop.hidden = !kbdPop.hidden;
-  if (kbdPop.hidden) kbdShortcutsPop.hidden = true;
-});
-document.addEventListener('click', (e) => {
-  if (!kbdPop.hidden && !kbdPop.contains(e.target) && !kbdShortcutsPop.contains(e.target)) kbdPop.hidden = true;
-  if (!kbdShortcutsPop.hidden && !kbdShortcutsPop.contains(e.target) && !kbdShortcutsBtn.contains(e.target)) kbdShortcutsPop.hidden = true;
+/* the ⌨ options popover and its shortcuts submenu are wired in
+ * features/settings/settings.js — kbdPop/kbdShortcutsPop are imported above
+ * because ESCAPABLE closes over them */
+
+initNotifications({
+  state,
+  toast,
+  toggleBoard,
+  selectWorkspace,
 });
 
-/* keyboard-shortcuts submenu — a nested popover launched from a button inside
- * the Options popover. It anchors beside kbd-pop itself rather than below the
- * button: the button sits near the bottom of kbd-pop's content, so opening
- * downward would risk running off-screen the way the Archived popover once
- * did. kbd-pop hangs off the right edge now, so this one opens to its left. */
-const kbdShortcutsPop = document.getElementById('kbd-shortcuts-pop');
-const kbdShortcutsBtn = document.getElementById('kbd-shortcuts-btn');
-kbdShortcutsBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  if (kbdShortcutsPop.hidden) {
-    const popRect = kbdPop.getBoundingClientRect();
-    const btnRect = kbdShortcutsBtn.getBoundingClientRect();
-    kbdShortcutsPop.style.left = '';
-    kbdShortcutsPop.style.right = Math.min(
-      Math.round(window.innerWidth - popRect.left + 12),
-      Math.max(8, window.innerWidth - 408)
-    ) + 'px';
-    kbdShortcutsPop.style.bottom = Math.max(8, Math.round(window.innerHeight - btnRect.bottom)) + 'px';
-  }
-  kbdShortcutsPop.hidden = !kbdShortcutsPop.hidden;
+initSettings({
+  state,
+  grid,
+  gridWrapEl,
+  toast,
+  syncChrome,
+  runScheduler,
+  renderBoard,
+  notifPopEl,
+  closeNotifPop,
 });
-
-/* notification center: history of agent events (finished / waiting / exited) */
-const notifPopEl = document.getElementById('notif-pop');
-const notifs = []; // newest first: {paneId, agent, ws, kind, text, time}
-let notifUnread = 0;
-const NOTIF_MAX = 50;
-
-const notifPanelEl = document.getElementById('notif-panel');
-const notifHandlers = {
-  onClear() {
-    notifs.length = 0;
-    notifUnread = 0;
-    renderNotifs();
-  },
-  onExpand() {
-    closeNotifPop();
-    notifPanelEl.hidden = false;
-    renderNotifs(); // both lists are only built while they are visible
-  },
-  async onOpen(paneId) {
-    const pane = state.panes.get(paneId);
-    if (!pane) { toast('this agent is gone'); return; }
-    closeNotifPop();
-    toggleBoard(false);
-    if (pane.session.workspaceId !== state.selectedWorkspaceId) {
-      await selectWorkspace(pane.session.workspaceId);
-    }
-    pane.focus();
-  },
-  // the agent's own Claude conversation, in the same modal the History screen
-  // uses — the pane doesn't have to still exist for this to work
-  onTranscript(n) {
-    if (!n.transcriptId) { toast('no transcript recorded for this agent'); return; }
-    closeNotifPop();
-    History.openTranscript({ workspaceId: n.wsId, id: n.transcriptId, preview: `${n.agent} · ${n.ws}` });
-  },
-  onApprove(paneId, always) {
-    const pane = state.panes.get(paneId);
-    if (!pane) { toast('this agent is gone'); return; }
-    if (!pane.respondToPrompt('yes', always)) toast("couldn't read the prompt — open the pane");
-  },
-  onDeny(paneId) {
-    const pane = state.panes.get(paneId);
-    if (!pane) { toast('this agent is gone'); return; }
-    if (!pane.respondToPrompt('no', false)) toast("couldn't read the prompt — open the pane");
-  },
-};
-document.getElementById('notif-panel-close').addEventListener('click', () => { notifPanelEl.hidden = true; });
-document.getElementById('notif-panel-clear').addEventListener('click', () => notifHandlers.onClear());
-
-/* drag the panel's left edge to resize it — same handle as the preview dock,
- * width remembered across restarts */
-(() => {
-  const MIN_WIDTH = 300;
-  const handle = document.getElementById('notif-panel-resizer');
-  const saved = Number(localStorage.getItem('swarmeye.notifPanelWidth'));
-  if (saved >= MIN_WIDTH) notifPanelEl.style.width = saved + 'px';
-  handle.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    handle.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const startW = notifPanelEl.getBoundingClientRect().width;
-    const onMove = (ev) => {
-      const w = Math.max(MIN_WIDTH, Math.min(window.innerWidth - 360, startW + (startX - ev.clientX)));
-      notifPanelEl.style.width = Math.round(w) + 'px';
-    };
-    const onUp = () => {
-      handle.removeEventListener('pointermove', onMove);
-      handle.removeEventListener('pointerup', onUp);
-      handle.removeEventListener('pointercancel', onUp);
-      localStorage.setItem('swarmeye.notifPanelWidth', String(Math.round(notifPanelEl.getBoundingClientRect().width)));
-    };
-    handle.addEventListener('pointermove', onMove);
-    handle.addEventListener('pointerup', onUp);
-    handle.addEventListener('pointercancel', onUp);
-  });
-})();
-
-/* closing the popover marks everything as read — bell back to grey */
-function closeNotifPop() {
-  if (notifPopEl.hidden) return;
-  notifPopEl.hidden = true;
-  notifUnread = 0;
-  renderNotifs();
-}
-
-function renderNotifs() {
-  // a 'wait' row only earns its ✓/✕ while its agent still has a yes/no menu
-  // up — the row itself is history and outlives the prompt behind it
-  for (const n of notifs) {
-    const pane = n.kind === 'wait' ? state.panes.get(n.paneId) : null;
-    n.canRespond = !!(pane && pane.awaitingPrompt && pane.promptAnswerable);
-  }
-  Topbar.renderNotifications(notifs, notifUnread, notifHandlers);
-  Topbar.renderNotifPanel(notifs, notifHandlers);
-}
-
-function pushNotif(pane, kind, text) {
-  notifs.unshift({
-    paneId: pane.session.id,
-    agent: pane.session.agentName,
-    ws: pane.session.workspaceName,
-    wsId: pane.session.workspaceId,
-    transcriptId: pane.transcriptId || null,
-    kind,
-    text,
-    cmd: pane.initialCommandText,
-    model: pane.modelLabel || null,
-    mode: pane.modeSel.selectedOptions[0].textContent,
-    createdAt: pane.session.createdAt || null,
-    time: Date.now(),
-  });
-  if (notifs.length > NOTIF_MAX) notifs.length = NOTIF_MAX;
-  if (notifPopEl.hidden) notifUnread += 1;
-  renderNotifs();
-}
-
-const notifBtnEl = document.getElementById('notif-btn');
-notifBtnEl.addEventListener('click', (e) => {
-  e.stopPropagation();
-  if (notifPopEl.hidden) {
-    kbdPop.hidden = true; // popovers are mutually exclusive
-    kbdShortcutsPop.hidden = true;
-    // anchor the popover right below the bell (the top bar can be zoomed)
-    const r = notifBtnEl.getBoundingClientRect();
-    notifPopEl.style.top = Math.round(r.bottom + 8) + 'px';
-    notifPopEl.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
-    notifPopEl.hidden = false;
-    renderNotifs(); // the list is only built while it is visible
-  } else {
-    closeNotifPop(); // second click on the bell = mark as read
-  }
-});
-document.addEventListener('click', (e) => {
-  if (!notifPopEl.hidden && !notifPopEl.contains(e.target)) closeNotifPop();
-});
-
-/* Double-click the bell to mute — kills the OS toasts, the chime and the
- * spoken announcements without touching either option in the ⌨ popover, so the
- * settings you chose are still there when you unmute. The bell itself, the
- * panel and the taskbar flash stay: this silences what interrupts you, not
- * the history of what happened. */
-let notifMuted = localStorage.getItem('swarmeye.notifMuted') === '1';
-function syncMuted() {
-  notifBtnEl.classList.toggle('muted', notifMuted);
-  notifBtnEl.dataset.tip = notifMuted
-    ? 'Notifications muted — double-click to unmute'
-    : 'Notifications — what your agents did (double-click to mute)';
-}
-notifBtnEl.addEventListener('dblclick', (e) => {
-  e.stopPropagation();
-  notifMuted = !notifMuted;
-  localStorage.setItem('swarmeye.notifMuted', notifMuted ? '1' : '0');
-  syncMuted();
-  closeNotifPop(); // the two clicks that got us here left it open or shut at random
-});
-syncMuted();
-renderNotifs();
-
-const leftbarEl = document.getElementById('leftbar'); // also drives the rail's expand/hover states below
-
-/* The two ± text-size controls (⌨ popover) do the same four things: clamp to
- * 0.7–1.6 in 0.1 steps, scale the elements they own, label the percentage,
- * persist. They differ only in which elements and which storage key.
- *
- * `elements` is a thunk because some of them (gsearch) are declared further
- * down this file — looking them up at click time avoids a TDZ error. */
-function makeZoomControl({ storageKey, elements, valueEl, downId, upId }) {
-  let zoom = Number(localStorage.getItem(storageKey)) || 1;
-  const apply = (z) => {
-    zoom = Math.round(Math.max(0.7, Math.min(1.6, z)) * 10) / 10;
-    for (const el of elements()) el.style.zoom = zoom;
-    valueEl.textContent = Math.round(zoom * 100) + '%';
-    localStorage.setItem(storageKey, String(zoom));
-  };
-  document.getElementById(downId).addEventListener('click', () => apply(zoom - 0.1));
-  document.getElementById(upId).addEventListener('click', () => apply(zoom + 0.1));
-  apply(zoom);
-  return apply;
-}
-
-/* menu-bar (top bar + icon rail) scale, plus the sub-menus anchored to it
- * (search, notifications). The options popover is excluded: its text
- * size is owned by "Task board, Skills & Options text size" instead. */
-const applyTopbarZoom = makeZoomControl({
-  storageKey: 'swarmeye.topbarZoom',
-  elements: () => [
-    document.getElementById('topbar'),
-    leftbarEl,
-    document.getElementById('gsearch'),
-    document.getElementById('msg-pop'),
-    notifPopEl,
-  ],
-  valueEl: document.getElementById('ui-font-val'),
-  downId: 'ui-font-down',
-  upId: 'ui-font-up',
-});
-
-/* left menu style — collapsed (icons only, hover to preview the expanded
- * view) or expanded (always shows workspace names + usage gauges); the
- * "Small left menu" checkbox in the ⌨ popover, persisted locally. New installs
- * default to expanded (checkbox unchecked). */
-let leftbarStyle = localStorage.getItem('swarmeye.leftbarStyle') || 'expanded';
-const leftbarSmallToggle = document.getElementById('leftbar-small-toggle');
-function applyLeftbarStyle(style) {
-  leftbarStyle = style === 'collapsed' ? 'collapsed' : 'expanded';
-  localStorage.setItem('swarmeye.leftbarStyle', leftbarStyle);
-  leftbarEl.classList.toggle('expanded', leftbarStyle === 'expanded');
-  if (leftbarStyle === 'expanded') leftbarEl.classList.remove('hover-expanded');
-  leftbarSmallToggle.checked = leftbarStyle === 'collapsed';
-}
-leftbarSmallToggle.addEventListener('change', () => applyLeftbarStyle(leftbarSmallToggle.checked ? 'collapsed' : 'expanded'));
-applyLeftbarStyle(leftbarStyle);
-
-// hovering the collapsed rail previews the expanded layout as a floating
-// overlay (#leftbar-surface grows past #leftbar's own reserved width, so
-// the grid never reflows just from a mouse pass) — same hide-delay pattern
-// as the workspace-tile flyout in topbar.js, so a quick pass-through
-// doesn't flicker it open
-let leftbarHoverTimer = null;
-leftbarEl.addEventListener('mouseenter', () => {
-  if (leftbarStyle !== 'collapsed') return;
-  clearTimeout(leftbarHoverTimer);
-  leftbarEl.classList.add('hover-expanded');
-});
-leftbarEl.addEventListener('mouseleave', () => {
-  clearTimeout(leftbarHoverTimer);
-  leftbarHoverTimer = setTimeout(() => leftbarEl.classList.remove('hover-expanded'), 200);
-});
-
-/* task board text scale — the ± control in the central Options popover; persisted locally.
- * Applies to board-main (new-task form + columns), board-archive, skills-main
- * and the options popover itself, so every non-terminal UI surface besides the
- * icon rail/top bar (covered by "Menu bar size") and agent panes shares one text size. */
-const applyBoardZoom = makeZoomControl({
-  storageKey: 'swarmeye.boardZoom',
-  elements: () => [
-    document.getElementById('board-main'),
-    document.getElementById('board-archive'),
-    document.getElementById('skills-main'),
-    document.getElementById('history-main'),
-    kbdPop,
-    kbdShortcutsPop,
-  ],
-  valueEl: document.getElementById('board-font-val'),
-  downId: 'board-font-down',
-  upId: 'board-font-up',
-});
-
-/* agent pane text size — the ± control in the central Options popover; persisted
- * locally as the default new panes start at (same store Ctrl+/- and the pane's
- * own buttons write to). Also pushes the new size to every already-open pane,
- * so it reads as a single "text size" setting rather than just a new-pane default. */
-const agentFontVal = document.getElementById('agent-font-val');
-function applyAgentFontSize(px) {
-  const size = Pane.setDefaultFontSize(px);
-  agentFontVal.textContent = size + 'px';
-  for (const p of state.panes.values()) p.setFontSize(size);
-}
-document.getElementById('agent-font-down').addEventListener('click', () => applyAgentFontSize(Pane.getDefaultFontSize() - 1));
-document.getElementById('agent-font-up').addEventListener('click', () => applyAgentFontSize(Pane.getDefaultFontSize() + 1));
-applyAgentFontSize(Pane.getDefaultFontSize());
-
-/* agent pane text weight — the ± control below the size one, same shape. Its
- * reason to exist is the light themes: dark text on a near-white pane reads
- * thinner than the dark themes' light-on-dark at the same weight. */
-const AGENT_WEIGHT_LABELS = { 300: 'Light', 400: 'Normal', 500: 'Medium', 600: 'Semibold' };
-const agentWeightVal = document.getElementById('agent-weight-val');
-function applyAgentFontWeight(w) {
-  const weight = Pane.setDefaultFontWeight(w);
-  agentWeightVal.textContent = AGENT_WEIGHT_LABELS[weight];
-  for (const p of state.panes.values()) p.setFontWeight(weight);
-}
-document.getElementById('agent-weight-down').addEventListener('click', () => applyAgentFontWeight(Pane.getDefaultFontWeight() - 100));
-document.getElementById('agent-weight-up').addEventListener('click', () => applyAgentFontWeight(Pane.getDefaultFontWeight() + 100));
-applyAgentFontWeight(Pane.getDefaultFontWeight());
-
-/* max simultaneous agents — the ± control in the ⌨ popover; persisted in config */
-const maxAgentsVal = document.getElementById('max-agents-val');
-async function applyMaxAgents(n) {
-  const res = await window.swarm.setMaxAgents(n);
-  maxAgents = res.maxAgents;
-  maxAgentsVal.textContent = maxAgents;
-  syncChrome(); // counter and + button follow the new cap
-  runScheduler(); // a raised cap can immediately unblock queued tasks
-}
-document.getElementById('max-agents-down').addEventListener('click', () => applyMaxAgents(maxAgents - 1));
-document.getElementById('max-agents-up').addEventListener('click', () => applyMaxAgents(maxAgents + 1));
-
-/* auto-start usage threshold — the ± control in the ⌨ popover; persisted in config */
-const autoLimitVal = document.getElementById('auto-limit-val');
-async function applyAutoUsageLimit(n) {
-  const res = await window.swarm.setAutoUsageLimit(n);
-  autoUsageLimit = res.autoUsageLimit;
-  autoLimitVal.textContent = autoUsageLimit + '%';
-  renderBoard();
-  runScheduler(); // a loosened threshold can immediately unblock queued tasks
-}
-document.getElementById('auto-limit-down').addEventListener('click', () => applyAutoUsageLimit(autoUsageLimit - 5));
-document.getElementById('auto-limit-up').addEventListener('click', () => applyAutoUsageLimit(autoUsageLimit + 5));
-
-/* auto mode (bypass permissions) — off by default; the checkbox in the ⌨
- * popover opts in, since it launches claude with --allow-dangerously-skip-permissions.
- * Every flip goes through applySkipPermissions so the checkbox, main's copy and
- * the panes' own copy (pane.js reads it when it decides whether to accept the
- * blocking first-run dialogs) can't drift apart. */
-const skipPermissionsToggle = document.getElementById('skip-permissions-toggle');
-function applySkipPermissions(on) {
-  skipPermissionsToggle.checked = on;
-  Pane.setSkipPermissions(on);
-  window.swarm.setSkipPermissions(on);
-}
-skipPermissionsToggle.addEventListener('change', () => applySkipPermissions(skipPermissionsToggle.checked));
-
-/* Every plain checkbox in the ⌨ Options panel is the same wiring — reflect
- * the stored value into the box, persist a flip, run the option's own effect —
- * so only the effect is written per option. Returns the apply function, which
- * the reset button uses to flip options programmatically.
- *
- * Options saved by older versions wrote '' for off rather than '0'; both read
- * back as false, so no migration is needed. */
-function boolOption(id, key, defaultOn, effect) {
-  const box = document.getElementById(id);
-  const apply = (on) => {
-    box.checked = on;
-    localStorage.setItem('swarmeye.' + key, on ? '1' : '0');
-    effect(on);
-  };
-  box.addEventListener('change', () => apply(box.checked));
-  const saved = localStorage.getItem('swarmeye.' + key);
-  apply(saved === null ? defaultOn : saved === '1');
-  return apply;
-}
-
-/* "Show last command in pane header" — off by default; pushed to every
- * already-open pane so it reads as a single live setting */
-const applyShowInitialCommand = boolOption('show-initial-cmd-toggle', 'showInitialCommand', false, (on) => {
-  Pane.setShowInitialCommand(on);
-  for (const p of state.panes.values()) p.syncInitialCommandHeader();
-});
-
-/* "Remember prompt history" — on by default; what the palette offers back
- * (see prompts.js). Off only stops recording — nothing stored is lost. */
-const applyPromptHistory = boolOption('prompt-history-toggle', 'promptHistory', true, (on) => Prompts.setEnabled(on));
-
-/* "Show cost & context panel" — off by default; the panel eats two rows of
- * every pane's terminal, so opening it re-fits each one */
-const applyUsagePanel = boolOption('usage-panel-toggle', 'usagePanel', false, (on) => {
-  Pane.setShowUsagePanel(on);
-  for (const p of state.panes.values()) p.syncUsagePanel();
-});
-
-/* "Fixed agent pane buttons" — off by default: the five rarely-used header
- * buttons fold behind each pane's ⋯. On puts them back inline. */
-const applyFixedPaneActions = boolOption('pane-fixed-actions-toggle', 'paneFixedActions', false, (on) => {
-  Pane.setFixedActions(on);
-  for (const p of state.panes.values()) p.syncActionsMode();
-});
-
-/* "Auto-organize agent windows" — on by default; off lets each pane's → / ↓
- * buttons place new agents by hand instead of the automatic square-ish grid */
-const applyAutoOrganize = boolOption('auto-organize-toggle', 'autoOrganize', true, (on) => {
-  Pane.setAutoOrganize(on);
-  grid.setAutoOrganize(on);
-  for (const p of state.panes.values()) p.syncSplitButtons();
-});
-
-/* "Space between agent panes" — on by default (12px gap + draggable divider,
- * plus the grid's own edge padding); off collapses panes flush together with
- * no gap and lets the grid fill the window edge-to-edge too */
-const applyAgentPadding = boolOption('agent-padding-toggle', 'agentPadding', true, (on) => {
-  grid.setGutter(on ? 12 : 0);
-  gridWrapEl.classList.toggle('no-pane-gap', !on);
-});
-
-/* "Theme background overlay" state — applied before applyTheme below, which
- * needs it: with the overlay off --term-bg is pinned dark whatever the theme,
- * and that is the backdrop the terminal palette is built against. The option
- * itself is wired up further down and re-applies the same attribute. */
-document.documentElement.dataset.themeOverlay =
-  localStorage.getItem('swarmeye.themeOverlay') === '0' ? 'off' : 'on';
-
-/* colour theme — swatches in the ⌨ popover; persisted locally */
-const themeDots = document.querySelectorAll('#theme-opts .theme-dot');
-function applyTheme(name) {
-  document.documentElement.dataset.theme = name;
-  localStorage.setItem('swarmeye.theme', name);
-  const xt = Pane.setXtermTheme(name);
-  const minContrast = Pane.getMinContrast();
-  for (const p of state.panes.values()) {
-    p.term.options.theme = xt;
-    p.term.options.minimumContrastRatio = minContrast;
-  }
-  for (const dot of themeDots) dot.classList.toggle('active', dot.dataset.theme === name);
-}
-themeDots.forEach((dot) => dot.addEventListener('click', () => applyTheme(dot.dataset.theme)));
-/* a theme this build no longer ships (the picker used to offer 25) falls back
- * to dark rather than leaving data-theme pointing at a block that is gone */
-const savedTheme = localStorage.getItem('swarmeye.theme');
-applyTheme([...themeDots].some((d) => d.dataset.theme === savedTheme) ? savedTheme : 'dark');
-
-/* "Theme background overlay" — on by default; off hides the theme-tinted
- * background grid wash and pins the app's chassis (background, left bar,
- * panes, terminals) to the default dark shades, leaving only the theme's
- * colours — borders, text, accents, terminal ramp — themed. See app.css. */
-const applyThemeOverlay = boolOption('theme-overlay-toggle', 'themeOverlay', true, (on) => {
-  document.documentElement.dataset.themeOverlay = on ? 'on' : 'off';
-  applyTheme(document.documentElement.dataset.theme); // terminal palette follows the backdrop
-});
-
-/* "Task summary on completion" — on by default. The agent's closing message
- * is pulled out of the transcript by main/hooks.js on the same read that
- * already runs at every turn boundary, and lands on the completed card, so the
- * board says what came of a task without opening its transcript. */
-let taskSummaries = true;
-const applyTaskSummaryOption = boolOption('task-summary-toggle', 'taskSummary', true, (on) => {
-  taskSummaries = on;
-});
-
-/* "Desktop notifications" — on by default. The taskbar flash and the bell only
- * help while SwarmEye is on screen; this is the one that reaches you with the
- * window minimized behind an editor. Main only raises a toast when the window
- * isn't focused, so this never fires at something you're already looking at. */
-let desktopNotifs = true;
-const applyDesktopNotifs = boolOption('desktop-notif-toggle', 'desktopNotifs', true, (on) => {
-  desktopNotifs = on;
-});
-
-/* Flash the taskbar/dock and — when the option is on — raise an OS
- * notification naming the agent and what it did. */
-function notifyOS(pane, text) {
-  window.swarm.notify({
-    title: `${pane.session.agentName} · ${pane.session.workspaceName}`,
-    body: text,
-    desktop: desktopNotifs && !notifMuted,
-  });
-}
-
-/* notification sound — the picker in the ⌨ popover; persisted locally and
- * played whenever an agent's turn finishes (see onStatusChange below) */
-const notifSoundSel = document.getElementById('notif-sound-sel');
-for (const [value, label] of Sounds.OPTIONS) {
-  const opt = document.createElement('option');
-  opt.value = value;
-  opt.textContent = label;
-  notifSoundSel.appendChild(opt);
-}
-let notifSound = localStorage.getItem('swarmeye.notifSound') || 'chime';
-notifSoundSel.value = notifSound;
-notifSoundSel.addEventListener('change', () => {
-  notifSound = notifSoundSel.value;
-  localStorage.setItem('swarmeye.notifSound', notifSound);
-  Sounds.play(notifSound); // preview so the pick is audible immediately
-});
-
-/* "Spoken notifications" — off by default, and dead until the voice engine in
- * the row below is installed. Says which agent finished and what it said last;
- * only for turns that end while you aren't watching, the same gate the sound
- * uses. Deliberately not wired to 'attention': that already flashes the
- * taskbar, raises a toast and rings the bell, and a busy swarm would talk
- * without pause. */
-let notifSpeech = false;
-const applyNotifSpeech = boolOption('voice-notif-toggle', 'notifSpeech', false, (on) => {
-  notifSpeech = on;
-});
-document.getElementById('voice-notif-toggle').addEventListener('change', (e) => {
-  // a preview only when it's switched on by hand — boolOption's own effect
-  // also runs at boot, where an announcement out of nowhere would be a bug
-  if (e.target.checked) Sounds.speak('Spoken notifications on');
-});
-
-/* A workspace name is a folder name, not a phrase, and it is the only free
- * text left in the announcement — so the two shapes that actually turn up get
- * fixed before it is read out: a sort prefix ("03 - SwarmEye" is said as "zero
- * three dash SwarmEye") and a camelCase run ("DisruptiveNegotiations" comes
- * out as one mangled word). Deliberately not a second speechClean: everything
- * else a folder can be called reads well enough as-is. */
-function sayableName(name) {
-  return String(name || '')
-    .replace(/^\W*\d+\W+/, '') // leading "03 - ", "1. ", "04 -  "
-    .replace(/([a-z\d])([A-Z])/g, '$1 $2') // DisruptiveNegotiations
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/* One fixed sentence: who finished, and where. Nothing waits for the agent's
- * closing message, so a finished turn is announced on the Stop that ended it
- * rather than a beat later. Kept short on purpose — "Agent … in workspace … is
- * finished" was 4.7 seconds of audio, five words of it carrying nothing, and a
- * busy swarm cuts one announcement off with the next. A session with no
- * workspace name says the agent alone. */
-function speakDone(pane) {
-  if (!notifSpeech || notifMuted) return;
-  const where = sayableName(pane.session.workspaceName);
-  Sounds.speak(where
-    ? `${pane.session.agentName} finished in ${where}`
-    : `${pane.session.agentName} finished`);
-}
-
-/* local engine installers — the ⌨ popover's dictation and voice rows. Neither
- * engine ships with the app (a Python venv plus a ~465 MB Whisper model for
- * dictation, the Piper binary plus a ~61 MB voice for speech, both inside WSL
- * on Windows), so each row runs the same scripts/setup-*.sh that
- * `npm run setup:*` does and streams its output into a log box — a
- * multi-minute download behind a disabled button is indistinguishable from a
- * hang. Neither is part of ↺ Reset: an install isn't a preference. */
-const ENGINE_LOG_MAX = 200;
-
-function engineRow({ statusId, btnId, logId, installed, install, onProgress, okToast, failToast }) {
-  const statusEl = document.getElementById(statusId);
-  const btn = document.getElementById(btnId);
-  const logEl = document.getElementById(logId);
-
-  const refresh = async () => {
-    const on = await installed();
-    statusEl.textContent = on ? 'installed' : 'not installed';
-    statusEl.classList.toggle('ok', on);
-    btn.textContent = on ? 'Reinstall' : 'Install';
-  };
-
-  // registered once, not per click — preload's onX are bare ipcRenderer.on with
-  // no unsubscribe, same constraint onSkillUpdateStatus lives with
-  onProgress(({ line }) => {
-    logEl.textContent += line + '\n';
-    const lines = logEl.textContent.split('\n');
-    if (lines.length > ENGINE_LOG_MAX) logEl.textContent = lines.slice(-ENGINE_LOG_MAX).join('\n');
-    logEl.scrollTop = logEl.scrollHeight;
-  });
-
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    statusEl.textContent = 'installing…';
-    statusEl.classList.remove('ok');
-    logEl.textContent = '';
-    logEl.hidden = false;
-    const res = await install();
-    btn.disabled = false;
-    // the main process clears its cached availability check on success, so the
-    // engine works straight away — no app restart
-    if (res.ok) toast(okToast);
-    else if (res.reason === 'busy') toast('an install is already running');
-    else toast(failToast);
-    refresh();
-  });
-
-  refresh();
-}
-
-engineRow({
-  statusId: 'stt-status', btnId: 'stt-install-btn', logId: 'stt-log',
-  installed: () => window.swarm.speechInstalled(),
-  install: () => window.swarm.speechInstall(),
-  onProgress: window.swarm.onSpeechInstallProgress,
-  okToast: 'dictation engine installed — the mic button works now',
-  failToast: 'dictation engine install failed — see the log in ⌨ Options',
-});
-
-engineRow({
-  statusId: 'tts-status', btnId: 'tts-install-btn', logId: 'tts-log',
-  installed: () => window.swarm.ttsInstalled(),
-  install: () => window.swarm.ttsInstall(),
-  onProgress: window.swarm.onTtsInstallProgress,
-  okToast: 'voice installed — spoken notifications work now',
-  failToast: 'voice install failed — see the log in ⌨ Options',
-});
-
-/* The ⌨ popover's three default pickers are one control three times: fill the
- * select from a Pane table, persist the choice locally, and mirror it into the
- * task board's matching per-task select. They differ only in the table, the
- * storage key, and — for start mode — one extra coupling. */
-const DEFAULT_PICKERS = [
-  {
-    id: 'default-startmode-sel',
-    table: Pane.MODES,
-    key: 'defaultStartMode',
-    // 'default' is relabeled from Pane.MODES' own "manual" the same way the
-    // task board's picker does, so the two read as the same choice
-    optionText: (value, label) => (value === 'default' ? 'default' : label),
-    // bypass ("auto") only exists in claude's Shift+Tab cycle when it was
-    // launched with --allow-dangerously-skip-permissions, so picking it here
-    // silently no-ops unless that prerequisite is also on — flip it on to match
-    // instead of leaving the picker looking selectable but non-functional.
-    onApply: (name) => {
-      if (name === 'bypass' && !skipPermissionsToggle.checked) applySkipPermissions(true);
-    },
-  },
-  { id: 'default-model-sel', table: Pane.MODELS, key: 'defaultModel' },
-  { id: 'default-effort-sel', table: Pane.EFFORTS, key: 'defaultEffort' },
-];
-
-const applyDefault = {}; // key -> apply(value), for the ↺ Reset button below
-for (const { id, table, key, optionText, onApply } of DEFAULT_PICKERS) {
-  const sel = document.getElementById(id);
-  for (const [value, label] of table) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = optionText ? optionText(value, label) : label;
-    sel.appendChild(opt);
-  }
-  const apply = (name) => {
-    sel.value = name;
-    localStorage.setItem('swarmeye.' + key, name);
-    Board.setDefaults({ [key]: name });
-    Launcher.setDefaults({ [key]: name }); // the empty-workspace card opens on these too
-    if (onApply) onApply(name);
-  };
-  applyDefault[key] = apply;
-  sel.addEventListener('change', () => apply(sel.value));
-  apply(localStorage.getItem('swarmeye.' + key) || 'default');
-}
-
-/* default focus mode — a checkbox rather than a select, so it stays its own
- * few lines instead of bending the table above around one odd case */
-const applyDefaultFocus = boolOption('default-focus-toggle', 'defaultFocus', false, (on) => {
-  Board.setDefaults({ defaultFocus: on });
-  Launcher.setDefaults({ defaultFocus: on });
-});
-
-/* reset to default — restores every setting in the Options popover. Two
- * clicks, like every other control here that can't be undone: one stray click
- * would otherwise throw away a whole configuration silently. */
-const optionsResetBtn = document.getElementById('options-reset-btn');
-optionsResetBtn.addEventListener('click', () => {
-  Confirm.armOrFire(optionsResetBtn, 'options-reset', resetOptions);
-});
-
-async function resetOptions() {
-  applyLeftbarStyle('expanded');
-  applyTopbarZoom(1);
-  applyBoardZoom(1);
-  applyAgentFontSize(Pane.DEFAULT_FONT_SIZE);
-  applyAgentFontWeight(Pane.DEFAULT_FONT_WEIGHT);
-  await applyMaxAgents(10);
-  await applyAutoUsageLimit(85);
-  applySkipPermissions(false);
-  applyShowInitialCommand(false);
-  applyPromptHistory(true);
-  applyUsagePanel(false);
-  applyFixedPaneActions(false);
-  applyAutoOrganize(true);
-  applyAgentPadding(true);
-  for (const { key } of DEFAULT_PICKERS) applyDefault[key]('default');
-  applyDefaultFocus(false);
-  applyTaskSummaryOption(true);
-  applyDesktopNotifs(true);
-  applyNotifSpeech(false);
-  applyTheme('dark');
-  applyThemeOverlay(true);
-  notifSound = 'chime';
-  notifSoundSel.value = notifSound;
-  localStorage.setItem('swarmeye.notifSound', notifSound);
-  toast('options reset to default');
-}
 
 /* ---- task board: queued todos for agents, started now or auto-scheduled
  * once an agent slot and usage headroom are both available ---- */
 
 const boardEl = document.getElementById('board');
 const sessionViewEl = document.getElementById('session-view'); // completed-task transcript popup, owned by board.js
-const pendingTaskStarts = new Map(); // sessionId -> {taskId, injected}
-const skillInjectAttempted = new Set(); // sessionId — every new session gets one attempt, task or manual
-// sessionId — a task's prompt has been submitted but its own turn hasn't
-// started yet. Every startup injection (an active skill's /command, /effort,
-// /focus) is a real turn of its own, so it fires a Stop hook; without this
-// gate the first of those Stops completes the task and closes the pane before
-// the task text has even been typed.
-const awaitingTaskTurn = new Set();
-const manualStartRun = new Set(); // sessionId — manually-added agents run their startup sequence (skills, then default mode) once
-const manualLaunchOpts = new Map(); // sessionId -> the empty-workspace card's picks for this launch, read once by startManualSession
-const sessionStarted = new Set(); // sessionId — its SessionStart hook has arrived, i.e. claude's CLI is really up
-let usageSnapshot = null;
-let schedulerRunning = false;
-let schedulerQueued = false;
-const TASK_INJECT_SETTLE_MS = 500; // grace after SessionStart for the mode footer to draw
-const TASK_INJECT_FALLBACK_MS = 5000; // covers sessions whose hooks never fire
-const TASK_SUBMIT_DELAY_MS = 150; // gap before Enter so it lands as its own keystroke, not part of a pasted chunk
-const TASK_MODEL_SETTLE_MS = 600; // grace for the "/model"/"/effort"/"/focus" confirmation line to print before the prompt follows
-const DEFAULT_MODE_TRIES = 3; // Shift+Tab laps allowed before giving up on the Options default mode
-const DEFAULT_MODE_RETRY_MS = 1500; // gap between those laps — also the window autoAcceptDialogs needs to clear a blocking dialog
-const CLAUDE_READY_TIMEOUT_MS = 90000; // how long the mode cycler waits for a SessionStart before cycling blind (hookless sessions)
-// uninterrupted idle that counts as "the startup turns are over" — longer than
-// hooks.js's 3s state sweep, which is what actually delivers those events when
-// fs.watch misses a write (the state dir is written from the WSL side)
-const INJECT_QUIET_MS = 4000;
-const INJECT_QUIET_MAX_MS = 90000; // ... but a wedged startup turn must not hold a task's prompt forever
-const INJECT_POLL_MS = 200;
+// the lead agent's plan file, its workers, and the reports that go back to it
+initOrchestrator({ state, toast, syncGrid });
 
-/* Waits for the turns started by the startup injections to finish. Typing an
- * active skill's `/command` (or `/effort`, or `/focus`) is a real turn that
- * ends in a Stop hook — send the agent's actual prompt while one is still
- * running and that Stop lands *after* the prompt is in, where a task reads it
- * as its own completion and 'close on complete' kills the agent mid-work.
- * Waiting the injections out is what keeps the two apart. */
-async function waitForInjectionsToSettle(pane) {
-  const deadline = Date.now() + INJECT_QUIET_MAX_MS;
-  let quietSince = Date.now();
-  while (Date.now() < deadline) {
-    if (pane.exited) return;
-    if (pane.working) quietSince = Date.now();
-    else if (Date.now() - quietSince >= INJECT_QUIET_MS) return;
-    await new Promise((r) => setTimeout(r, INJECT_POLL_MS));
-  }
-}
-
-/* Types `/<id>` for every skill marked "active" in the Skills screen, right
- * when a brand-new agent starts — task-created or the plain "+ Coding Agent"
- * button alike — so it's invoked from turn one instead of waiting on the
- * model to notice it's relevant on its own. Idempotent per session: whichever
- * trigger (SessionStart hook or the fallback timer) fires first wins.
- *
- * Several skills go in as one `/a /b /c` message rather than one message
- * each: claude expands a leading skill plus up to five more stacked after it
- * (2.1.199+), so six active skills cost one turn instead of six. Expansion
- * stops at the first token that isn't an inline skill, and everything from
- * there on is read as argument text — so a `context: fork` skill ends the run
- * and is sent on a line of its own instead of silently swallowing whatever
- * followed it.
- *
- * Returns how many messages it typed — each is a turn the caller may have to
- * wait out before sending a prompt of its own. */
-const SKILL_STACK_MAX = 6; // claude expands the first skill plus five more
-async function tryInjectSkills(sessionId) {
-  if (skillInjectAttempted.has(sessionId)) return 0;
-  const pane = state.panes.get(sessionId);
-  if (!pane || pane.exited) return 0;
-  skillInjectAttempted.add(sessionId);
-  const active = typeof Skills !== 'undefined' ? await Skills.getActiveSkills() : [];
-  // a workspace-local skill only exists for agents running in that folder
-  const forHere = active.filter((s) => !s.workspaceId || s.workspaceId === pane.session.workspaceId);
-  const runs = [];
-  for (const skill of forHere) {
-    const open = runs[runs.length - 1];
-    const stackable = open && !open.fork && !skill.fork && open.commands.length < SKILL_STACK_MAX;
-    if (stackable) open.commands.push('/' + skill.command);
-    else runs.push({ fork: !!skill.fork, commands: ['/' + skill.command] });
-  }
-  for (const run of runs) {
-    window.swarm.writeSession(sessionId, run.commands.join(' '));
-    await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
-    window.swarm.writeSession(sessionId, '\r');
-    await new Promise((r) => setTimeout(r, TASK_MODEL_SETTLE_MS));
-  }
-  return runs.length;
-}
-
-/* The startup sequence of a manually-added agent (+ Coding Agent / Ctrl+N):
- * active skills first, then the "Default agent permissions" Options setting —
- * strictly in that order, and never twice. The two used to be scheduled as two
- * independent timers, which is why an Options default of "auto" so often
- * didn't take: Shift+Tab landing while a `/skill` command is half-typed is
- * eaten by claude's command autocomplete instead of cycling the mode. Task
- * sessions run the same two steps from tryInjectPrompt, so they are skipped
- * here rather than cycled twice.
- *
- * The mode step waits for the session's SessionStart hook before it starts
- * cycling: on a cold WSL a claude can take the better part of a minute to
- * come up, and Shift+Tab pressed into a terminal it isn't reading yet is
- * simply buffered — the whole 4-press lap arrives at once later and cycles
- * back to where it began. Typed text (the skills above) survives that wait
- * fine, so only the cycling is gated. Sessions whose hooks never fire cycle
- * blind after CLAUDE_READY_TIMEOUT_MS rather than never.
- *
- * setMode is then still retried: it steers by reading claude's footer, which
- * may not have drawn yet, and the very first use of auto mode on a machine
- * lands on the bypass-permissions warning that swallows the keys — the gap
- * between laps is when the pane's own autoAcceptDialogs clears it.
- *
- * An agent launched from the empty-workspace card also carries that card's
- * effort and focus picks (manualLaunchOpts), typed after the mode is settled
- * the same way tryInjectPrompt does it for a task. + Agent and Ctrl+N are
- * deliberately unchanged: they still apply the model and the permission mode
- * only, so a plain agent costs no extra startup turns. */
-async function startManualSession(sessionId) {
-  if (manualStartRun.has(sessionId) || pendingTaskStarts.has(sessionId)) return;
-  const pane = state.panes.get(sessionId);
-  if (!pane || pane.exited) return;
-  manualStartRun.add(sessionId);
-  await tryInjectSkills(sessionId);
-  const launch = manualLaunchOpts.get(sessionId);
-  const startMode = launch ? launch.startMode : (localStorage.getItem('swarmeye.defaultStartMode') || 'default');
-  // named levels already went in as a --effort launch flag (addAgent) —
-  // only ultracode/auto, which the flag can't express, are typed here
-  const effort = launch && (launch.effort === 'ultracode' || launch.effort === 'auto') ? launch.effort : null;
-  const wantFocus = launch ? launch.focus : null;
-  if (startMode === 'default' && !effort && wantFocus === null) return;
-  for (let waited = 0; !sessionStarted.has(sessionId) && waited < CLAUDE_READY_TIMEOUT_MS; waited += 500) {
-    if (pane.exited) return;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  if (startMode !== 'default') {
-    for (let attempt = 0; attempt < DEFAULT_MODE_TRIES; attempt++) {
-      if (pane.exited) return;
-      // only the final lap may complain — the earlier ones are expected to fail
-      // on a CLI that is still drawing its first screen
-      if (await pane.setMode(startMode, { quiet: attempt < DEFAULT_MODE_TRIES - 1 })) break;
-      await new Promise((r) => setTimeout(r, DEFAULT_MODE_RETRY_MS));
-    }
-  }
-  if (effort) {
-    if (pane.exited) return;
-    pane.setEffort(effort); // the buffer scan catches it too, but only while the confirmation is still on screen
-    await typeCommand(sessionId, '/effort ' + effort);
-  }
-  // `/focus` is a toggle and claude doesn't always start with it off, so send
-  // it only when the footer disagrees — that turns it on when wanted and off
-  // when claude carried it over from a previous session
-  if (wantFocus !== null && !pane.exited && wantFocus !== pane.detectFocus()) {
-    await typeCommand(sessionId, '/focus');
-  }
-}
-
-/* one slash command into a live session: the text, then Enter as its own
- * keystroke, then a beat for claude's confirmation line to print */
-async function typeCommand(sessionId, text) {
-  window.swarm.writeSession(sessionId, text);
-  await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
-  window.swarm.writeSession(sessionId, '\r');
-  await new Promise((r) => setTimeout(r, TASK_MODEL_SETTLE_MS));
-}
-
-function renderBoard() {
-  Board.render(state.tasks, state.archivedTasks, state.workspaces, autoUsageLimit, boardHandlers);
-}
-
-function renderArchive() {
-  Board.renderArchive(state.archivedTasks, state.workspaces, boardHandlers);
-}
-
-/* usage data is percentage-only (Anthropic's API exposes no raw token
- * counts) — "enough budget" gates on the 5-hour session window only. The
- * weekly window resets on its own multi-day clock regardless of what an
- * agent does today, so gating auto-start on it can wedge every "auto" task
- * for days; a task with no session headroom just stays pending and is
- * retried once the next session's usage comes in. Stale/missing data blocks
- * auto-start rather than guessing. */
-function usageOk() {
-  const s = usageSnapshot;
-  if (!s || !s.ok || s.stale) return false;
-  const fh = s.fiveHour && s.fiveHour.usedPct;
-  return fh != null && fh < autoUsageLimit;
-}
-
-const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
-
-/* starts as many pending "auto"/"next-session" tasks as the agent cap
- * allows, highest priority first (oldest first within the same priority) —
- * this is the literal "spin up as many agents as required within the
- * limit, working the most important tasks first" behavior. "auto" tasks
- * need usage headroom; "next-session" tasks just wait for the wall clock
- * to pass the resets_at captured when they were created. */
-async function runScheduler() {
-  if (schedulerRunning) { schedulerQueued = true; return; }
-  schedulerRunning = true;
-  try {
-    const pending = state.tasks
-      .filter((t) => t.status === 'pending' && (t.mode === 'auto' || t.mode === 'next-session')
-        && state.workspaces.some((w) => w.id === t.workspaceId))
-      .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 2) - (PRIORITY_ORDER[b.priority] ?? 2)
-        || a.createdAt - b.createdAt);
-    for (const task of pending) {
-      if (liveAgentCount() >= maxAgents) break; // agent cap blocks every mode alike
-      // a recurring task's next run is queued the moment the previous one
-      // finishes — it waits here until its interval is actually up
-      if (task.nextRunAt && Date.now() < task.nextRunAt) continue;
-      if (task.mode === 'auto') {
-        if (!usageOk()) continue;
-      } else {
-        // no resets_at yet (usage wasn't available at creation) — adopt the
-        // first one we see and wait for the tick after it actually passes
-        if (task.targetResetsAt == null) {
-          const resetsAt = usageSnapshot && usageSnapshot.fiveHour && usageSnapshot.fiveHour.resetsAt;
-          if (resetsAt) {
-            task.targetResetsAt = resetsAt;
-            window.swarm.updateTask(task.id, { targetResetsAt: resetsAt });
-          }
-          continue;
-        }
-        // targetResetsAt is normally epoch ms, but tasks created before the
-        // resets_at normalization fix may have an ISO string persisted —
-        // route through Date() so a stale string doesn't silently compare
-        // as NaN (always false) and skip the wait entirely
-        if (Date.now() < new Date(task.targetResetsAt).getTime()) continue;
-      }
-      await startTask(task); // sequential: liveAgentCount() must be current for the next check
-    }
-  } finally {
-    schedulerRunning = false;
-    if (schedulerQueued) { schedulerQueued = false; runScheduler(); }
-  }
-}
-
-/* Resolves an effort pick to what the `--effort` launch flag can carry:
- * 'default' (or nothing) falls back to the Options "Default task effort",
- * and only the five named levels qualify — ultracode/auto have no flag
- * spelling and are still typed as a `/effort` command after start. */
-const EFFORT_FLAG_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
-function effortFlagValue(pick) {
-  const effective = pick && pick !== 'default'
-    ? pick
-    : (localStorage.getItem('swarmeye.defaultEffort') || 'default');
-  return EFFORT_FLAG_LEVELS.includes(effective) ? effective : undefined;
-}
-
-/* shared by "start now", manual retry, and the scheduler. notify is only
- * true for user-initiated starts — the scheduler stays silent on failure.
- * Starting a task never jumps the view; it stays wherever the user is
- * (usually the board), so the new active card shows up in place. */
-async function startTask(task, { notify = false } = {}) {
-  // synchronous re-entry guard: a second start (double-clicked ▶, or the
-  // scheduler picking the task up while a manual start's createSession is
-  // still in flight) would spawn two agents for one task. `starting` is
-  // renderer-only — not in TASK_PATCH_KEYS, so it never persists.
-  if (task.starting || task.status === 'active') return null;
-  task.starting = true;
-  try {
-    // launched as a --model flag (session-only), never a typed `/model`
-    // command — that saves as the user's default for new sessions and would
-    // bleed this task's choice into every agent started afterward.
-    // A role brings its own model tier, so an unset model means "let the role
-    // decide" rather than "send the default" — the same rule addAgent uses.
-    const modelArg = task.model && task.model !== 'default' ? task.model : undefined;
-    // effort rides the same launch-flag path as model (see claudeBase): a
-    // typed `/effort` now saves as the user's CLI default and bleeds into
-    // every later agent. 'default' falls back to the Options default effort.
-    const effortArg = effortFlagValue(task.effort);
-    const res = await window.swarm.createSession(task.workspaceId, 100, 30, modelArg, undefined, task.role || undefined, effortArg);
-    if (!res.ok) {
-      if (notify) {
-        toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached — task left pending` : 'could not start task: ' + res.reason);
-      }
-      return null; // stays pending either way
-    }
-    const pane = mountPane(res.session, { managed: true });
-    if (effortArg) pane.setEffort(effortArg); // launched via --effort, so no confirmation line for the buffer scan to catch
-    task.status = 'active';
-    task.paneId = res.session.id;
-    task.startedAt = Date.now();
-    pane.syncInitialCommandHeader(); // task.paneId is now set, so the lookup in getPaneInitialPrompt resolves
-    window.swarm.updateTask(task.id, { status: 'active', paneId: task.paneId, startedAt: task.startedAt });
-    renderBoard();
-    pendingTaskStarts.set(res.session.id, { taskId: task.id, injected: false });
-    setTimeout(() => tryInjectPrompt(res.session.id), TASK_INJECT_FALLBACK_MS);
-    return pane;
-  } finally {
-    delete task.starting;
-  }
-}
-
-/* delivers the task text through the same safe channel as normal keyboard
- * input (ptys.write) — never the shell command line, which can't safely
- * embed arbitrary text. Fires once: SessionStart or the fallback timer,
- * whichever comes first (`injected` is claimed synchronously).
- * Text and Enter are written as separate, distinctly-timed writes: a single
- * write of `text + '\r'` lands as one chunk that Claude's input box can
- * treat as a paste with an embedded newline (text fills the box but never
- * submits) instead of a real Enter keystroke. */
-async function tryInjectPrompt(sessionId) {
-  const entry = pendingTaskStarts.get(sessionId);
-  if (!entry || entry.injected) return;
-  const pane = state.panes.get(sessionId);
-  const task = state.tasks.find((t) => t.id === entry.taskId);
-  if (!pane || !task || pane.exited) { pendingTaskStarts.delete(sessionId); return; }
-  entry.injected = true;
-  // the 5s fallback can fire before claude's CLI is even up (cold WSL) —
-  // typing skills and the prompt into a terminal it isn't reading yet lands
-  // everything as one buffered chunk once it wakes. Wait for SessionStart the
-  // same way startManualSession does; hookless sessions fall through after
-  // the same timeout instead of never.
-  for (let waited = 0; !sessionStarted.has(sessionId) && waited < CLAUDE_READY_TIMEOUT_MS; waited += 500) {
-    if (pane.exited) { pendingTaskStarts.delete(sessionId); return; }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  let typedCommands = await tryInjectSkills(sessionId); // active skills before anything task-specific
-  // set the starting permission mode before the prompt lands, so the first
-  // tool call in e.g. bypass mode isn't blocked on a manual approval
-  if (task.startMode !== 'default') await pane.setMode(task.startMode);
-  // model is applied as a --model launch flag in startTask, not here — see
-  // the comment there for why a typed `/model` command isn't used
-  // the five named levels went in as a --effort launch flag (startTask) —
-  // only ultracode/auto, which the flag can't express, are typed here
-  if (task.effort === 'ultracode' || task.effort === 'auto') {
-    pane.setEffort(task.effort); // the buffer scan catches it too, but only while the confirmation is still on screen
-    window.swarm.writeSession(sessionId, '/effort ' + task.effort);
-    await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
-    window.swarm.writeSession(sessionId, '\r');
-    await new Promise((r) => setTimeout(r, TASK_MODEL_SETTLE_MS));
-    typedCommands++;
-  }
-  // `/focus` is a toggle, and claude doesn't always start with it off — so
-  // send it only when the footer disagrees with what the task asked for:
-  // that both turns it on when wanted and off when claude carried it over
-  // from a previous session
-  if (!!task.focus !== pane.detectFocus()) {
-    window.swarm.writeSession(sessionId, '/focus');
-    await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
-    window.swarm.writeSession(sessionId, '\r');
-    await new Promise((r) => setTimeout(r, TASK_MODEL_SETTLE_MS));
-    typedCommands++;
-  }
-  // let those turns finish before the prompt goes in, so their Stop hooks
-  // can't be mistaken for this task's own completion (nothing typed = nothing
-  // to wait for, and the task starts as immediately as it always did)
-  if (typedCommands) await waitForInjectionsToSettle(pane);
-  if (pane.exited) { pendingTaskStarts.delete(sessionId); return; }
-  // armed before the text goes in and cleared by the first hook event of the
-  // task's own turn — until then every Stop belongs to a startup injection
-  awaitingTaskTurn.add(sessionId);
-  window.swarm.writeSession(sessionId, task.text);
-  await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
-  window.swarm.writeSession(sessionId, '\r');
-  pendingTaskStarts.delete(sessionId);
-}
-
-/* The closing message of the turn that just ended, filed on the task that turn
- * completed. It arrives a beat after the Stop that completed the task — the
- * transcript read behind it is async — so the card is matched by pane, and only
- * while its completion is still fresh: a pane reused by a later task must not
- * have that task's summary land on this one. */
-const SUMMARY_GRACE_MS = 120000;
-
-function applyTaskSummary(sessionId, summary) {
-  if (!taskSummaries) return;
-  const task = state.tasks.find((t) => t.paneId === sessionId && t.status === 'completed'
-    && t.completedAt && Date.now() - t.completedAt < SUMMARY_GRACE_MS);
-  if (!task) return;
-  task.summary = summary;
-  window.swarm.updateTask(task.id, { summary });
-  renderBoard();
-}
-
-async function createTask({ text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt, role }) {
-  if (!workspaceId) { toast('pick a workspace for this task'); return; }
-  const targetResetsAt = mode === 'next-session'
-    ? (usageSnapshot && usageSnapshot.fiveHour && usageSnapshot.fiveHour.resetsAt) || null
-    : null;
-  const res = await window.swarm.createTask({ text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt, targetResetsAt, role });
-  if (!res.ok) {
-    toast(res.reason === 'empty-text' ? 'task text can’t be empty' : 'could not create task');
-    return;
-  }
-  state.tasks.push(res.task);
-  renderBoard();
-  if (mode === 'auto' || mode === 'next-session') runScheduler();
-  else if (mode === 'now') await startTask(res.task, { notify: true });
-  // mode === 'manual': task sits in the Manual column untouched
-}
-
-/* pipelines: a task can carry follow-up prompts, and each one is queued as a
- * fresh task (same workspace/model/mode settings) when the previous finishes —
- * build → review → fix, unattended. Only a real completion chains: stopping an
- * agent by hand ends the pipeline with it. */
-function startChain(task) {
-  const [next, ...rest] = task.chain || [];
-  if (!next) return;
-  createTask({
-    text: next,
-    workspaceId: task.workspaceId,
-    // an 'auto' pipeline stays auto — a 'now' follow-up that hits the agent cap
-    // would sit pending with nothing to pick it up again
-    mode: task.mode === 'auto' ? 'auto' : 'now',
-    startMode: task.startMode,
-    model: task.model,
-    effort: task.effort,
-    focus: task.focus,
-    closeOnComplete: task.closeOnComplete,
-    priority: task.priority,
-    category: task.category,
-    role: task.role,
-    chain: rest,
-  });
-}
-
-/* recurring tasks: a completed task with a repeat interval queues its own next
- * run as a fresh pending task, due one interval later. Always 'auto' — the
- * scheduler is the only thing that can pick a task up on a timer, and the
- * usage gate it applies keeps a daily job from firing with no budget left.
- * Deleting the queued card is how you stop the series. */
-function startRepeat(task) {
-  const every = Board.REPEAT_MS[task.repeat];
-  if (!every) return;
-  createTask({
-    text: task.text,
-    workspaceId: task.workspaceId,
-    mode: 'auto',
-    startMode: task.startMode,
-    model: task.model,
-    effort: task.effort,
-    focus: task.focus,
-    closeOnComplete: task.closeOnComplete,
-    priority: task.priority,
-    category: task.category,
-    role: task.role,
-    chain: task.chain,
-    repeat: task.repeat,
-    nextRunAt: Date.now() + every,
-  });
-}
-
-const boardHandlers = {
-  onCreate: createTask,
-  onStart(id) {
-    const task = state.tasks.find((t) => t.id === id);
-    if (task) startTask(task, { notify: true });
-  },
-  onMoveStatus(id, status) {
-    const task = state.tasks.find((t) => t.id === id);
-    if (!task) return;
-    task.status = status;
-    window.swarm.updateTask(id, { status });
-    renderBoard();
-  },
-  // dragging an Active card back to Manual/Scheduled: stop its agent (same
-  // kill+cleanup as the pane ✕) and hand the task back unstarted, rather
-  // than parking it in Completed the way closing the pane window does.
-  onStopAndMove(id, status) {
-    const task = state.tasks.find((t) => t.id === id);
-    if (!task) return;
-    const pane = state.panes.get(task.paneId);
-    if (pane) {
-      if (!pane.exited) killSessionChecked(pane.session.id);
-      if (state.lastFocused === pane) state.lastFocused = null;
-      state.panes.delete(pane.session.id);
-      grid.remove(pane);
-      syncChrome();
-    }
-    task.status = status;
-    task.paneId = null;
-    window.swarm.updateTask(id, { status, paneId: null });
-    renderBoard();
-  },
-  onSetPriority(id, priority) {
-    const task = state.tasks.find((t) => t.id === id);
-    if (!task) return;
-    task.priority = priority;
-    window.swarm.updateTask(id, { priority });
-    renderBoard();
-    runScheduler(); // priority decides which pending tasks the scheduler picks up first
-  },
-  onSetCategory(id, category) {
-    const task = state.tasks.find((t) => t.id === id);
-    if (!task) return;
-    task.category = category;
-    window.swarm.updateTask(id, { category });
-    renderBoard();
-  },
-  async onAddCategory(workspaceId, name) {
-    const res = await window.swarm.addWorkspaceCategory(workspaceId, name);
-    state.workspaces = res.workspaces || state.workspaces;
-    renderBoard();
-  },
-  async onRemoveCategory(workspaceId, name) {
-    const res = await window.swarm.removeWorkspaceCategory(workspaceId, name);
-    state.workspaces = res.workspaces || state.workspaces;
-    renderBoard();
-  },
-  async onDelete(id) {
-    const task = state.tasks.find((t) => t.id === id);
-    if (task && task.paneId) pendingTaskStarts.delete(task.paneId);
-    const res = await window.swarm.deleteTask(id);
-    state.tasks = state.tasks.filter((t) => t.id !== id);
-    state.archivedTasks = res.archivedTasks || state.archivedTasks;
-    renderBoard();
-  },
-  async onPurge(id) {
-    const res = await window.swarm.purgeTask(id);
-    state.archivedTasks = res.archivedTasks || [];
-    renderArchive();
-  },
-  async onPurgeAll() {
-    const res = await window.swarm.purgeAllTasks();
-    state.archivedTasks = res.archivedTasks || [];
-    renderArchive();
-  },
-  async onJump(paneId) {
-    const pane = state.panes.get(paneId);
-    if (!pane) { toast('this agent is gone'); return; }
-    toggleBoard(false);
-    if (pane.session.workspaceId !== state.selectedWorkspaceId) await selectWorkspace(pane.session.workspaceId);
-    pane.focus();
-  },
-  getPaneAgentName(paneId) {
-    const pane = state.panes.get(paneId);
-    return pane ? pane.session.agentName : null;
-  },
-  getGit(workspaceId) {
-    return state.git[workspaceId];
-  },
-  onRunAgain(task) {
-    createTask({
-      text: task.text,
-      workspaceId: task.workspaceId,
-      mode: 'now',
-      startMode: task.startMode,
-      model: task.model,
-      effort: task.effort,
-      focus: task.focus,
-      closeOnComplete: task.closeOnComplete,
-      priority: task.priority,
-      category: task.category,
-      chain: task.chain, // re-running a pipeline's first task re-runs the pipeline
-    });
-  },
-  async onExportSession(task) {
-    const ws = state.workspaces.find((w) => w.id === task.workspaceId);
-    const name = boardHandlers.getPaneAgentName(task.paneId) || (ws ? ws.name : 'task');
-    // an archived task's log is fetched on demand, not shipped in the boot payload
-    if (!task.sessionLog && task.hasSessionLog) {
-      task.sessionLog = (await window.swarm.archivedTaskLog(task.id)).sessionLog || '';
-    }
-    const res = await window.swarm.exportSession(name, task.sessionLog || '');
-    if (res.ok) toast('transcript saved to ' + res.path);
-    else if (!res.canceled) toast('could not save: ' + res.reason);
-  },
-};
+initScheduler({
+  state,
+  toast,
+  grid,
+  liveAgentCount,
+  mountPane,
+  syncChrome,
+  killSessionChecked,
+  toggleBoard,
+  selectWorkspace,
+});
 
 /* the board is a full view swapped in for the agent grid — like switching
  * workspaces — not a modal floating above it. Any call to toggleBoard also
@@ -1759,11 +662,23 @@ const historyHandlers = {
   /* `claude --resume <id>` in a fresh pane. Deliberately a new session (new
    * id, new tmux server entry) rather than anything that reuses the old one:
    * the transcript is the only thing being brought back, the process is not. */
-  async onResume(workspaceId, sessionId) {
+  async onResume(workspaceId, sessionId, model, harness) {
     if (liveAgentCount() >= maxAgents) { toast(`limit of ${maxAgents} sessions reached`); return; }
-    const res = await window.swarm.createSession(workspaceId, 100, 30, undefined, sessionId);
+    // an OpenRouter conversation comes back on its own model — the transcript
+    // reports the slug, and the or: value rebuilds the launch env. A clean,
+    // opencode or pi conversation comes back in the CLI that wrote it, which
+    // is the same value with that harness's prefix; nothing else can read it.
+    const HARNESS_PREFIX = { clean: 'oc:', opencode: 'opencode:', pi: 'pi:' };
+    const modelArg = harness ? HARNESS_PREFIX[harness] + model
+      : model && model.includes('/') ? 'or:' + model : undefined;
+    // and it is continued, not --resumed: the harness owns the conversation
+    const res = harness
+      ? await window.swarm.createSession(workspaceId, 100, 30, modelArg, undefined, undefined, undefined, sessionId)
+      : await window.swarm.createSession(workspaceId, 100, 30, modelArg, sessionId);
     if (!res.ok) {
-      toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not resume: ' + res.reason);
+      toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached`
+        : res.reason === 'openrouter-key' ? 'this conversation ran via OpenRouter — save your key in Options → Setup first'
+        : 'could not resume: ' + res.reason);
       return;
     }
     toggleHistory(false);
@@ -2060,7 +975,7 @@ const paneHandlers = {
       // ride on the attention path, which flagAttention suppresses while the
       // user is looking at the pane (and skips when attention is already set)
       const watching = pane.el.isConnected && pane.el.classList.contains('focused') && document.hasFocus();
-      if (!watching) {
+      if (!watching && !isCrewWorker(pane.session.id)) {
         notifyOS(pane, 'finished its turn'); // taskbar flash + OS toast; the bell below carries the detail
         pushNotif(pane, 'done', 'finished its turn');
         if (!notifMuted) Sounds.play(notifSound);
@@ -2081,6 +996,7 @@ const paneHandlers = {
         if (task.closeOnComplete !== false) paneHandlers.onClose(pane);
         startChain(task); // after the close, so the freed agent slot is available
         startRepeat(task); // no-op unless the task repeats — queues its next run
+        onWorkerDone(task); // no-op unless a lead agent queued this one
       } else if (autoClosers.has(pane.session.id)) {
         // launched from the map with 'auto-close once completed' ticked: the
         // turn it was launched for is over, so the agent goes with it
@@ -2093,10 +1009,11 @@ const paneHandlers = {
       // must not repeat it, and neither must a second OS toast), anything else
       // = blocked on the user; empty = bell/heuristic fallback
       const reason = pane.statusEl.textContent;
-      if (reason !== 'done') {
+      if (reason !== 'done' && !isCrewWorker(pane.session.id)) {
         notifyOS(pane, reason || 'needs attention');
         pushNotif(pane, 'wait', reason || 'needs attention');
-      } else {
+        if (!notifMuted && notifSound !== 'none') Sounds.play('alert'); // distinct from the done chime
+      } else if (reason === 'done') {
         window.swarm.notify({}); // flash only — 'done' announces itself above
       }
     } else if (status === 'prompt') {
@@ -2111,7 +1028,7 @@ const paneHandlers = {
     if (res.ok) toast('transcript saved to ' + res.path);
     else if (!res.canceled) toast('could not save: ' + res.reason);
   },
-  async onRestart(pane, { resume, model }) {
+  async onRestart(pane, { resume, model, scope }) {
     // a detached pane's agent is still running — reconnect, don't respawn
     if (pane.detached) {
       if (await reattachPane(pane)) {
@@ -2137,8 +1054,17 @@ const paneHandlers = {
       resume,
       role: s.role,
       // only set by the pane's right-sizing offer; a plain restart comes back
-      // on whatever tier it was launched with
-      model,
+      // on whatever tier it was launched with — s.model, which main persists
+      // for exactly that (and, for an OpenRouter pick, so its env prefix can
+      // be rebuilt).
+      model: model || s.model,
+      // the folder it was confined to, handed back the way the role is: the
+      // deny rules live in the launch, not in the conversation being resumed.
+      // The pane's scope picker passes a different one instead (null lifts it)
+      scope: scope === undefined ? s.scope : scope || undefined,
+      // a clean agent's conversation is keyed by the session id it ran under —
+      // this is what lets its restart-with-resume continue it (main verifies)
+      oldId: s.id,
     });
     if (!res.ok) {
       toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not restart: ' + res.reason);
@@ -2146,6 +1072,13 @@ const paneHandlers = {
     }
     if (resume && !res.resumed) toast('no previous conversation in this folder — started fresh');
     if (model) toast(`${s.agentName} restarted on ${model}`);
+    if (scope !== undefined) {
+      toast(scope ? `${s.agentName} scoped to ${scope.label} — edits outside it are denied`
+        : `${s.agentName} unscoped — may edit the whole workspace`);
+    }
+    for (const task of state.tasks) {
+      if (task.paneId === s.id) task.paneId = res.session.id;
+    }
     const fresh = new Pane(res.session, paneHandlers, { managed: pane.managed });
     state.panes.delete(s.id);
     state.panes.set(res.session.id, fresh);
@@ -2205,7 +1138,7 @@ function mountPane(session, { managed = false, refPane, direction } = {}) {
 // nobody can see.
 // launch: the empty-workspace card's picks for this one launch — model here,
 // the rest handed to startManualSession (see manualLaunchOpts).
-async function addAgent({ refPane, direction, role, keepView, launch } = {}) {
+async function addAgent({ refPane, direction, role, keepView, launch, claudeOnly, scope } = {}) {
   if (!state.selectedWorkspaceId) {
     toast('add and select a workspace first');
     return;
@@ -2218,12 +1151,23 @@ async function addAgent({ refPane, direction, role, keepView, launch } = {}) {
   // flag so it can't bleed into Claude's own saved default (see startTask).
   // A role brings its own model (main/sessions.js ROLES) — sending the default
   // as well would override it, so a picked role means "let the role decide".
-  const defaultModel = launch ? launch.model : localStorage.getItem('swarmeye.defaultModel');
-  const modelArg = !role && defaultModel && defaultModel !== 'default' ? defaultModel : undefined;
+  let defaultModel = launch ? launch.model : localStorage.getItem('swarmeye.defaultModel');
+  // an explicit "Claude" provider pick must not inherit an OpenRouter
+  // Options default — that menu's whole point is choosing the provider
+  if (claudeOnly && OpenRouterUI.isOpenRouter(defaultModel)) defaultModel = null;
+  // ... unless the caller knows the exact model rather than a default: a copy
+  // of a running agent (Ctrl+M) carries both its role and the model it was
+  // really on, which is the role's only when the agent never moved off it
+  const roleDecides = role && !(launch && launch.model);
+  const modelArg = !roleDecides && defaultModel && defaultModel !== 'default' ? defaultModel : undefined;
   // effort costs no startup turn as a launch flag, so unlike the typed-command
   // era every agent — + Agent and Ctrl+N included — gets the Options default
   const effortArg = effortFlagValue(launch ? launch.effort : undefined);
-  const res = await window.swarm.createSession(state.selectedWorkspaceId, 100, 30, modelArg, undefined, role, effortArg);
+  // the folder this agent may edit inside — from the launch card's Scope
+  // field, or the + Agent menu's folder picker. Main refuses the launch
+  // rather than dropping a boundary it cannot honour.
+  const scopeArg = scope || (launch && launch.scope) || undefined;
+  const res = await window.swarm.createSession(state.selectedWorkspaceId, 100, 30, modelArg, undefined, role, effortArg, undefined, scopeArg);
   if (!res.ok) {
     toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not start session: ' + res.reason);
     return;
@@ -2231,10 +1175,62 @@ async function addAgent({ refPane, direction, role, keepView, launch } = {}) {
   if (launch) manualLaunchOpts.set(res.session.id, launch);
   if (!keepView) toggleBoard(false);
   const pane = mountPane(res.session, { refPane, direction });
-  if (effortArg) pane.setEffort(effortArg); // launched via --effort, so no confirmation line for the buffer scan to catch
+  // not for OpenRouter models: main drops --effort there, so the chip would lie
+  if (effortArg && !OpenRouterUI.isOpenRouter(modelArg)) pane.setEffort(effortArg); // launched via --effort, so no confirmation line for the buffer scan to catch
   if (!keepView) pane.focus();
+  // once per launch, not per agent — keepView is false for the first one only
+  if (scopeArg && !keepView) toast(`scoped to ${scopeArg.label} — edits outside it are denied`);
   setTimeout(() => startManualSession(res.session.id), TASK_INJECT_FALLBACK_MS);
   return pane;
+}
+
+/* Ctrl+N. With an OpenRouter catalog installed the shortcut asks which
+ * provider first — unless Options → "New agent shortcut" (or the menu's own
+ * remember checkbox, which writes the same setting) already answered. Without
+ * a catalog, or without a workspace to spawn into, it stays a straight
+ * addAgent — which owns the missing-workspace toast. */
+function newAgentShortcut() {
+  const pick = (provider) => {
+    // an OpenRouter pick goes on to the same catalog menu the + Agent entry
+    // uses, riding the one-launch `launch` channel; Claude keeps the plain path
+    if (provider === 'openrouter') OpenRouterUI.openModelMenu(addAgentBtn, (model) => addAgent({
+      launch: { model, effort: 'default', focus: null, startMode: localStorage.getItem('swarmeye.defaultStartMode') || 'default' },
+    }));
+    else addAgent({ claudeOnly: true });
+  };
+  if (!OpenRouterUI.models.length || !state.selectedWorkspaceId) return addAgent();
+  const pref = localStorage.getItem('swarmeye.newAgentProvider') || 'ask';
+  if (pref === 'ask') OpenRouterUI.openProviderMenu(addAgentBtn, pick);
+  else pick(pref);
+}
+
+/* Ctrl+M: a copy of the agent you are looking at rather than a new one
+ * off the Options defaults — its model (harness prefix and all, so an opencode
+ * agent begets an opencode agent), its effort, its role and the permission mode
+ * its pane is currently showing. The source is the focused pane when that pane
+ * belongs to the selected workspace, else the newest live agent there; with
+ * nothing to copy it falls back to the plain new-agent shortcut.
+ *
+ * A bare harness (clean, opencode, pi) has no permission mode to carry —
+ * startManualSession skips mode steering for those, as it does for every other
+ * launch. */
+function cloneActiveAgent() {
+  const here = (p) => p && !p.exited && p.session.workspaceId === state.selectedWorkspaceId;
+  let src = focusedPane();
+  if (!here(src)) {
+    src = null;
+    for (const p of state.panes.values()) {
+      if (here(p) && (!src || (p.session.createdAt || 0) >= (src.session.createdAt || 0))) src = p;
+    }
+  }
+  if (!src) return newAgentShortcut();
+  addAgent({
+    role: src.session.role,
+    launch: {
+      model: src.session.model, effort: src.effortLabel || 'default', focus: null,
+      startMode: src.modeSel.value || 'default',
+    },
+  });
 }
 
 /* the empty workspace's launch card. Sequential, so main's session cap sees
@@ -2271,7 +1267,9 @@ window.swarm.onSessionExit(({ id, exitCode, detached }) => {
   if (pane) {
     pane.markExited(exitCode, detached);
     recordTimeline(pane); // an exit closes the lane's last band
-    if (detached) pushNotif(pane, 'detach', 'detached — agent still running, ↻ reconnects');
+    // a lead's worker is reported to its lead, not to the bell (isCrewWorker)
+    if (isCrewWorker(id)) { /* silent: the lead speaks for its crew */ }
+    else if (detached) pushNotif(pane, 'detach', 'detached — agent still running, ↻ reconnects');
     else pushNotif(pane, 'exit', `exited (${exitCode})`);
     syncChrome();
   }
@@ -2287,6 +1285,9 @@ window.swarm.onSessionExit(({ id, exitCode, detached }) => {
     orphanedTask.status = 'pending';
     orphanedTask.paneId = null;
     window.swarm.updateTask(orphanedTask.id, { status: 'pending', paneId: null });
+    // an agent that dies the moment it starts would otherwise be restarted for
+    // as long as the app is up — the queue's allowance is three laps
+    if (!noteStartFailure(orphanedTask)) onWorkerGaveUp(orphanedTask);
     renderBoard();
   }
   runScheduler(); // a freed slot may unblock a queued auto task
@@ -2297,8 +1298,10 @@ window.swarm.onSessionState((payload) => {
   const pane = state.panes.get(payload.id);
   if (pane) pane.applyHookEvent(payload);
   // the closing message still lands on the task card; the voice no longer
-  // waits for it (see speakDone)
-  if (payload.summary) applyTaskSummary(payload.id, payload.summary);
+  // waits for it (see speakDone). Only from a settled read: the one a Stop
+  // triggers directly carries the *previous* turn's text, because Claude Code
+  // writes the message after firing the hook (main/hooks.js settleSummary).
+  if (payload.summary && payload.settled) applyTaskSummary(payload.id, payload.summary);
   // the task's own turn has begun — from here a Stop is its completion. Every
   // event but Stop (and SessionStart, which precedes the prompt) says the
   // agent is live on the prompt we just sent it.
@@ -2375,7 +1378,7 @@ function checkUsageWarnings(snapshot) {
 
 window.swarm.onUsageUpdate((snapshot) => {
   Topbar.renderUsage(snapshot);
-  usageSnapshot = snapshot;
+  setUsageSnapshot(snapshot);
   // each pane's cost panel measures its own burn against this window
   Pane.setUsageWindow(snapshot && snapshot.ok ? snapshot.fiveHour : null);
   checkUsageWarnings(snapshot);
@@ -2796,30 +1799,53 @@ addAgentBtn.addEventListener('click', () => {
   if (agentKindMenuEl) { closeAgentKindMenu(); return; }
   const menu = document.createElement('div');
   menu.className = 'branch-menu';
-  const entries = [{ label: 'Claude', tip: 'A plain agent — your Options default model, no role prompt' }];
+  // the two plain agents lead the menu and are emphasised — they are the
+  // provider choice, the roles below are flavours of the first one
+  const entries = [{ label: 'Anthropic Subscription', strong: true, tip: 'A plain agent — your Options default model, no role prompt' }];
+  // an OpenRouter agent is a plain agent on a catalog model — the entry only
+  // exists once a key is saved (Options → Setup) and the catalog is in
+  if (OpenRouterUI.models.length) entries.push({ label: 'OpenRouter…', openrouter: true, strong: true, tip: 'A plain agent on any OpenRouter model — pick it from the catalog' });
   for (const r of roles) entries.push({ label: r.label, role: r.key, tip: `${r.label} role prompt · ${r.model || 'default tier'}` });
+  // a plain Claude confined to one folder — the second menu lists this
+  // workspace's own, and picking one is what starts the agent
+  entries.push({ label: 'Scoped to a folder…', scoped: true, tip: 'A plain agent that may read the whole workspace but only edit inside one folder' });
   // the coordinator is the odd one out: it starts no agent of its own, it
   // splits a request into board tasks that the scheduler then starts
   entries.push({ label: 'Coordinator', coordinate: true, tip: 'Split one multi-part request into subtasks on the board — nothing starts until you approve them' });
+  // the lead agent: unlike the coordinator it *is* an agent — it reads the
+  // code, then delegates each piece to a worker on the model you picked
+  entries.push({ label: 'Orchestrator…', orchestrate: true, tip: 'One agent plans and delegates; its workers run on a model of their own' });
   // the roles above are editable, and this is where you would look for that
   entries.push({ label: 'Edit roles…', editRoles: true, tip: 'Reword a preset, change the tier it launches on, or add your own' });
-  for (const { label, role, tip, coordinate, editRoles } of entries) {
+  for (const { label, role, tip, coordinate, orchestrate, editRoles, openrouter, scoped, strong } of entries) {
     const row = document.createElement('button');
-    row.className = 'branch-item' + (editRoles ? ' branch-item-quiet' : '');
+    row.className = 'branch-item' + (editRoles ? ' branch-item-quiet' : '') + (strong ? ' branch-item-strong' : '');
     row.textContent = label;
     row.dataset.tip = tip;
+    // one rule under the two provider rows, so the roles read as a group
+    if (!strong && menu.lastChild?.classList.contains('branch-item-strong')) {
+      menu.appendChild(Object.assign(document.createElement('div'), { className: 'branch-menu-divider' }));
+    }
     row.addEventListener('click', () => {
       closeAgentKindMenu();
       if (coordinate) openCoordinator();
+      else if (orchestrate) openOrchestrator();
       else if (editRoles) Roles.open();
-      else addAgent({ role });
+      // the picked model rides the same one-launch `launch` channel the
+      // empty-workspace card uses; permissions keep the Options default
+      else if (openrouter) OpenRouterUI.openModelMenu(addAgentBtn, (model) => addAgent({
+        launch: { model, effort: 'default', focus: null, startMode: localStorage.getItem('swarmeye.defaultStartMode') || 'default' },
+      }));
+      else if (scoped) Scope.open(addAgentBtn, state.selectedWorkspaceId, (dir) => addAgent({ claudeOnly: true, scope: dir }));
+      else addAgent({ role, claudeOnly: true });
     });
     menu.appendChild(row);
   }
   const r = addAgentBtn.getBoundingClientRect();
-  menu.style.left = `${Math.round(r.left)}px`;
   menu.style.top = `${Math.round(r.bottom + 6)}px`;
   document.body.appendChild(menu);
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8));
+  menu.style.left = `${Math.round(left)}px`;
   agentKindMenuEl = menu;
   document.addEventListener('mousedown', onAgentKindDismiss, true);
 });
@@ -2834,12 +1860,24 @@ function openCoordinator() {
   }
   Coordinator.open({ workspaceId: ws.id, workspaceName: ws.name, roles, onCreate: createTask });
 }
+
+/* The lead agent takes an agent slot itself — but the cap is checked where
+ * every other launch checks it (session:create), so this only needs the
+ * workspace its swarm will work in. */
+function openOrchestrator() {
+  const ws = state.workspaces.find((w) => w.id === state.selectedWorkspaceId);
+  if (!ws) {
+    toast('add and select a workspace first');
+    return;
+  }
+  openOrchestratorCard({ workspaceId: ws.id, workspaceName: ws.name, roles });
+}
 // the number and the gauges are two elements showing one thing — clicking
 // either refreshes it
 async function refreshUsageNow() {
   const snap = await window.swarm.refreshUsage();
   Topbar.renderUsage(snap);
-  usageSnapshot = snap;
+  setUsageSnapshot(snap);
   checkUsageWarnings(snap);
   runScheduler();
 }
@@ -2867,18 +1905,12 @@ document.fonts.ready.then(() => {
 (async function boot() {
   const cfg = await window.swarm.getConfig();
   Topbar.setWorkspaceColors(cfg.workspaceColors); // before the first renderWorkspaces
+  OpenRouterUI.install(cfg.openrouterModels || []); // extends the model selects
   state.workspaces = cfg.workspaces || [];
   state.selectedWorkspaceId = cfg.selectedWorkspaceId || null;
-  maxAgents = cfg.maxAgents || 10;
-  maxAgentsVal.textContent = maxAgents;
   state.tasks = cfg.tasks || [];
   state.archivedTasks = cfg.archivedTasks || [];
-  autoUsageLimit = cfg.autoUsageLimit ?? 85;
-  autoLimitVal.textContent = autoUsageLimit + '%';
-  // straight from the stored value: applySkipPermissions would push it back to
-  // main, which already has it
-  skipPermissionsToggle.checked = !!cfg.skipPermissions;
-  Pane.setSkipPermissions(!!cfg.skipPermissions);
+  applySettingsConfig(cfg); // the three options main owns: cap, usage limit, skip-permissions
   Preview.init({ getWorkspaceId: () => state.selectedWorkspaceId });
   syncChrome();
   renderBoard();
@@ -2887,6 +1919,9 @@ document.fonts.ready.then(() => {
   const { sessions, probeFailed } = await window.swarm.listSessions();
   for (const session of sessions) mountPane(session);
   if (sessions.length) toast(`reattached ${sessions.length} running agent${sessions.length > 1 ? 's' : ''}`);
+  // lead agents whose panes came back keep watching their plan file; the rest
+  // are dropped. After the mount loop, because that is what it checks against.
+  restoreLeads();
 
   // a task left "active" whose agent didn't come back (tmux itself died, not
   // just the app — WSL restart, host reboot, tmux missing) would otherwise sit

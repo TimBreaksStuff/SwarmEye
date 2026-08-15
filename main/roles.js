@@ -1,4 +1,5 @@
 const config = require('./config');
+const providers = require('./providers');
 
 /* Role presets: a short system prompt appended at launch and the model tier
  * that job is worth.
@@ -41,7 +42,7 @@ const DEFAULT_ROLES = [
 ];
 
 const KEY_RE = /^[a-z0-9][a-z0-9_-]{0,23}$/;
-const MODEL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
+const MODEL_RE = /^[a-zA-Z0-9._[\]-]{1,40}$/; // brackets: the 'opus[1m]' aliases
 const LABEL_MAX = 24;
 const PROMPT_MAX = 1200;
 const ROLES_MAX = 20;
@@ -102,7 +103,10 @@ function save(incoming) {
     const asked = String(raw.key || '');
     const key = KEY_RE.test(asked) && !taken.has(asked) ? asked : keyFrom(label, taken);
     taken.add(key);
-    const model = MODEL_RE.test(String(raw.model || '')) ? String(raw.model) : '';
+    // the editor's select also offers 'or:'/'oc:' catalog values — dropping
+    // them here silently re-tiered the role to the account-default Claude
+    const m = String(raw.model || '');
+    const model = MODEL_RE.test(m) || providers.slugOf(m) || providers.cleanSlugOf(m) ? m : '';
     out.push({ key, label, model, prompt });
   }
   // never leave the app with no roles at all: an empty table would take the

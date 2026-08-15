@@ -10,8 +10,11 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
   - [Command palette](#command-palette-ctrlk)
   - [Cost & context panel](#cost--context-panel) · [Swarm view](#swarm-view) · [Swarm timeline](#swarm-timeline) · [History](#history) · [Messages between agents](#messages-between-agents) · [Preview dock](#preview-dock)
 - [Isolated agents](#isolated-agents) — [Review, commit, merge](#review-commit-merge)
+- [Scoping an agent to a folder](#scoping-an-agent-to-a-folder)
 - [The task board](#the-task-board)
+- [Orchestrator — a lead agent and its workers](#orchestrator--a-lead-agent-and-its-workers)
 - [Skills](#skills)
+- [OpenRouter models](#openrouter-models)
 - [Voice dictation](#voice-dictation)
 - [Spoken notifications](#spoken-notifications)
 - [Options reference](#options-reference)
@@ -38,7 +41,7 @@ The selected tile decides which folder new agents start in. A tile whose agents 
 
 **Pinning** floats a workspace to the top of the rail, marked with a pin beside its name (and lit in its hover flyout), and `Ctrl+Tab` cycles in the order you see rather than the stored one. Inside each group (pinned, then the rest) the drag order is kept, so unpinning drops a workspace back exactly where it was instead of at the end.
 
-The rail comes **Expanded** (full workspace names and tile labels) or **Collapsed** (57px icons only, hover to preview the wider layout as a floating overlay). Both states use the same flat row treatment, and the icons sit in the same column either way, so opening the rail doesn't shift them sideways.
+The rail comes **Expanded** (full workspace names and tile labels) or **Collapsed** (57px icons only, hover to preview the wider layout as a floating overlay). Both states use the same flat row treatment, and the icons sit in the same column either way, so opening the rail doesn't shift them sideways. Collapsed, a workspace tile is its identity colour and nothing else — a centred bar of it; the initial that used to sit beside it told you little (two folders starting with the same letter looked identical) and the name is one hover away.
 
 ### Agent panes
 
@@ -53,7 +56,7 @@ The rail comes **Expanded** (full workspace names and tile labels) or **Collapse
 | **Scout** | Haiku | Locate things and report where they are: paths with line numbers, call sites. Read only, keep it short. |
 | **Planner** | Opus | Turn the request into an ordered plan: files touched, steps, risks. Read only, don't write the code. |
 
-A role is launched as `--append-system-prompt`, so it costs no turn and never lands in the conversation as a message; its model tier is a default that the role picks *instead of* the Options default. The pane header wears the role as a chip, `→`/`↓` splits inherit it, and `↻` restart re-applies it (the system prompt belongs to the process, not to the resumed conversation). `Ctrl+N` always spawns a plain agent.
+A role is launched as `--append-system-prompt`, so it costs no turn and never lands in the conversation as a message; its model tier is a default that the role picks *instead of* the Options default. The pane header wears the role as a chip, `→`/`↓` splits inherit it, and a restart re-applies it (the system prompt belongs to the process, not to the resumed conversation). `Ctrl+N` always spawns a plain agent.
 
 **Those four are a starting point, not the table.** `+ Agent → Edit roles…` opens the editor: reword a preset for your codebase, change the tier it launches on, add your own, or delete one. The list is stored in `config.json` and seeded from the four above the first time it is read, so an existing install keeps exactly what it had.
 
@@ -67,18 +70,20 @@ Each pane header carries:
 
 - **Status dot + live state** — see below.
 - **Mode dropdown** — `manual` (Claude asks before edits), `accept edits`, `plan`, `auto` (bypass permissions). Claude has no set-mode command for a running session, so SwarmEye reads the mode from Claude's own footer and taps `Shift+Tab` through the cycle until yours is active; it stays in sync if you switch modes by hand. `auto` requires the Options toggle below.
-- **Model chip** — which model the agent is actually replying with (`Sonnet 5`, `Opus 4.8`, …), read from the session transcript after each turn. A `/model` switch you run yourself shows up instantly.
+- **Model chip** — which model the agent is actually replying with (`Sonnet 5`, `Opus 4.8`, …), read from the session transcript after each turn. It starts out reading the tier the agent was *launched* on (`Opus`, or the model an OpenRouter agent was picked with) and sharpens to the exact version after the first turn; an agent launched on your account default has nothing to show until then. A `/model` switch you run yourself shows up instantly. **Click it to change model** — the Claude tiers and, with a key saved, the whole OpenRouter catalog, in one filterable list; see [Switching model inside an agent](#openrouter-models).
 - **Git chip** — the folder's branch (`⎇ main`), amber with a dot when there are uncommitted changes. Refreshed every 15s; a folder that git can't answer for in time (an unreachable network share, a suspended drive) says so in the tooltip rather than claiming the tree is clean, and one slow workspace no longer holds up the others. The branch list is fetched at most once a minute per workspace, so repeated clicks don't queue up network round-trips. Click it and the popover opens with a **`git diff --stat` summary of the working tree** — staged and unstaged together, which is what "dirty" on the chip actually means — followed by a count of untracked files, which no diff reports. Under that is the branch list (local + remote, fetched fresh from the workspace's git remote): pick one to check it out, or `+ new branch…` to create one off the current HEAD; checkout errors (e.g. uncommitted changes in the way) show as a toast. The diff is read in parallel with the branch fetch, so it is up long before the network call finishes, and a long stat is elided in the middle with git's own "N files changed" line always kept. Above the branch list, `Review changes…` opens the full patch with commit and merge — see [Isolated agents](#isolated-agents). In an isolated workspace this chip reports the agent's *own* worktree branch rather than the workspace's.
-- **Buttons** — `↻` restart (on a running agent it arms first — click twice) · `⤓` export transcript · `⌕` in-pane search · mic (dictation) · `−`/`+` text size · `⛶` maximize · `→`/`↓` place a new agent beside/below (only with auto-organize off) · `✕` close (click twice while running).
+- **Buttons** — `⤓` export transcript · `⌕` in-pane search · mic (dictation) · `−`/`+` text size · `⛶` maximize · `→`/`↓` place a new agent beside/below (only with auto-organize off) · `✕` close (click twice while running).
 - **Quick-respond** — while a pane is waiting on a numbered permission prompt (Claude's `1. Yes` / `2. No` style), it grows `✓` approve and `✕` deny buttons right next to the status text — no need to click into the terminal. Shift-click `✓` prefers a "don't ask again" / "allow all" option over a plain yes, if the prompt offers one. The same two buttons show up on `waiting` entries in the notification bell and its docked panel, and on the swarm view's nodes, rows and preview cards. They appear only while a yes/no menu is genuinely on screen: an agent that is merely waiting for you to type something — the commonest kind of `waiting`, and the only kind there is in bypass-permissions mode — says so without offering buttons that have nothing to answer. If the prompt is answered elsewhere between the buttons being drawn and clicked, nothing is sent and a toast says so instead of guessing.
 **Opening a workspace with no agents in it** shows the **launch card** over a honeycomb field instead of an empty grid. Pick a swarm size on the tiles — 1, 2, 4, 6, 8, 10, 12 — and `Launch N agents` opens that many panes at once. Tiles are keyboard-first: Tab into the group, arrows move between the ones still selectable, and `Ctrl`/`⌘` plus a size picks it outright.
 
-Under the divider are the four settings those agents start with, each **pre-filled from the matching ⚙ Options default**:
+Under the divider are the settings those agents start with, each **pre-filled from the matching ⚙ Options default**:
 
 | Field | Options row | How it reaches the agent |
 |---|---|---|
-| **Model** | Default model | a `--model` launch flag, so it can't bleed into Claude's own saved default |
-| **Effort** | Default task effort | an `--effort` launch flag, same reasoning as model (`ultracode`/`auto`, which the flag can't express, are typed as `/effort` once the session is up) |
+| **Provider** | — (derived from the model) | picks which list the Model field shows: **Claude**'s tiers, or the **OpenRouter** catalog. Greyed out until an OpenRouter key is saved; an OpenRouter default model opens the card on OpenRouter |
+| **Harness** | — (the picker's own remembered toggle) | only shown while Provider is **OpenRouter**: which CLI runs the model — **clean**, **opencode** or **pi** (pi gates nothing, so it is always auto). Opens on whatever the `+ Agent` catalog picker last remembered, and a change here is a one-off like every other field, so it never rewrites that |
+| **Model** | Default model | a `--model` launch flag, so it can't bleed into Claude's own saved default (an OpenRouter model rides the env prefix instead) |
+| **Effort** | Default task effort | an `--effort` launch flag, same reasoning as model (`ultracode`/`auto`, which the flag can't express, are typed as `/effort` once the session is up). Greyed out on OpenRouter — those models ignore it |
 | **Focus** | Default focus mode | `/focus` typed — but only when Claude's footer disagrees, since it's a toggle |
 | **Permissions** | Default start mode | the same `Shift+Tab` cycling the Options default already used |
 
@@ -88,9 +93,15 @@ Roles are still the `+ Agent` picker's job, and `+ Agent` / `Ctrl+N` are unchang
 
 With no workspace selected the card is replaced by the old `No agents here_` hint, since there is nowhere to put the agents.
 
-**The grid** auto-arranges (1 → 2×1 → 2×2 → 3×2 → 3×3 → 4×3) and refits terminals on resize. Turn **Auto-organize agent windows** off in Options to place agents yourself instead: each pane grows `→` and `↓` buttons that open the new agent beside or below it, and the column count stays where you put it. Panes are translucent glass; the focused pane wears a glowing accent border. Drag the gaps between panes to resize rows and columns, and drag a pane by its header onto another to swap them — your arrangement is remembered per workspace while the app runs. Terminals render on the GPU (WebGL, DOM fallback) and URLs in output are clickable. A pane in a workspace you haven't looked at for a minute **gives its GPU context back** — a browser page can only hold about sixteen at once, and every pane in every workspace holds one — and takes it again the moment you switch back. Nothing else changes: the agent, its output and its scrollback are untouched, since only the renderer is swapped for xterm's DOM one while nobody is watching.
+**The grid** auto-arranges (1 → 2×1 → 2×2 → 3×2 → 3×3 → 4×3) and refits terminals on resize. Turn **Auto-organize agent windows** off in Options to place agents yourself instead: each pane grows `→` and `↓` buttons that open the new agent beside or below it, and the column count stays where you put it. Panes are translucent glass; the focused pane wears a glowing accent border. Drag the gaps between panes to resize rows and columns, and drag a pane by its header onto another to swap them — your arrangement is remembered per workspace while the app runs. Terminals render on the GPU (WebGL, DOM fallback) and URLs in output are clickable. A pane in a workspace you haven't looked at for a minute **gives its GPU context back** — a browser page can only hold about sixteen at once, and every pane in every workspace holds one — and takes it again the moment you switch back. Nothing else changes: the agent, its output and its scrollback are untouched, since only the renderer is swapped for xterm's DOM one while nobody is watching. The GPU renderer keeps its rasterised characters in a texture atlas, and a long, colourful answer in a big pane can fill it — past which xterm merges pages and, on the version shipped here, loses some of the glyphs it merged, so a screen draws with (say) every bold `f` blank. SwarmEye rebuilds the atlas before that point, and again on every resize, so it corrects itself. That rebuild covers every open pane at once, because xterm hands all terminals sharing a font, size and theme the *same* atlas: a pane that did not ask for the clear would otherwise keep drawing from the coordinates its glyphs used to sit on, and paint shredded pieces of other characters. The buffer was never affected either way, only the GPU's cache of already-drawn characters.
 
 **Drag & drop** any file onto a terminal to paste its path — converted to WSL form on Windows (`C:\Users\me\shot.png` → `/mnt/c/Users/me/shot.png`) so Claude can read it. Multiple files paste space-separated; paths with spaces are quoted.
+
+### Copying an agent (`Ctrl+M`)
+
+`Ctrl+N` starts a new agent from your Options defaults, as it always has. **`Ctrl+M`** gives you a copy of the agent you are working in instead: same model *and the CLI behind it* — Claude Code, clean, opencode or pi — same effort, same role, and the permission mode that pane is currently in. Setting up an opencode agent on the model you want and then filling the workspace with four more of it is four keypresses, with no trip through a picker and no chance of the Options default quietly launching something else.
+
+The copy is the **focused pane** when it belongs to the selected workspace, otherwise the newest live agent there; with nothing running to copy it just does what `Ctrl+N` does. A bare harness (clean, opencode, pi) has no permission mode to carry, and the copy is a *launch* config, not the conversation: the new agent starts empty, like every other new agent.
 
 ### Live agent state (Claude Code hooks)
 
@@ -150,7 +161,7 @@ With ten panes across five workspaces, the rail plus `Tab` cycling is the bottle
 - **Tasks** still open, and **installed skills** — both open the screen that owns them.
 - **Views** — the grid, Task Board, Swarm View, History, Skills.
 - **Verbs** — Notes, Message agents, Search across all agents, Options.
-- **Acting on an agent** — **Restart \<name\>** and **Close \<name\>** per live agent, plus **Close N idle agents** in one row when any are idle. The palette entry *is* the deliberate act, so unlike the pane's `↻` it fires straight away.
+- **Acting on an agent** — **Restart \<name\>** and **Close \<name\>** per live agent, plus **Close N idle agents** in one row when any are idle. The palette entry *is* the deliberate act, so it fires straight away.
 - **Running a task** — **Run now · \<task\>** starts any queued task without finding its card.
 - **Themes** — one row per theme, so switching doesn't mean opening Options.
 - **Prompts** — the lines you have submitted to agents in the selected workspace (see below).
@@ -206,12 +217,12 @@ Off by default — turn on **Show cost & context panel** in `⚙` Options and ev
 
 Top row:
 
-- **Context meter** — a bar plus `used / window` in tokens. This is the size of the prompt the agent's newest turn actually sent, so it tracks the live conversation, not a running total. The bar turns amber past 70% and red past 90%, giving you warning before Claude Code compacts. It scales against the 200k window, re-scaling itself to 1M for a session that exceeds it. Sub-agent (sidechain) turns run in their own window and never move it.
+- **Context meter** — a bar plus `used / window` in tokens. This is the size of the prompt the agent's newest turn actually sent, so it tracks the live conversation, not a running total. The bar turns amber past 70% and red past 90%, giving you warning before Claude Code compacts. It scales against the 200k window, re-scaling itself to 1M for a session that exceeds it. An OpenRouter agent instead scales against its own model's context window, straight from the catalog — the same figure its launch environment caps the CLI at, so a 262k or 1M model reads honestly rather than pinned to Claude's 200k. Sub-agent (sidechain) turns run in their own window and never move it.
 - **Spend** — estimated cost for this agent at list prices. Its tooltip breaks out input, output, cache-read and cache-write tokens. Cost is computed per transcript entry from that entry's own model and its 1-hour/5-minute cache-write split, so it's exact rather than averaged — but list prices don't know about promotional rates, so treat it as a close estimate.
 - **Cache hit rate** — the share of input served from the prompt cache, which bills at a tenth of normal input. High is good and mostly automatic; a number that collapses is a sign something is invalidating the cached prefix.
-- **Model** — the live model, same source as the header chip.
+- **Provider / effort / model** — the panel's right edge, read as one run: `Anthropic / HIGH / Opus 4.8`. The **provider** is which upstream this agent talks to — `Anthropic`, `OpenRouter`, or `OpenRouter · clean` / `· opencode` / `· pi` for a foreign harness — and is fixed when the agent is launched (an OpenRouter agent rides an env prefix, so it can't change mid-session). The **model** is the live one, same source and same picker as the header chip. This is the only place the provider is shown, so a mixed swarm is a reason to leave the panel on.
 
-Bottom row: a **burn sparkline** (tokens per turn, newest on the right), the **turn count**, a live **`working 2m14s` / `waiting 6m` / `idle` timer**, this agent's **estimated share of the 5-hour limit** — its slice of everything the swarm burned this window, applied to the window's own percentage, so it answers "which pane is eating my quota" — and on the right, under the model, the **last three tools** it ran. Click that tool trail to open the agent's [activity list](#what-an-agent-has-been-doing); it reads `activity` until the first tool runs, so it is a target from the start. The header's status chip opens the same popover, which is how you reach it with this panel off.
+Bottom row: a **burn sparkline** (tokens per turn, newest on the right), the **turn count**, a live **`working 2m14s` / `waiting 6m` / `idle` timer**, this agent's **estimated share of the 5-hour limit** — its slice of everything the swarm burned this window, applied to the window's own percentage, so it answers "which pane is eating my quota" (OpenRouter agents spend no Anthropic quota, so they show no share and count towards nobody else's) — and on the right, under the model, the **last three tools** it ran. Click that tool trail to open the agent's [activity list](#what-an-agent-has-been-doing); it reads `activity` until the first tool runs, so it is a target from the start. The header's status chip opens the same popover, which is how you reach it with this panel off.
 
 Everything comes from the session transcript Claude Code already writes; SwarmEye reads only the bytes appended since the previous turn, so this costs one small file read per turn and no API calls. A `≈` in front of the cost means the session was already long when SwarmEye started counting and the total is a floor.
 
@@ -256,12 +267,14 @@ The ribbon is renderer-only and not persisted: it answers "what has this swarm b
 
 ### History
 
-The `History` tile opens a full-screen list of every past Claude conversation for one workspace — Claude Code writes a transcript per session under `~/.claude/projects/<munged-cwd>/<session-id>.jsonl`, and `claude --resume <id>` reopens any of them, so a closed pane stops being a lost thread.
+The `History` tile opens a full-screen list of every past conversation for one workspace — Claude Code writes a transcript per session under `~/.claude/projects/<munged-cwd>/<session-id>.jsonl`, and `claude --resume <id>` reopens any of them, so a closed pane stops being a lost thread.
+
+The three OpenRouter harnesses are in that list too. A [clean agent](#clean-agents--no-claude-code-at-all), [opencode or pi](#opencode-and-pi-agents--somebody-elses-cli-same-pane) pane keeps its own transcript in the user-data folder instead — Claude Code never sees those conversations — so they are read from there and merged into the same newest-first list, badged with the CLI that wrote them (`clean · qwen3-coder-next`). `▶ Resume` reopens one in that same CLI, carrying the conversation on rather than starting it again; the clean agent continues from its own messages file, opencode and pi from the conversation id their adapter parked beside the transcript. A conversation recorded before 1.60.63 is **not** listed: the adapters only started stamping the working folder on each turn then, and nothing else on disk still says which workspace an old one belonged to.
 
 Each row shows the conversation's **opening request**, how long ago it last ran, its transcript size and its session id. The preview deliberately skips the machinery Claude Code records as user turns — an active skill's `/command` envelope, the skill body it injects in reply, `Launching skill: …` — and shows the first turn that was actually you.
 
 - The workspace picker in the header switches folders; `⟳ Refresh` re-reads (the list is re-read on every visit anyway, since agents keep writing to that folder).
-- The filter box narrows by preview text or session id.
+- The filter box narrows by preview text or session id, and the **provider** select beside it narrows to *anthropic* or *openrouter* — an OpenRouter conversation is one whose last model id is a vendor slug (`moonshotai/kimi-k3`), the same thing the row badge marks. Both filters also decide what `🗑 Delete all` covers, since that button always acts on exactly the rows listed.
 - Clicking a row reads the transcript in place, in a box you can drag bigger by its bottom-right corner; that size is kept for the next one you open.
 - `▶ Resume` spawns a **new** agent (new name, new tmux session) running `claude --resume` on that transcript, switches to its workspace and focuses the pane. Only the conversation comes back; the old process does not.
 - `📋` copies the session id, for resuming from a terminal yourself.
@@ -271,17 +284,19 @@ Newest 60 per workspace. On Windows the transcripts are read from inside WSL thr
 
 ### Sessions survive restarts
 
-Agents run inside a dedicated tmux server (socket `swarmeye`, its own config at `~/.config/swarmeye/tmux.conf` — your `~/.tmux.conf` is never loaded). Closing SwarmEye only **detaches**; on next launch surviving agents are reattached automatically. Pane `✕` kills an agent for real.
+Agents run inside a dedicated tmux server (socket `swarmeye`, its own config at `~/.config/swarmeye/tmux.conf` — your `~/.tmux.conf` is never loaded). Closing SwarmEye only **detaches**; on next launch surviving agents are reattached automatically. Pane `✕` kills an agent for real. A copy of SwarmEye started on its own `--user-data-dir` gets its own socket, so a development or test instance can never reattach to — or clean up — the agents of the one you actually use.
 
-`↻` is on every pane, not only a dead one: on a **running** agent it asks for a second click before it throws the session away (continuing the last conversation, shift-click for a fresh one). An **exited** agent stays visible and dimmed so you can read its scrollback; there `↻` is a single click and restarts it in the same folder continuing the last conversation (`claude --continue`), shift-click starts fresh. If only the connection died while the agent survived, the badge says **detached** and `↻` reconnects without restarting — with a `⟳ reattach all` button in the top bar when several are detached. On Windows, if WSL itself stops answering, a red `⚠ WSL unreachable` banner shows until it's back.
+Startup also tidies the server it owns: an agent that never received a prompt has nothing to come back to and is killed rather than restored as a blank pane, and a `swarmeye_*` session no session metadata points at — a leak, unreachable from any pane but still holding its workspace and, on Windows, a WSL process — is killed too. A session another SwarmEye is attached to is never touched, which is what keeps the two instances above independent.
+
+Restarting is not a pane button — it lives in the swarm view's right-click menu (**Restart**, or **Reattach** on a detached agent) and in the palette (**Restart \<name\>**), which keeps a running agent's session from being thrown away by a stray click on the header. A restart continues the last conversation (`claude --continue`) in the same folder. An **exited** agent stays visible and dimmed so you can read its scrollback. If only the connection died while the agent survived, the badge says **detached** and reattaching reconnects without restarting — with a `⟳ reattach all` button in the top bar when several are detached. On Windows, if WSL itself stops answering, a red `⚠ WSL unreachable` banner shows until it's back.
 
 ### Notification center
 
-The bell in the top bar keeps a history of agent events — turn finished, waiting on you (with reason), exited, detached — each with agent name, workspace, time, and the task that agent is running. The bell turns amber with a count badge while there are unread events; click an entry to jump to that pane. Closing the popover marks everything read; `clear` empties the list (session-only, last 50).
+The bell in the top bar keeps a history of agent events — turn finished, waiting on you (with reason), exited, detached — each with agent name, workspace, time, and the task that agent is running. The history **survives a restart**: agents outlive the app in tmux, so what happened while SwarmEye was closed is restored on launch, already marked read. The same event firing again on the same agent bumps a `×N` on its newest row instead of adding another (the list caps at 50), and rows you can still act on — `waiting` entries whose prompt is still answerable — sort to the top. The bell turns amber with a count badge while there are unread events, and on macOS the dock icon carries the same count; click an entry to jump to that pane. Times read as "5m" / "2h" / "3d" ago, with the full timestamp in the tooltip. Closing the popover marks everything read; hovering a row reveals a `✕` that dismisses just that row, and `clear` empties the list.
 
-`details ▸` opens a docked panel on the right edge with the same history in full, untruncated detail — full text, a full date+time stamp, and a meta line giving the model, permission mode and how long the agent had been running when the event fired — plus `🗑 Clear All`.
+`details ▸` opens a docked panel on the right edge with the same history in full, untruncated detail — full text, a full date+time stamp, and a meta line giving the model, permission mode and how long the agent had been running when the event fired — plus `🗑 Clear All`. Filter chips at the top narrow it to **All / Needs input / Done / Exited** (which folds detached agents in).
 
-A short synthesized sound plays with a "turn finished" notification (configurable — see Options).
+A short synthesized sound plays with a "turn finished" notification (configurable — see Options). An agent **blocking on you** plays a different, falling two-tone instead, so the ear can tell a blocked agent from a finished one; it follows the same mute and the same `None` setting.
 
 **Desktop notifications** (on by default) go one step further: while the SwarmEye window isn't focused, an agent finishing its turn or blocking on you raises a real OS notification naming the agent, its workspace and what happened — the thing that reaches you with SwarmEye minimized behind an editor, which neither the bell nor the taskbar flash can do. Clicking it restores and focuses the window. The OS toast is deliberately silent, since SwarmEye already plays the sound you picked; and the `attention` event that always precedes a `done` is suppressed, so a finished turn produces one notification rather than two. Turn it off with **Desktop notifications** in `⚙` Options.
 
@@ -316,7 +331,18 @@ It is deliberately **local-only**. The URL box refuses anything that isn't `loca
 
 ### Usage widget
 
-Near the top of the icon rail — two mini bars when Collapsed, two radial gauges with percentages and reset countdown when Expanded. These are the real limits from Claude's OAuth usage API (the same data as `/usage` in Claude Code): 5-hour session utilization (accent) and weekly (amber). A gauge turns amber at 75% and red at 90%.
+Near the top of the icon rail — two mini bars when Collapsed, two labelled bars with percentages and a reset countdown under an **Anthropic Usage** heading when Expanded. These are the real limits from Claude's OAuth usage API (the same data as `/usage` in Claude Code): 5-hour session utilization (accent) and weekly (amber). A bar turns amber at 75% and red at 90%.
+
+**OpenRouter Usage** — with a key saved, a second heading and two more rows sit below (the Collapsed rail carries the Credits bar too, stacked under the Claude pair as one more mini bar; there is no room for the headings at 57px, so each block's tooltip names it):
+
+| Row | Bar | Right-hand figure |
+| --- | --- | --- |
+| **Today** | none — a share of the credits you happen to have bought says nothing | today's spend in dollars |
+| **Credits** | credits used as a share of credits bought | what is left, `$2.08 left` |
+
+Either section can be switched out of the rail entirely in `⌨ Options → Appearance` (**Anthropic usage in the left menu** / **OpenRouter usage in the left menu**, both on by default) — heading and bars, in both menu sizes.
+
+**Credits** takes the same amber-at-75%, red-at-90% colouring as the Claude bars. The figures come from OpenRouter's `key` and `credits` endpoints on a five-minute poll (click the block to re-read it), and the tooltip adds the week and the month. A key with no readable account balance falls back to that key's own spend limit; with neither, the dollar figures still show and the bars stay empty. No key saved means neither the heading nor the bars appear at all.
 
 Polls every 90 seconds and backs off exponentially if rate-limited — the endpoint is touchy. Click to refresh manually; repeated clicks within 3 seconds replay the last reading rather than hammering it. The last successful reading survives restarts and shows as `remembered from before restart` until the first live fetch lands.
 
@@ -340,7 +366,7 @@ from the board — gets a git worktree of its own.
 
 The worktree is `<workspace>/.swarmeye/wt/<agent name>` on a branch called
 `swarmeye/<agent name>`, and it is what the agent's terminal starts in. Nothing
-else changes: the pane, the role, the model, the task board and `↻` restart all
+else changes: the pane, the role, the model, the task board and restart all
 behave exactly as before, except that the pane's git chip now reports **that
 agent's** branch and dirtiness rather than the workspace's. A restart puts the
 agent back in the same worktree; if the worktree has been removed in the
@@ -389,6 +415,89 @@ merge for the same reason, and says so.
 
 ---
 
+## Scoping an agent to a folder
+
+Isolation stops two agents clobbering each other's **checkout**. Scoping stops
+them duplicating each other's **work**: an agent scoped to `renderer/` may edit
+only inside that folder, so a swarm can be split across a repo by area.
+
+Pick one in the **Scope** field of the launch card that fills an empty
+workspace — it applies to every agent in that launch — or start a single one
+from **`+ Agent` → `Scoped to a folder…`**, which offers the same list and
+launches as soon as you pick. `whole workspace` is the default and means no
+boundary at all.
+
+Two kinds of thing to pick, under a heading each:
+
+- **Areas** — what the workspace itself says it is made of, from
+  `.swarmeye/areas.json` (see below). An area is usually several paths at
+  once, because that is how work actually arrives: "Task board" is a view file
+  *and* its stylesheet.
+- **Folders** — every directory in the workspace, from `git ls-files`, so the
+  list follows `.gitignore` and never offers `node_modules`. Four levels deep.
+
+Every Claude pane's header carries a scope chip: the area or folder name once
+the agent is bounded, with the exact paths in its tooltip, or a dimmed
+`⊘ unscoped` while it isn't. **Click the chip to switch, add or lift the
+boundary on a running agent** — the same list opens, `whole workspace` lifts
+it. The pick is a restart that continues the conversation (the deny rules were
+read by claude at startup and cannot change under the running process — the
+same mechanism as switching model from its chip), so picking the boundary the
+agent already has does nothing. Bare-harness agents (clean, opencode, pi)
+carry no chip: there is no permission layer to deny with.
+
+### Defining areas
+
+`.swarmeye/areas.json`, beside the workspace notebook — a name-to-paths map the
+repo carries, so it is versioned with the code and an agent can rewrite it:
+
+```json
+{
+  "Agent pane": ["renderer/features/pane"],
+  "Task board": ["renderer/board.js", "renderer/features/board"],
+  "Main process": ["main"]
+}
+```
+
+Each path is a folder or a single file, relative to the workspace. A workspace
+without the file simply has no Areas heading. Anything malformed — a path that
+isn't there, a name with no paths — is dropped on its own rather than voiding
+the file, and the list is re-read on every open.
+
+An area gets **only its own paths**. Files several areas share — `index.html`
+holding all the markup, `app.js` holding the wiring — are denied to every
+scoped agent, because two agents editing exactly those is what this prevents.
+An agent that needs one line in a shared file will tell you instead of taking
+it.
+
+**Reads are not restricted.** An agent scoped to one folder still has to read
+the rest of the repo to work in it — grep it, follow an import, read a
+neighbouring module. Only edits, writes and file creation are bounded.
+
+The boundary is a set of Claude Code permission `deny` rules written into that
+agent's own settings file at launch: one walk down from the workspace root,
+denying every entry that is neither one of the scope's paths nor on the way to
+one. That matters in three ways:
+
+- **It holds in `auto` mode.** Deny rules are evaluated before anything else,
+  so bypass permissions does not lift them. An edit outside the folder comes
+  back as *Permission denied* and the agent is told to ask you instead.
+- **It is fixed for the running process.** Widening or narrowing goes through
+  a restart: the scope chip's picker does exactly that, continuing the
+  conversation. `↻` restarts it inside the same folder, and either way the
+  rules are rebuilt against the tree as it is then; if the folder has since
+  been deleted, the restart refuses rather than coming back unbounded.
+- **Entries that did not exist at launch are not covered.** The rules name what
+  was there, so an agent can still create a *brand-new* top-level file or
+  folder outside its scope. Everything that already exists — which is what two
+  agents actually collide over — is denied.
+
+A scope needs a Claude agent: clean, opencode and pi agents have no permission
+layer to deny with, so asking for one refuses the launch instead of pretending.
+An isolated agent is scoped inside its own worktree, at the same relative path.
+
+---
+
 ## The task board
 
 `Ctrl+Shift+B`, or the `Task Board` tile, swaps the agent grid for a full-screen dashboard for queuing work ahead of time. The rail tile turns amber while it's open, so you always know which view you're in.
@@ -400,9 +509,10 @@ The board opens straight into the new-task form (`+ New Task` reopens it). A tas
 - **Description** — what the agent should do. Dictate it with the mic button instead of typing, or drop a file onto the box to paste its path. `Ctrl+Enter` (`⌘+Enter` on macOS) submits.
 - **Workspace** — which folder its agent runs in.
 - **Starting permission mode** — `default` / `accept edits` / `plan` / `auto`.
-- **Model** — `default`, Sonnet, Opus, Haiku, Fable. A non-default pick is passed as a `--model` launch flag, so it's scoped to that one agent. (Claude's own `/model` command saves as your default for every future session — a per-task choice must not do that.)
-- **Reasoning effort** — `default`, low, medium, high, xhigh, max, ultracode, auto. The five named levels are passed as an `--effort` launch flag, scoped to that one agent for the same reason model is (a typed `/effort` saves as your CLI default and would bleed into every later session); `ultracode`/`auto` have no flag spelling and are typed as `/effort <value>` right after the agent starts. `default` uses the Options "Default task effort".
-- **Focus mode** — optional, sent as `/focus`.
+- **Model** — `default`, Sonnet, Opus, Haiku, Fable, `opusplan` (Opus plans, Sonnet executes), the 1M-context spellings `opus[1m]` and `sonnet[1m]`, and with an OpenRouter key saved the whole catalog under an **OpenRouter** group. A non-default pick is passed as a `--model` launch flag, so it's scoped to that one agent. (Claude's own `/model` command saves as your default for every future session — a per-task choice must not do that.)
+- **Harness** — appears beside Model only on an OpenRouter pick: which CLI runs it — **clean**, **opencode** or **pi**, the same three the `+ Agent` picker offers. It opens on whatever that picker last remembered, and a change here counts for this task alone.
+- **Reasoning effort** — `default`, low, medium, high, xhigh, max, ultracode, auto. The five named levels are passed as an `--effort` launch flag, scoped to that one agent for the same reason model is (a typed `/effort` saves as your CLI default and would bleed into every later session); `ultracode`/`auto` have no flag spelling and are typed as `/effort <value>` right after the agent starts. `default` uses the Options "Default task effort". Greyed out on an OpenRouter model — those ignore it.
+- **Focus mode** — optional, sent as `/focus`. Greyed out on an OpenRouter model, which has no Claude Code footer to toggle.
 - **Priority** — low / **medium** / high / critical, shown as a colour-tinted chip.
 - **Category** — **maintenance** / bugfix / features by default; the `⚙` beside the picker adds or removes categories per workspace.
 - **Close on complete** — checked by default; the agent's pane closes itself when the task finishes.
@@ -416,7 +526,7 @@ Four scheduling modes:
 | Mode | Behavior |
 |---|---|
 | **start now** (default) | Spawns an agent immediately, or leaves the task in Scheduled with a toast if the agent cap is full |
-| **auto** | Holds until Claude usage stays under your ceiling (default 85%) on the 5-hour session window |
+| **auto** | Holds until Claude usage stays under your ceiling (default 85%) on the 5-hour session window. An OpenRouter task skips that wait — it is billed to OpenRouter, so it starts as soon as an agent slot is free |
 | **next session** | Holds until the current 5-hour usage window ends, using the exact reset time Claude's API reports |
 | **manual** | Drops straight into the Manual column, untouched by the scheduler, until you move it yourself |
 
@@ -433,13 +543,43 @@ Cards sit in **Manual / Scheduled / Active / Completed** columns. Once a task ha
 
 A task **completes** automatically when its agent finishes a turn, and returns to Scheduled if the agent exits first. Closing a running task's agent yourself moves it to Completed with a red `■ stopped` badge, so it reads as cut short rather than finished.
 
-A completed card also carries the agent's **closing message** — the last thing it said on the turn that finished the task, quoted under the task text and clamped to three lines (hover for the whole thing). It is read from the session's own transcript on the same pass that already records the turn's cost, so it costs no extra call, and it never comes from a sub-agent's answer. Turn it off with **Task summary on completion** in Options.
+A completed card also carries the agent's **closing message** — the last thing it said on the turn that finished the task, quoted under the task text and clamped to three lines (hover for the whole thing). It is read from the session's own transcript, and it never comes from a sub-agent's answer. Claude Code fires the hook that ends a turn *before* it writes that turn's message into the transcript, so the file is read once more shortly after — the card takes its summary from that second read, which is why a task started with active skills says what the agent did rather than the skill preamble it opened with. Turn it off with **Task summary on completion** in Options.
 
 Completed cards keep two buttons: `▤` opens the agent's **full transcript**, captured the moment it finished and kept even after the pane is long gone (with its own `⤓` export), and `⟳` **re-queues the task** as a fresh *start now* task with the same settings — follow-ups included, so re-running the first task re-runs the whole pipeline.
 
 `✕` (click twice) archives a card. `🗄 Archive` opens a read-only list of archived tasks with search plus category and priority filters, each purgeable individually or all at once.
 
 A **Shipped** stats panel beside the form counts tasks finished today / this week / this month / this year, with a one-line quip that shifts tone with today's count.
+
+---
+
+## Orchestrator — a lead agent and its workers
+
+`+ Agent → Orchestrator…` starts **one agent that plans and delegates** instead of doing the work. You give it the job, pick the model it thinks on, and pick a second model its workers run on — a strong lead reading the code, cheap workers writing it.
+
+The card has three fields: the job, **lead** (any Claude tier or OpenRouter model) and **workers** (the same list, plus a **Harness** select when the pick is an OpenRouter model, exactly like the task board's). Launching starts the lead as an ordinary board task, so it appears in the grid as a normal pane you can talk to — the only difference is that it keeps its pane when its turn ends, and it carries a `workers: <model>` chip in its header.
+
+**How it delegates.** The lead is told, in its opening brief, to write `.swarmeye/plan.json` in the workspace: a JSON array of `{ text, role }` objects. SwarmEye watches that file, **consumes it** (reads it, then deletes it) and turns each row into a task on the board, on the worker model, with the role preset the row named. Writing the file again is what queues the next wave — there is nothing else to learn and no command to remember, which is why a file was chosen over a CLI or a scraped transcript.
+
+Worker tasks land as **auto** tasks, so everything the board already does applies unchanged: the agent cap decides how many run at once, the usage gate holds Claude-tier workers until there is headroom (OpenRouter workers skip that gate — they spend no Anthropic quota), and each worker closes when it finishes.
+
+**How it hears back.** As each worker completes, one line is typed into the lead's pane naming the task and quoting what the worker said last — its closing summary when one has landed, otherwise the last thing it printed. Reports are never typed while the lead is mid-turn, and several finishing together arrive as one message rather than three. The last one adds *(that was the last one still running)*, which is the lead's cue to review the work and either queue another wave or stop.
+
+**Its workers don't notify you.** The bell, the OS toast and the spoken announcement are for agents you started yourself; a worker was started by a lead and reports to that lead, so a wave of them no longer buries the notification list or talks over you. The lead announces itself normally, for the whole crew — and everything else still shows every worker: the grid's crew switcher, the swarm map, the swarm view, the timeline and the task board.
+
+**How many workers one job may have.** Twelve, however many waves the lead writes — it is told the number in its brief, and a wave past the budget is refused with a line saying so rather than silently dropped. A workspace also has one lead at a time: they share a single plan file, so launching a second orchestrator there hands it that file, and the first keeps its pane and crew but stops delegating.
+
+**One cell for the whole crew.** A lead and every worker it starts share a single pane slot rather than filling the grid: the pane header carries a select — at its left end, right after the status dot — naming the lead and each worker, and picking one puts that agent's terminal in the slot. It appears the moment the lead queues a wave: a worker that hasn't started yet is listed by the first words of its task and its state (`queued`), greyed out because there is nothing to show yet, and turns into a normal entry when its agent comes up. The others are still running the whole time — they are simply not mounted, the same way the panes of a workspace you aren't looking at aren't — so ten workers make no difference to the layout. Each entry reads its agent's state (`working`, `needs you`, `idle`, `done`), a finished worker stays in the list so its output remains reviewable until you close its pane with `✕`, and the choice survives a restart. Everything else still counts every worker: the agent cap, the swarm map, the swarm view, the timeline and the task board.
+
+**Changing the worker model mid-run.** Click the `workers:` chip on the lead's pane for the same filterable picker `+ Agent` uses — Claude tiers and the OpenRouter catalog in one list. It applies to waves queued from then on; workers already running are untouched.
+
+A wave is capped at **8 rows**, and the lead is told so: each row costs a whole agent. It is also told the rule that keeps a parallel swarm from tearing the working copy apart — never give two workers the same file — because all of them share one checkout.
+
+**A worker that can't start.** A task whose agent dies before it finishes goes back on the board and the queue starts it again — but only three times. After that the card is left alone (press `▶` to try again yourself) and the lead is told the worker never started, so it isn't left waiting for a report that will never come. Without that limit a launch that can never succeed loops: the agent exits, the queue restarts it, and every lap leaves a dead pane behind.
+
+Watching stops when the lead's pane goes, so a plan file written after that starts nothing. If the app is restarted while a swarm is running, the lead is picked back up with its agents (they live in tmux) and keeps delegating.
+
+**Orchestrator or Coordinator?** The coordinator is one headless `haiku` call that splits a *sentence* into subtasks you approve by hand; it never sees the code. The orchestrator is a real agent that reads the repo first, delegates on its own judgement, and stays to review. Use the coordinator when you already know the split, the orchestrator when working out the split is the job.
 
 ---
 
@@ -451,18 +591,79 @@ The `Skills` tile opens a third full-screen view for managing Claude Code skills
 
 **Finding one** — the filter box above the list matches a skill's name, description, invoke command, source repo or on-disk folder. The stat cards keep counting the whole library while you type, so "12 installed" stays honest; `Esc` in the box clears the filter rather than closing the screen.
 
-Each installed skill row has two checkboxes:
+Each installed skill row has three checkboxes:
 
 - **Enabled** — symlinks the skill into `~/.claude/skills/<id>/` so **every** agent auto-discovers it through Claude Code's own skill resolution (invocable as `/skill-name`, or picked up when the model judges it relevant — no prompt injection involved). Unchecked, a `📋` button instead copies a one-liner to symlink it into just one project.
-- **Active in new sessions** — auto-invokes the skill the moment every new agent starts, instead of waiting for the model to notice it.
+- **Active in new sessions** — auto-invokes the skill the moment every new agent starts, instead of waiting for the model to notice it. **Claude agents only**: it works by typing `/skill-name` into the pane, which means nothing to a clean, opencode or pi agent.
+- **In OpenRouter agents** — the equivalent for exactly those three ([below](#skills-in-an-openrouter-agent)): the skill's full `SKILL.md` is loaded into the agent's system prompt at launch.
 
 Toggling only affects agents launched **afterward** — Claude Code reads its skill list once at session start, so a running agent needs a restart.
 
 Opening the screen kicks off a background `git fetch` per skill; anything behind its remote gets a `⟳ update` button (`git pull --ff-only`).
 
-**Skills your agents wrote** — the screen also scans `~/.claude/skills/` and each workspace's `<workspace>/.claude/skills/`, listing what it finds under its own `ON DISK` header. These have no enable checkbox (a skill sitting in a folder Claude Code reads is already loaded) but keep "Active in new sessions" and a `🗑` that deletes the folder from disk. A workspace-local skill only auto-invokes in agents running in that workspace, since its slash command doesn't resolve elsewhere.
+**Skills your agents wrote** — the screen also scans `~/.claude/skills/` and each workspace's `<workspace>/.claude/skills/`, listing what it finds under its own `ON DISK` header. These have no enable checkbox (a skill sitting in a folder Claude Code reads is already loaded) but keep "Active in new sessions", "In OpenRouter agents" and a `🗑` that deletes the folder from disk. A workspace-local skill only auto-invokes in agents running in that workspace, since its slash command doesn't resolve elsewhere.
 
 > On Windows, only the workspace-local folders are scanned. The global `~/.claude/skills` there belongs to the copy of Claude Code inside WSL, which the Windows-side home directory doesn't point at.
+
+---
+
+## OpenRouter models
+
+One key from [openrouter.ai](https://openrouter.ai/) puts the whole OpenRouter catalog — Kimi, Qwen, GLM, DeepSeek, GPT, Grok, Gemini and the rest — into every place SwarmEye picks a model. Claude agents are untouched: this adds a second kind of agent beside them, in the same grid, mixed freely.
+
+**Setup** — paste the key into `⌨ Options → Setup → OpenRouter API key` and **Save**. SwarmEye fetches the catalog (a few hundred models, with each one's prices and context window), the row flips to a model count with `↻` refresh and a click-twice `✕` forget, and an **OpenRouter** group appears at the bottom of the model pickers — the task board's model select and the Options default — while the empty-workspace card's **Provider** field unlocks its OpenRouter choice. No restart needed.
+
+Every picker names who pays for the row: the five Claude tiers read **Anthropic Subscription: Sonnet**, **…: Opus** and so on, and a catalog row carries its bare slug (`x-ai/grok-code-fast`). The same wording is used wherever the *provider* itself is chosen — `+ Agent`'s first row, the `Ctrl+N` menu, the launch card's **Provider** field and the Options *New agent shortcut* setting.
+
+**Starting one** — `+ Agent → OpenRouter…` opens a filterable catalog picker (hover a model for its context window and per-million prices); picking a model starts a plain agent on it, with your default permission mode. `Ctrl+N` joins in too: with a key saved it first asks **Claude or OpenRouter** in a small menu — a *remember for future agents* checkbox makes the answer stick, and `⌨ Options → New agent shortcut` holds the same choice (ask every time / Claude / OpenRouter). **`Ctrl+M`** skips all of that and copies the agent you are working in instead — see [Copying an agent](#copying-an-agent-ctrlm). The other route is any of the model selects above: an OpenRouter pick in the Options default makes every new agent an OpenRouter agent, one in the task board's select applies to that task only (with its own **Harness** field beside it, so a scheduled task can run opencode or pi too) — and the launch card asks directly, with its **Provider** field swapping the Model list between Claude's tiers and the catalog for that launch. Choosing OpenRouter there also reveals a **Harness** field — *clean · opencode · pi*, the same three the picker offers — so a whole swarm can be launched on one of them in a click. It opens on the harness the picker last remembered, but a change made in the card counts for that launch only: like every other field on it, it is back to your defaults the next time the card appears.
+
+**How those agents run** — every OpenRouter agent is a **clean agent** (next section): SwarmEye's own minimal CLI talking straight to openrouter.ai, no Claude Code involved at all. The one exception is a past OpenRouter conversation resumed from the History screen — those were recorded by Claude Code and reopen inside it with rerouted traffic, which is what the tier-slot `/model` notes further down are about.
+
+### Clean agents — no Claude Code at all
+
+An OpenRouter pick starts SwarmEye's own minimal agent CLI (`agent/clean.js`) instead of Claude Code: a dependency-free program that talks the native OpenAI format straight to openrouter.ai. Nothing Anthropic runs in that pane — no Claude binary, no Claude system prompt colouring answers (ask it what model it is and it answers honestly), no traffic to anyone but OpenRouter. The system prompt is ~200 tokens instead of Claude Code's many thousands, paid every turn.
+
+What it has: four tools (`bash`, read, write, exact-string replace), streamed output with the model's reasoning shown dim, and a permission gate — every bash/write asks `[y]es [n]o [a]lways` in the pane, `a` remembers per tool, and the Options skip-permissions toggle launches it with the gate off. `/model <slug>` switches the model mid-conversation (any catalog slug, no restart), `/clear` starts the conversation over, `/help` lists the rest. A pane restart with resume — the model-chip switch included — continues the conversation where it left off. The pane is a full citizen: status, the activity list, the cost & context panel with catalog prices, and Task Board scheduling all work — the panel's provider label reads **OpenRouter · clean**.
+
+#### Skills in an OpenRouter agent
+
+**Skills** reach the three harnesses that run without Claude Code — clean, [opencode and pi](#opencode-and-pi-agents--somebody-elses-cli-same-pane) — through their own switch: every skill row in the Skills screen carries an **In OpenRouter agents** checkbox next to *Active in new sessions*. Ticked, that skill's full `SKILL.md` is loaded into the agent's system prompt at launch (workspace-local skills only into agents of their workspace) — and, like an active skill on Claude agents, its text is paid on every turn, so give the tick only to skills that earn it.
+
+*Active in new sessions* cannot do this job: it types `/skill-name` into the pane, and none of the three has a slash-command mechanism to answer it — the line would simply be submitted to the model as a prompt. Each takes the skill its own way instead (the clean agent's `--skill`, an `instructions` entry in the config file opencode is launched with, a repeated `--append-system-prompt` for pi), but the effect is the same in all three, and only ever a *path* is handed over — the harness reads the file itself, so nothing of the skill's text touches a command line.
+
+What it deliberately lacks (the point is *lean*): MCP, subagents, auto-compaction — a conversation that outgrows the model's window errors plainly and `/clear` is the reset. Task start modes and `/focus` don't apply; the gate and the skip-permissions toggle are the whole permission model. Its transcripts live in the user-data folder under `clean-transcripts/` rather than in `~/.claude/projects`, and the History screen lists them all the same — see [History](#history).
+
+### opencode and pi agents — somebody else's CLI, same pane
+
+The clean agent is not the only way to run a catalog model without Claude Code. The same picker can launch **[opencode](https://opencode.ai)** or **[pi](https://pi.dev)** — two third-party coding CLIs — inside a SwarmEye pane, with SwarmEye supplying the OpenRouter key and the model. The toggle sits at the top of the model list: **clean · opencode · pi**, and it is remembered, so picking a model after that launches it in the harness you chose. Both binaries are expected on the agent shell's `PATH` (`npm i -g opencode-ai`, `npm i -g @earendil-works/pi-coding-agent`); if one is missing, the pane says so and exits rather than falling back to something you didn't pick.
+
+They are **full citizens, not embedded terminals**. Each runs with a small SwarmEye adapter — an opencode plugin, a pi extension — that translates the tool's own events into exactly the files the rest of the app already reads, so busy/waiting/done status, the activity list with tool names and durations, the cost & context panel at catalog prices, and a completed task's closing summary all work as they do for any agent. The panel's provider label reads **OpenRouter · opencode** or **OpenRouter · pi**. Neither tool's own configuration is touched: opencode is pointed at a config file SwarmEye writes per launch, and pi takes its extension as a launch flag, so the setup you use outside SwarmEye is left exactly as it is. One tmux setting exists for their sake and every agent's: SwarmEye's own `tmux.conf` sets `extended-keys on` (tmux 3.2+), because tmux will not forward a modified key like `Shift+Enter` to anything running under it otherwise — pi says as much in every pane it starts in. It is applied to an already-running server too, so it lands at the next app start rather than needing your agents killed.
+
+Two differences worth knowing before you pick one. **pi has no permission prompts at all** — its author considers them security theatre — so a pi agent always runs its tools unattended, whatever the skip-permissions option says; the provider label in its cost panel says so in its tooltip. **opencode** does have permissions, and follows the option: on, it launches with `--auto`; off, it asks before edits and shell commands, and the pane reads *waiting* while the question is on screen. pi also accepts a system prompt, so role presets and the workspace notebook pointer reach it; opencode has no flag for either, so a role there supplies only its model.
+
+**Restarting one keeps its conversation.** Each harness names its own conversation, and only that name can reopen it, so the adapter parks the id beside the transcript and a restart-with-resume hands it back — `--session` for both, plus the pane's previous id so the *same* transcript keeps growing and the cost panel carries on rather than resetting to zero. A restart without resume starts clean, and a pane that never got far enough to have an id simply launches fresh instead of failing.
+
+**Skills reach them** the same way they reach a clean agent — the *In OpenRouter agents* checkbox, [described above](#skills-in-an-openrouter-agent). opencode takes them as `instructions` in the config file SwarmEye writes for it, pi as a repeated `--append-system-prompt`; either way the full `SKILL.md` is in the system prompt from the agent's first turn, and a restart brings it back.
+
+What they deliberately lack in this version: they are **manual panes only** — the Task Board's model list does not offer them, because the scheduler cannot inject a prompt into their TUIs yet. Their transcripts are kept beside the clean agent's, under `opencode-transcripts/` and `pi-transcripts/`, and the History screen lists those too. Expect the first launch of either to sit quiet for up to a minute while it fetches its own runtime bits.
+
+**Switching model inside an agent** — click the pane's **model chip** (or the model at the right edge of its cost panel). That opens the same filterable picker `+ Agent` uses, listing the four Claude tiers and every catalog model; picking one restarts the agent on it and continues the conversation, so an OpenRouter pane can move anywhere in the catalog and back onto a Claude tier. It is a restart rather than a typed command on purpose: `/model` saves your pick as Claude Code's default for *new* sessions, so an OpenRouter slug chosen that way becomes the default of the next **Claude** agent you start, which then fails with *"There's an issue with the selected model … it may not exist or you may not have access to it"*. A launch flag can't leak like that. The agent has to be attached — a detached pane reconnects instead.
+
+Typing `/model` still works, and against a non-Anthropic upstream Claude Code's own picker has room for exactly four models: the four custom tier slots (`opus`/`fable`/`sonnet`/`haiku`) the launch environment fills. SwarmEye puts the model the agent was launched with in the first, and `⌨ Options → Setup → Models an agent can switch to` fills the other three from the catalog (`＋` opens the same filterable picker, a chip's `✕` drops it). `/model` then lists those alongside the launched one; `s` uses the pick for this session only, `Enter` also makes it the default for new sessions. Slots you leave empty keep pointing at the launched model, so the list is never wrong, only shorter. The setting applies to agents started afterwards — the environment is written at launch. A model that is in the catalog but not in your three can still be typed in full: `/model qwen/qwen3-max`.
+
+**Costs** — the cost panel prices OpenRouter turns from the catalog's exact per-token rates, including each model's published cache rates. The expanded rail carries today's spend and the credits left as a labelled **OpenRouter Usage** block under the Claude bars, refreshed every five minutes from OpenRouter's key API; its tooltip adds the week and the month — see [Usage widget](#usage-widget).
+
+Worth knowing:
+
+- **Asking the agent "what model are you?" is not a routing test** — Claude Code writes its own identity ("You are Claude…") into every session's system prompt, so whatever model sits behind it will earnestly answer that it is Claude. The banner keeps saying "Claude Code" too, because it *is* Claude Code — only its API traffic is rerouted. Proof the pick took: the model slug in the banner, the rail's OpenRouter Usage bars moving, or your [openrouter.ai activity page](https://openrouter.ai/activity).
+- **The launch model rides environment variables**, not a `--model` flag, and a restart keeps it. What the agent can switch to mid-session is whatever those variables carry — see *Switching model inside an agent* above.
+- **A tier alias is not a tier** in an OpenRouter pane: `opus`, `fable`, `sonnet` and `haiku` are just the four slots the picker reads, each pointing at whichever catalog model you put there. Anything the CLI resolves through the haiku alias on its own follows that slot too; subagents stay on the launched model.
+- The effort picker's `ultracode`/`auto` levels and the `→ Haiku` right-sizing offer are Claude-only and never touch OpenRouter panes.
+- Claude's 5-hour/weekly usage bars don't apply to these agents — the rail's **OpenRouter Usage** block is their budget view.
+- Past OpenRouter conversations carry a **model badge** in the History screen, and Resume reopens them **on that model**. That needs the key still saved — with none, the resume says so instead of silently reopening on Claude.
+- The key lives in `config.json` in your user-data folder, plain text — the same trust level as the rest of that file. It is never sent to the renderer, and never sent anywhere but openrouter.ai.
+- **OpenRouter's `~vendor/model-latest` aliases are left out of the catalog.** Eleven of the ~345 models it publishes are rolling pointers — `~moonshotai/kimi-latest` answers as whatever Moonshot's newest model is that week — so the model you picked is not the model you get, and each one duplicates a concrete entry already in the list. They are filtered on the way out of the saved catalog, so an older one is cleaned up without a `↻` refresh.
+- Some catalog models carry account-level gates on OpenRouter's side (Meta's Muse models, for example, need the 18+ confirmation in your OpenRouter account settings) — those fail at launch until toggled there.
 
 ---
 
@@ -494,12 +695,14 @@ Synthesis runs locally and takes about a third of a second per announcement; not
 
 The `⚙` tile at the bottom of the icon rail opens the Options panel. `↺ Reset` in its header restores every option below to its default in one click.
 
-The panel is grouped into five collapsible sections — **Appearance**, **Agents & panes**, **Defaults for new tasks**, **Notifications** and **Setup** — with only Appearance open when the panel first appears. **Setup** holds the things you touch once rather than tune: the version check and the dictation and voice engine installers. Whichever sections you leave open stay open for the rest of the session. The table below lists every option regardless of section.
+The panel is two columns wide, every section always visible under its header — **Appearance**, **Agents & panes**, **Defaults for new tasks**, **Notifications** and **Setup**. **Setup** holds the things you touch once rather than tune: the version check, the dictation and voice engine installers, and the OpenRouter API key. A **filter box** under the title searches every option by its label and tooltip — matching rows stay, empty sections disappear, and clearing it (or `Esc`) brings everything back. The table below lists every option regardless of section.
 
 | Option | Default | What it does |
 |---|---|---|
 | **SwarmEye version** | — | The running version, and a **Check** button that asks GitHub for the latest release right away instead of waiting for the six-hourly background check. When a newer release exists, the row grows a **Download** button (then **Restart & Update**) and a matching pill appears in the top bar. A check that fails says why — *no release published on GitHub yet*, a rate-limit status, or the missing per-platform asset — rather than falling back to "up to date". Downloading is only possible from a packaged build; running from source it says so immediately and links the release page. |
 | **Small left menu** | off | Collapses the icon rail to 57px icons-only; hovering previews the expanded layout as an overlay without reflowing the grid. The rail's right border is the same switch: drag it left or right — or click it — to move between the small and big menu, and this checkbox follows. |
+| **Anthropic usage in the left menu** | on | Shows the **Anthropic Usage** section — the Session and Weekly bars. Off removes the heading and the bars from the rail in both menu sizes; the data keeps being polled, so the rate-limit warnings still fire. |
+| **OpenRouter usage in the left menu** | on | Shows the **OpenRouter Usage** section — today's spend and the credits left. Off removes it and stops its five-minute poll — the only OpenRouter spend request the app makes. Without a saved OpenRouter key the section is hidden whatever this says. |
 | **Menu bar size** | 100% | Scales the top bar and icon rail, 70–160%. |
 | **Task board, Skills & Options text size** | 100% | Scales the board, archive, Skills screen and this panel, 70–160%. |
 | **Agent pane text size** | 13px | Default terminal text size, 8–24px. Shared with the per-pane `−`/`+` buttons and `Ctrl +`/`−`, so changing it here live-updates every open pane. |
@@ -512,7 +715,8 @@ The panel is grouped into five collapsible sections — **Appearance**, **Agents
 | **Show initial command in pane header** | off | Adds a permanent second header row to every pane: the task prompt for a task-started agent, or the first line you typed for a manual one (best-effort — reconstructed from your keystrokes). |
 | **Auto-organize agent windows** | on | On: new agents are laid out into the automatic square-ish grid. Off: every pane grows `→` / `↓` buttons that place the next agent beside or below it, and the layout keeps the shape you built. |
 | **Default agent permissions** | manual | Presets the new-task form's mode picker, *and* is applied directly to agents started with `+ Coding Agent` / `Ctrl+N`. |
-| **Default model** | default | Presets the new-task form's model picker, *and* is applied directly to agents started with `+ Coding Agent` / `Ctrl+N`. |
+| **Default model** | default | Presets the new-task form's model picker, *and* is applied directly to agents started with `+ Coding Agent` / `Ctrl+N`. `Ctrl+M` ignores it and copies the active agent's model instead. |
+| **New agent shortcut** | ask every time | What `Ctrl+N` launches once an OpenRouter key is saved: *ask every time* opens a small Claude / OpenRouter menu under `+ Agent` (its *remember for future agents* checkbox writes this same setting), *Claude* skips the question, and *OpenRouter* goes straight to the catalog picker. Without a key, `Ctrl+N` launches Claude directly whatever this says. `Ctrl+M` copies the active agent and never consults this. |
 | **Default task effort** | default | Presets the new-task form's effort picker, *and* is applied directly to agents started with `+ Coding Agent` / `Ctrl+N`. |
 | **Default focus mode** | off | Presets the new-task form's focus checkbox. |
 | **Task summary on completion** | on | Puts the agent's closing message on the task card when a task finishes, read from its own transcript on the pass that already records the turn's cost. Off leaves Completed cards as they were. |
@@ -521,7 +725,9 @@ The panel is grouped into five collapsible sections — **Appearance**, **Agents
 | **Spoken notifications** | off | Says which agent just finished and the workspace it was in, for turns that end while you aren't watching that pane. Needs the voice engine below; see [Spoken notifications](#spoken-notifications). |
 | **Dictation engine** | not installed | Shows install state and installs the local Whisper engine — see [Voice dictation](#voice-dictation). Deliberately **not** part of `↺ Reset`: an install isn't a preference. |
 | **Voice engine** | not installed | Shows install state and installs the local Piper voice used by spoken notifications (~110 MB) — see [Spoken notifications](#spoken-notifications). Deliberately **not** part of `↺ Reset`: an install isn't a preference. |
-| **Colour theme** | Dark | Restyles the whole cockpit *and* every terminal's ANSI palette. Six themes: Dark, Light, Orange and three light variants that change only the accent hue — Light Blue, Light Neoblue and Light Purple. |
+| **OpenRouter API key** | unset | Paste a key and **Save** to fetch the model catalog and unlock the **OpenRouter** group in every model picker; the row then shows the model count with `↻` (re-fetch the catalog) and a click-twice `✕` (forget the key and catalog). See [OpenRouter models](#openrouter-models). Deliberately **not** part of `↺ Reset`: a key isn't a preference. |
+| **Models an agent can switch to** | none | Up to three catalog models that `/model` offers inside an OpenRouter agent, next to the one it was launched with — `＋` opens the filterable catalog picker, a chip's `✕` drops it. Only shown with a key saved; applies to agents started afterwards. See [OpenRouter models](#openrouter-models). |
+| **Colour theme** | Dark | Restyles the whole cockpit *and* every terminal's ANSI palette. Fifteen themes: the two dark pages first — Dark and Orange — then Light and twelve light variants that change only the accent hue: Light Blue, Neoblue, Purple, Teal, Rose, Violet, Sky, Indigo, Fuchsia, Emerald, Amber and Slate. Any light one goes dark with **Theme background overlay** off. |
 | **Theme background overlay** | on | The selected theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, pane and terminal surfaces — stays the default dark shade, and only the theme's own colours (borders, text, accents, terminal ramp) still follow the theme. Light swaps to a light-on-dark ramp when it is off, so its near-black text stays readable. |
 
 ---
@@ -536,6 +742,7 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous workspace |
 | `Ctrl+K` | Command palette — jump to anything |
 | `Ctrl+N` | New agent |
+| `Ctrl+M` | New agent copying the active one — model, harness, effort, role, permission mode |
 | `Ctrl+.` | Go to whoever has been blocked longest (again: the next one down) |
 | `Ctrl+X` | Close focused agent (again within 5s: confirm kill) |
 | `Ctrl+T` | Task board, new-task form |
@@ -564,6 +771,8 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 | Voice engine | `~/.local/share/swarmeye/tts` (inside WSL) | `~/.local/share/swarmeye/tts` |
 | Past conversations (read-only, Claude Code's) | `~/.claude/projects/` (inside WSL) | `~/.claude/projects/` |
 | tmux config | `~/.config/swarmeye/tmux.conf` (inside WSL) | `~/.config/swarmeye/tmux.conf` |
+
+Two things live in the workspace itself rather than in the app: `.swarmeye/notes.md`, the notebook every agent launched there is pointed at, and `.swarmeye/areas.json`, the areas the [scope picker](#scoping-an-agent-to-a-folder) offers. Both are the repo's files — commit them if the rest of the team should have them.
 
 Workspaces, sessions, tasks, skills and every option live in a single `config.json`, written atomically. Two things that change on their own beat are kept out of it so a routine poll never rewrites the whole file: `usage.json` (per-agent cost and context totals) and `usage-snapshot.json` (the last reading from Claude's usage API, so the widget has a number to show before the first poll of a new run answers).
 

@@ -76,7 +76,7 @@ const Roles = (() => {
       for (const [value, text] of Pane.MODELS) {
         const opt = document.createElement('option');
         opt.value = value === 'default' ? '' : value;
-        opt.textContent = value === 'default' ? 'default tier' : text;
+        opt.textContent = value === 'default' ? 'Anthropic Subscription: default tier' : text;
         model.appendChild(opt);
       }
       model.value = row.model || '';

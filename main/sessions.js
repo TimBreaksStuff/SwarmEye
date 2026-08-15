@@ -20,22 +20,45 @@ if (!IS_WIN) {
 }
 const pty = require('node-pty');
 const config = require('./config');
+const providers = require('./providers');
 const { pickName } = require('./names');
 
-/* Sessions run inside a dedicated tmux server (socket "swarmeye", own config
- * file, the user's ~/.tmux.conf is never loaded) so agents survive SwarmEye
+/* Sessions run inside a dedicated tmux server (socket "swarmeye" — see
+ * socketName — own config file, the user's ~/.tmux.conf is never loaded) so
+ * agents survive SwarmEye
  * restarts: the pty only hosts a `tmux attach` client. Killing the pty
  * detaches; the agent keeps running — inside WSL on Windows, natively on
  * macOS. If tmux is missing we fall back
  * to spawning claude directly (sessions then die with the app). */
 
 const TMUX_CONF = '~/.config/swarmeye/tmux.conf';
-const TMUX = `tmux -f ${TMUX_CONF} -L swarmeye`;
+
+/* One tmux server per user-data-dir. Without `--user-data-dir` the socket is
+ * "swarmeye", exactly as it has always been; a second instance launched on its
+ * own one — which is how this app is tested, there being no test suite — gets a
+ * socket of its own, so it can neither reattach to nor *reap* the agents of the
+ * instance the user is actually running. The reap below decides "orphan" from
+ * config.sessions, and a fresh user-data-dir knows no sessions at all: sharing
+ * one server, a throwaway test instance would kill every live agent on boot. */
+function socketName() {
+  const i = process.argv.findIndex((a) => a === '--user-data-dir' || a.startsWith('--user-data-dir='));
+  if (i < 0) return 'swarmeye';
+  const dir = process.argv[i].includes('=')
+    ? process.argv[i].slice(process.argv[i].indexOf('=') + 1)
+    : (process.argv[i + 1] || '');
+  return 'swarmeye-' + require('crypto').createHash('sha1').update(dir).digest('hex').slice(0, 8);
+}
+const TMUX = `tmux -f ${TMUX_CONF} -L ${socketName()}`;
+/* tmux's exact-match target prefix (`-t =name`) must always be quoted: the
+ * macOS shell is zsh, where a bare leading `=` is filename expansion — it
+ * looks up `name` as a *command*, fails with "zsh:1: <name> not found" and
+ * aborts the whole line before tmux ever runs. That silently broke attach,
+ * kill and the has-session probes on macOS only. */
 
 /* Whitelists shared with main.js so a new tier/level/id-shape is one edit.
  * The *checks* stay at every shell boundary on purpose — only the values
  * live here. */
-const MODELS = ['sonnet', 'opus', 'haiku', 'fable'];
+const MODELS = ['sonnet', 'opus', 'haiku', 'fable', 'opusplan', 'opus[1m]', 'sonnet[1m]'];
 const EFFORT_FLAGS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const SESSION_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 
@@ -90,6 +113,26 @@ const CONF_LINES = [
  * config-error message inside the first pane. */
 const HYPERLINKS_LINE = 'set -as terminal-features *:hyperlinks';
 
+/* Modified Enter (Shift+Enter for a newline, the usual "keep typing" key in
+ * these TUIs) can only reach an agent as an extended key sequence, and tmux
+ * refuses to forward those unless this is on — pi prints a warning about it in
+ * every pane it starts in. `on` forwards them to agents that ask for them
+ * rather than sending them unconditionally (`always`), so nothing changes for
+ * an agent that never requests them. Gated like HYPERLINKS_LINE: the option
+ * arrived in tmux 3.2, and an older server rejects an unknown option loudly,
+ * inside the first pane. */
+const EXTENDED_KEYS_LINE = 'set -g extended-keys on';
+
+/* A server that outlives its last session, so that _launch can start one
+ * *before* handing over an OpenRouter key: tmux daemonizes by keeping the argv
+ * and environment of whichever client started the server, so the process that
+ * starts it must never be the one carrying the key (see _launch). Costs an
+ * idle tmux server between agents. Gated with EXTENDED_KEYS_LINE because the
+ * `new-session -e` this exists to protect wants tmux >= 3.2 anyway — below
+ * that an OpenRouter agent cannot launch at all, and everything else should
+ * keep behaving exactly as it did. */
+const EXIT_EMPTY_LINE = 'set -g exit-empty off';
+
 /* IPC-supplied terminal dimensions end up inside a shell command line —
  * force them to sane integers no matter what the renderer sent. */
 function toDim(v, fallback, max) {
@@ -111,6 +154,7 @@ function claudeProjectDirName(cwd) {
  * backslashes, because the prompt is interpolated into the command line that
  * _launch wraps in single quotes for tmux. */
 const roles = require('./roles');
+const scope = require('./scope');
 
 /* A workspace can keep a `.swarmeye/notes.md` — what one agent learned about
  * this repo, so the next one starts with it instead of rediscovering it.
@@ -158,6 +202,23 @@ function notesTarget(wsPath, cwd) {
   return cwd === wsPath ? NOTES_POSIX : toShellPath(path.join(wsPath, NOTES_REL));
 }
 
+/* The Edit deny rules that keep an agent inside one folder of its own working
+ * directory (main/scope.js). A scope that cannot be turned into rules — the
+ * folder is gone, or it is a Windows path with no WSL spelling — throws
+ * rather than launching: both callers run inside a try that answers the
+ * renderer, and an agent that believes it is scoped and is not is worse than
+ * a launch that refuses. */
+function scopeDeny(cwd, want) {
+  if (!want) return undefined;
+  // main hands over { label, paths }; 1.60.75's bare path string is still read
+  // here because a session persisted under it can still be running
+  const paths = typeof want === 'string' ? [want] : [].concat(want.paths || []);
+  if (!paths.length) return undefined;
+  const rules = scope.denyRules(cwd, paths);
+  if (!rules) throw new Error('could not scope this agent to ' + paths.join(', '));
+  return rules;
+}
+
 /* --allow-dangerously-skip-permissions is opt-in (⌨ Options) — without it
  * claude won't offer bypass-permissions ("auto") mode in the Shift+Tab cycle
  * at all. Unlike --dangerously-skip-permissions, the --allow- variant only
@@ -171,18 +232,73 @@ function notesTarget(wsPath, cwd) {
  * every agent started afterward. `--model` only affects this one process.
  * Already whitelisted server-side (main.js task:create) — re-checked here
  * since it lands directly in a shell command line. */
-function claudeBase({ model, resume, role, notes, effort } = {}) {
+function claudeBase({ model, resume, role, notes, effort, orSkills, continueFrom, resumeId } = {}) {
   let cmd = config.load().skipPermissions ? 'claude --allow-dangerously-skip-permissions' : 'claude';
   const preset = roles.get(role);
   // the role's model is a default, not an override — an explicit pick (the
   // task's own model select, or the Options default) still wins
   const effectiveModel = model || (preset && preset.model);
-  if (effectiveModel && /^[a-zA-Z0-9._-]+$/.test(effectiveModel)) cmd += ' --model ' + effectiveModel;
+  // an 'oc:<slug>' value replaces claude entirely: the clean agent
+  // (agent/clean.js, see clean-agent-plan.md) talks straight to OpenRouter.
+  // Role prompt + notes pointer ride its --system flag; skipPermissions maps
+  // to --yolo (there is no permission footer to steer); `resume` carries
+  // claude conversation ids and means nothing here (restart appends
+  // --continue itself). A null command (key gone since the create-time
+  // check, unsafe script path) becomes a visible one-line failure in the
+  // pane rather than a silent fall-through to a Claude launch nobody picked.
+  const cleanSlug = providers.cleanSlugOf(effectiveModel);
+  if (cleanSlug) {
+    const appendedClean = [preset && preset.prompt, notes && notesPrompt(notes)].filter(Boolean).join(' ');
+    return providers.cleanCmd(cleanSlug, { system: appendedClean, yolo: !!config.load().skipPermissions, skills: orSkills })
+      || 'echo clean agent: OpenRouter key missing or app path not shell-safe';
+  }
+  // 'opencode:' / 'pi:' replace claude with a third-party CLI carrying our own
+  // adapter (opencode-pi-plan.md). Same failure rule as the clean agent: a
+  // null command is a visible one-line message in the pane, never a silent
+  // fall-through to a Claude launch nobody picked. opencode has no
+  // system-prompt flag, so a role preset only supplies its model there; pi
+  // takes the role prompt and notes pointer, and gates nothing by design.
+  // Both take the OR-startup skills, each by its own route (providers.js).
+  // on a restart, continueFrom keeps the pane's own transcript (so the cost
+  // tally carries on) and resumeId is the harness's own conversation id — both
+  // ride the command these builders make, not a flag appended after it
+  const opencodeSlug = providers.opencodeSlugOf(effectiveModel);
+  if (opencodeSlug) {
+    return providers.opencodeCmd(opencodeSlug, { yolo: !!config.load().skipPermissions, continueFrom, resumeId, skills: orSkills })
+      || 'echo opencode agent: OpenRouter key missing or app path not shell-safe';
+  }
+  const piSlug = providers.piSlugOf(effectiveModel);
+  if (piSlug) {
+    const appendedPi = [preset && preset.prompt, notes && notesPrompt(notes)].filter(Boolean).join(' ');
+    return providers.piCmd(piSlug, { system: appendedPi, continueFrom, resumeId, skills: orSkills })
+      || 'echo pi agent: OpenRouter key missing or app path not shell-safe';
+  }
+  // an 'or:<slug>' value launches through OpenRouter: the model rides an env
+  // prefix (providers.js maps every tier alias to the one slug) rather than
+  // --model, and --effort stays off — Anthropic's adaptive-thinking request
+  // fields 400 on foreign upstreams. Every env token is regex-validated in
+  // providers.js under the same no-quotes rule as the strings below.
+  const orSlug = providers.slugOf(effectiveModel);
+  if (orSlug) {
+    const prefix = providers.envPrefix(orSlug);
+    // a null prefix (key cleared since launch) must not fall through to a
+    // plain claude launch billed to the Anthropic account nobody picked —
+    // restarts skip the create-time key check, so this is their gate
+    if (!prefix) return 'echo OpenRouter agent: key missing — cannot relaunch ' + orSlug;
+    cmd = prefix + cmd;
+  // brackets are in the set for the 1M-context aliases ('opus[1m]') — and they
+  // are why the value is double-quoted: tmux runs this command through the
+  // user's login shell, where a bare `sonnet[1m]` is a glob with no match, and
+  // zsh refuses the whole line rather than passing it through the way sh does.
+  // The agent then never starts and the pane reads [exited]. The quotes are
+  // safe for the same reason --append-system-prompt's are: the value cannot
+  // contain a quote, $, backtick or backslash.
+  } else if (effectiveModel && /^[a-zA-Z0-9._[\]-]+$/.test(effectiveModel)) cmd += ` --model "${effectiveModel}"`;
   // effort is a launch flag for the same reason model is: a typed `/effort
   // <level>` saves as the user's default for new sessions (CLI 2.1.x), so one
   // low-effort task would bleed into every agent started afterward. The flag
   // only knows the five named levels — ultracode/auto still go in typed.
-  if (effort && EFFORT_FLAGS.includes(effort)) cmd += ' --effort ' + effort;
+  if (!orSlug && effort && EFFORT_FLAGS.includes(effort)) cmd += ' --effort ' + effort;
   // roles are a launch flag rather than a typed first message: --append-system-prompt
   // costs no turn and cannot collide with the task board's own prompt injection.
   // The texts below are ours and contain no shell metacharacters — that is what
@@ -200,18 +316,20 @@ function claudeBase({ model, resume, role, notes, effort } = {}) {
 }
 
 class PtyManager {
-  constructor({ maxSessions, onData, onExit, debugLog, decorateCmd }) {
+  constructor({ maxSessions, onData, onExit, debugLog, decorateCmd, turnsOf }) {
     this.maxSessions = maxSessions;
     this.onData = onData;
     this.onExit = onExit;
     this.debugLog = debugLog;
     this.decorateCmd = decorateCmd; // wraps the claude command (hook env/flags)
+    this.turnsOf = typeof turnsOf === 'function' ? turnsOf : () => 0;
     this.sessions = new Map(); // id -> { proc, session }
     this.counter = 0;
     this.tmuxOk = false;
     this.shellOk = false; // did the init probe's shell answer at all?
     this.probeFailed = false; // last attachExisting couldn't reach tmux — its [] is not ground truth
     this.shuttingDown = false;
+    this.replacing = new Set(); // ids killed by restart() — their exit must not orphan a task
   }
 
   /* Every exec here is a shell spawn — a `wsl.exe` one on Windows, which costs
@@ -229,7 +347,10 @@ class PtyManager {
     this.tmuxOk = !!m;
     if (this.tmuxOk) {
       const hyperlinksOk = !!m && (+m[1] > 3 || (+m[1] === 3 && +m[2] >= 4));
-      const lines = hyperlinksOk ? CONF_LINES.concat(HYPERLINKS_LINE) : CONF_LINES;
+      const extKeysOk = +m[1] > 3 || (+m[1] === 3 && +m[2] >= 2);
+      const lines = CONF_LINES
+        .concat(extKeysOk ? [EXTENDED_KEYS_LINE, EXIT_EMPTY_LINE] : [])
+        .concat(hyperlinksOk ? HYPERLINKS_LINE : []);
       const conf = lines.map((l) => `'${l}'`).join(' ');
       // the conf only applies at server start, and the server outlives the
       // app (that's the point) — apply to an already-running one too, once.
@@ -238,6 +359,9 @@ class PtyManager {
         `mkdir -p ~/.config/swarmeye && printf '%s\\n' ${conf} > ${TMUX_CONF}`,
         ...WHEEL_LINES.map((line) => `${TMUX} ${line} 2>/dev/null; true`),
       ];
+      // same reason as the wheel lines above: the conf is only read when the
+      // server starts, and the server outlives the app
+      if (extKeysOk) script.push(`${TMUX} ${EXTENDED_KEYS_LINE} 2>/dev/null; true`);
       if (hyperlinksOk) {
         script.push(`${TMUX} show -s terminal-features 2>/dev/null | grep -q hyperlinks`
           + ` || ${TMUX} set -as terminal-features "*:hyperlinks" 2>/dev/null; true`);
@@ -266,17 +390,27 @@ class PtyManager {
     }
     // `; true` pins the exit code, so null here can only mean the shell itself
     // never answered — same class of failure as the init probe above.
-    const out = await exec(`${TMUX} list-sessions -F '#{session_name}' 2>/dev/null; true`);
+    const out = await exec(`${TMUX} list-sessions -F '#{session_name} #{session_attached}' 2>/dev/null; true`);
     if (out == null) {
       this.probeFailed = true;
       this.debugLog('[ptys] list-sessions unanswered — keeping session metadata');
       return [];
     }
     this.probeFailed = false;
-    const alive = new Set(out.split('\n').map((s) => s.trim()).filter(Boolean));
-
+    const alive = new Set();
+    // A session someone is already attached to belongs to another live
+    // SwarmEye (a dev instance on its own --user-data-dir, so its config knows
+    // nothing of these agents). The orphan reap below must leave those alone.
+    const attached = new Set();
+    for (const line of out.split('\n')) {
+      const [name, clients] = line.trim().split(' ');
+      if (!name) continue;
+      alive.add(name);
+      if (clients && clients !== '0') attached.add(name);
+    }
     const restored = [];
     const dead = [];
+    const reap = []; // tmux sessions to kill: never-used agents, then orphans
     for (const meta of Object.values(known)) {
       // Already attached: hand back the live session rather than opening a
       // second client. `session:list` calls this every time, and a renderer
@@ -288,6 +422,16 @@ class PtyManager {
         restored.push(live.session);
         this.counter = Math.max(this.counter, meta.num || 0);
       } else if (alive.has(meta.tmuxName) && restored.length < this.maxSessions) {
+        // An agent that never got a prompt has nothing to come back to, and a
+        // restart used to refill the grid with those blank panes. Reap it
+        // instead. Both signals are already persisted: lastCommand is written
+        // when a prompt is sent, turns when one completes — either alone
+        // misses an agent killed mid-first-turn.
+        if (!meta.lastCommand && !this.turnsOf(meta.id)) {
+          reap.push(meta.tmuxName);
+          dead.push(meta.id);
+          continue;
+        }
         // pty.spawn throws synchronously (deleted workspace folder, say) — one
         // bad session must not brick the whole boot, and its tmux session is
         // still alive, so keep the metadata and just skip the pane
@@ -300,6 +444,19 @@ class PtyManager {
       } else {
         dead.push(meta.id);
       }
+    }
+    // A tmux session no metadata points at can never be shown again — it is a
+    // leaked agent, holding a workspace and (on Windows) a WSL process for as
+    // long as the machine is up. Reap those too. `known` is the pre-prune
+    // snapshot on purpose: sessions dropped just now for exceeding the cap
+    // keep running this round and are only reaped on a later boot.
+    const knownNames = new Set(Object.values(known).map((m) => m.tmuxName));
+    for (const name of alive) {
+      if (name.startsWith('swarmeye_') && !knownNames.has(name) && !attached.has(name)) reap.push(name);
+    }
+    if (reap.length) {
+      await exec(`${reap.map((n) => `${TMUX} kill-session -t '=${n}' 2>/dev/null`).join('; ')}; true`);
+      this.debugLog(`[ptys] reaped ${reap.length} unused/orphaned tmux session(s)`);
     }
     // Drop only the dead ones from whatever config.sessions holds *now*,
     // rather than overwriting wholesale from the pre-await `known` snapshot —
@@ -329,7 +486,11 @@ class PtyManager {
 
   /* opts.worktree = { name, branch, path } makes this an isolated agent: the
    * pty chdirs into the worktree instead of the workspace, and the pair is
-   * persisted so a restart lands back in it. */
+   * persisted so a restart lands back in it.
+   *
+   * opts.scope = a folder inside cwd this agent may edit and nothing else
+   * (main/scope.js). Anchored at cwd rather than the workspace, so an
+   * isolated agent is scoped inside its own worktree. */
   spawn(workspace, cols, rows, opts = {}) {
     if (this.sessions.size >= this.maxSessions) throw new Error('cap');
     const cwd = opts.worktree ? opts.worktree.path : workspace.path;
@@ -353,8 +514,28 @@ class PtyManager {
     // role chip — the flag itself is long gone by then, it lives in the process
     if (roles.has(opts.role)) meta.role = opts.role;
     if (opts.worktree) meta.worktree = { name: opts.worktree.name, branch: opts.worktree.branch };
+    // persisted for the same reason as the role: the deny rules live in the
+    // launch, so a restart has to rebuild them rather than inherit them
+    const denyEdit = scopeDeny(cwd, opts.scope);
+    if (opts.scope) meta.scope = opts.scope;
+    // the model this agent was launched with — Claude tier or 'or:<slug>' —
+    // so the pane can label it from its first frame instead of waiting for
+    // the first turn's transcript read, and a restart comes back on it (an
+    // OpenRouter pick also needs it to rebuild the env prefix). Same
+    // resolution as claudeBase: an explicit pick, else the role's default.
+    const launchModel = opts.model || (roles.get(opts.role) || {}).model;
+    if (launchModel) meta.model = launchModel;
     return this._launch(meta, cols, rows,
-      this.decorateCmd(id, claudeBase({ ...opts, notes: notesTarget(workspace.path, cwd) })));
+      // a foreign harness (opencode/pi) keeps the hook env but not the
+      // --settings flag it would refuse to start with. Resolved the way
+      // claudeBase resolves it: an explicit pick, else the role's default.
+      // The clean agent's own resume is a flag after its command rather than
+      // part of it, the one restart() appends too — this is the History
+      // screen resuming one of its conversations in a brand new pane.
+      this.decorateCmd(id, claudeBase({ ...opts, notes: notesTarget(workspace.path, cwd) })
+        + (providers.cleanSlugOf(opts.model || (roles.get(opts.role) || {}).model)
+          ? providers.cleanContinueArg(opts.continueFrom) : ''),
+      { settings: !providers.isForeign(opts.model || (roles.get(opts.role) || {}).model), denyEdit }));
   }
 
   /* Does this folder have a previous Claude conversation to continue?
@@ -369,9 +550,38 @@ class PtyManager {
   /* Respawn an exited agent in the same folder under the same name.
    * resume=true continues the last conversation in that directory —
    * silently downgraded to a fresh session when there is none. */
-  async restart({ workspaceId, workspaceName, agentName, cwd, workspacePath, worktree, cols, rows, resume, role, model }) {
+  async restart({ workspaceId, workspaceName, agentName, cwd, workspacePath, worktree, cols, rows, resume, role, model, continueFrom, resumeId, orSkills, replaceId, scope: scopeRel }) {
     if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
-    const resumed = resume ? await this.hasHistory(cwd) : false;
+    // rebuilt against the tree as it is now, and before the kill below: a
+    // scope whose folder went away must refuse the restart while the old
+    // agent is still there to keep, not after it has been killed
+    const denyEdit = scopeDeny(cwd, scopeRel);
+    // a live ↻ must free the old tmux session (and its cap slot) before the
+    // new id launches — otherwise the agent keeps running, maxSessions still
+    // counts it, and the next boot remounts a duplicate. Exited-pane ↻ has
+    // nothing in this.sessions. Detached-reattach never calls restart().
+    if (replaceId && this.sessions.has(replaceId)) {
+      this.replacing.add(replaceId);
+      try {
+        await this.kill(replaceId);
+      } catch (err) {
+        this.replacing.delete(replaceId);
+        throw err;
+      }
+      this.sessions.delete(replaceId);
+    }
+    // a clean agent (oc:) resumes from its own persisted conversation, named
+    // by the previous session's id — main.js only passes continueFrom when
+    // that file really exists. hasHistory only knows claude's transcripts.
+    const clean = !!providers.cleanSlugOf(model || (roles.get(role) || {}).model);
+    // opencode and pi resume by their *own* conversation id, which their
+    // adapter recorded — main.js passes it as resumeId, and only its presence
+    // makes this a resume. They never take claude's `--continue`, a flag both
+    // of them refuse to start with.
+    const foreign = providers.isForeign(model || (roles.get(role) || {}).model);
+    const resumed = resume
+      ? (foreign ? !!resumeId : clean ? !!continueFrom : await this.hasHistory(cwd))
+      : false;
     // Checked here, right before the synchronous launch below, rather than
     // before the `await` above — two restarts racing the single remaining
     // slot would otherwise both pass the check while it awaited.
@@ -394,13 +604,24 @@ class PtyManager {
     // and it comes back in the same worktree: cwd already points there, this
     // is what keeps the chip, the review popover and the next restart on it
     if (worktree) meta.worktree = worktree;
+    // and inside the same folder it was scoped to
+    if (scopeRel) meta.scope = scopeRel;
     // `model` is how a restart moves the agent to another tier (the pane's
-    // right-sizing offer). Left undefined it is the role's model, or the
-    // account default — i.e. exactly what a plain restart did before.
+    // right-sizing offer); the pane hands back what it was launched with
+    // otherwise. Left undefined it is the role's model, or the account
+    // default — i.e. exactly what a plain restart did before.
+    const launchModel = model || (roles.get(role) || {}).model;
+    if (launchModel) meta.model = launchModel;
     const notes = notesTarget(workspacePath || cwd, cwd);
-    const cmd = this.decorateCmd(id, resumed
-      ? claudeBase({ role, model, notes }) + ' --continue'
-      : claudeBase({ role, model, notes }));
+    // a foreign harness's resume is built into its command (env + its own
+    // --session), not appended after it, so claudeBase takes the two ids
+    const base = claudeBase({ role, model, notes, orSkills,
+      continueFrom: resumed && foreign ? continueFrom : undefined,
+      resumeId: resumed && foreign ? resumeId : undefined });
+    const cmd = this.decorateCmd(id, !resumed || foreign ? base
+      : clean ? base + providers.cleanContinueArg(continueFrom)
+        : base + ' --continue',
+    { settings: !foreign, denyEdit });
     const session = this._launch(meta, cols, rows, cmd);
     return { session, resumed };
   }
@@ -412,7 +633,7 @@ class PtyManager {
     if (existing) return existing.session;
     const meta = (config.load().sessions || {})[id];
     if (!meta || !this.tmuxOk) throw new Error('unknown-session');
-    const out = await exec(`${TMUX} has-session -t =${meta.tmuxName} 2>/dev/null && echo alive; true`);
+    const out = await exec(`${TMUX} has-session -t '=${meta.tmuxName}' 2>/dev/null && echo alive; true`);
     // null = the shell never answered (WSL hiccup) — the agent may be fine, so
     // the metadata must survive for a retry; only a real "no such session"
     // answer drops it (the same distinction _handleExit makes).
@@ -434,18 +655,57 @@ class PtyManager {
   _launch(meta, cols, rows, cmd) {
     cols = toDim(cols, 100, 500);
     rows = toDim(rows, 30, 300);
+    // An OpenRouter agent needs its key in the environment, and the one place
+    // it must never be is a command line: tmux republishes the launch command
+    // verbatim as #{pane_start_command}, and `ps -eo args` shows every argv on
+    // the box to every process running as this user — which is how an agent
+    // running the `ps` check this repo's own CLAUDE.md asks for would print
+    // the key into its pane, its scrollback and its transcript.
+    //
+    // So the value only ever travels as an environment variable — node-pty
+    // hands it to this pty's shell below — and `new-session -e` (tmux >= 3.2)
+    // puts it on the session over the socket. Three details, each checked by
+    // launching a session and grepping `ps -eo args` for the key:
+    //   - `$NAME` is expanded by that shell, so the script string, which bash
+    //     and wsl.exe keep in argv for the life of the pane, names it only;
+    //   - the session is created detached and attached as a second step: a
+    //     client that stays attached keeps its expanded argv just as long;
+    //   - the server is started first by a process the key is stripped from,
+    //     since tmux daemonizes keeping the argv *and environment* of whoever
+    //     started it — a keyed client would publish the key in `ps` for the
+    //     server's whole life and hand it to every session created after,
+    //     plain Claude ones included. exit-empty keeps that server up.
+    // The quotes and `$` are the shell's and sit outside the single quotes
+    // wrapping `cmd`, so the no-metacharacters rule inside those is untouched:
+    // this is our own literal variable name, never data.
+    const keyVar = cmd ? providers.keyEnv(meta.model) : null;
+    const attach = `exec ${TMUX} attach-session -t '=${meta.tmuxName}'`;
     const script = this.tmuxOk
       ? (cmd
-        ? `exec ${TMUX} new-session -A -s ${meta.tmuxName} -x ${cols} -y ${rows} '${cmd}'`
-        : `exec ${TMUX} attach-session -t =${meta.tmuxName}`)
+        ? (keyVar
+          ? `env -u ${keyVar.name} ${TMUX} start-server 2>/dev/null; `
+            + `${TMUX} new-session -Ad -s ${meta.tmuxName} -x ${cols} -y ${rows}`
+            + ` -e ${keyVar.name}="$${keyVar.name}" '${cmd}'; ${attach}`
+          : `exec ${TMUX} new-session -A -s ${meta.tmuxName} -x ${cols} -y ${rows} '${cmd}'`)
+        : attach)
       : `exec ${cmd || 'claude'}`;
     // Windows reaches the agent through WSL, which takes the working
     // directory as a flag rather than a spawn option; macOS spawns the login
     // shell directly. A login shell either way, so ~/.local/bin is on PATH
     // and the tmux server inherits that environment.
+    //
+    // The key rides that shell's environment: a spawn option on macOS, and on
+    // Windows an `env` prefix inside WSL, since nothing crosses the wsl.exe
+    // boundary by inheritance. `env` execs bash in place, so the argv the
+    // pane's own `ps` can see never holds the value either.
     const [file, args, extra] = IS_WIN
-      ? ['wsl.exe', ['--cd', meta.cwd, '--', 'bash', '-lc', script], { useConpty: true }]
-      : [SHELL, ['-lc', script], { cwd: meta.cwd, env: process.env }];
+      ? ['wsl.exe', ['--cd', meta.cwd, '--',
+        ...(keyVar ? ['env', `${keyVar.name}=${keyVar.value}`] : []),
+        'bash', '-lc', script], { useConpty: true }]
+      : [SHELL, ['-lc', script], {
+        cwd: meta.cwd,
+        env: keyVar ? { ...process.env, [keyVar.name]: keyVar.value } : process.env,
+      }];
 
     const proc = pty.spawn(file, args, {
       name: 'xterm-256color',
@@ -467,12 +727,15 @@ class PtyManager {
   async _handleExit(meta, exitCode) {
     this.sessions.delete(meta.id);
     if (this.shuttingDown) return; // quitting: client detached, agent lives on
+    // restart() already killed this id and is about to mint a replacement —
+    // a real-exit event would mark the pane exited and orphan its task
+    if (this.replacing.delete(meta.id)) return;
     let detached = false;
     if (this.tmuxOk) {
       // claude gone => tmux session gone => real exit. Session still alive
       // means the client merely detached; keep metadata so a reattach works.
       // An unanswered probe (shell hiccup) also keeps the metadata.
-      const out = await exec(`echo probe; ${TMUX} has-session -t =${meta.tmuxName} 2>/dev/null && echo alive; true`);
+      const out = await exec(`echo probe; ${TMUX} has-session -t '=${meta.tmuxName}' 2>/dev/null && echo alive; true`);
       const probed = !!(out && out.includes('probe'));
       const alive = !!(out && out.includes('alive'));
       detached = !probed || alive;
@@ -560,7 +823,7 @@ class PtyManager {
     // still alive in tmux, so keep the metadata and report failure rather than
     // orphaning a running agent with no reattach path.
     if (this.tmuxOk && meta && meta.tmuxName) {
-      const out = await exec(`${TMUX} kill-session -t =${meta.tmuxName} 2>/dev/null; echo done; true`);
+      const out = await exec(`${TMUX} kill-session -t '=${meta.tmuxName}' 2>/dev/null; echo done; true`);
       if (out == null || !out.includes('done')) throw new Error('tmux unreachable — agent not killed');
     }
     if (s) {

@@ -3,3 +3,4 @@ node_modules/
 .claude/
 dist/
 .github-mirror/
+.DS_Store

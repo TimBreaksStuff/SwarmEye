@@ -1,0 +1,293 @@
+/* ---- history: the History screen ----
+ *
+ * Cut out of styles/app.css. Linked in app.css's own order and BEFORE
+ * chrome-clean.css, which exists to override these rules — a per-area sheet
+ * loading after it would flip every one of those overrides at once.
+ */
+
+/* ---------- history screen ---------- */
+/* Same full-view shell as the board/Skills — one row per past Claude conversation
+ * in the selected workspace, each resumable in a new pane. */
+#history-view {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  /* min-width: 0 is load-bearing, not boilerplate: .hist-preview is nowrap, so
+   * a row's min-content width is the whole untruncated first message. Left at
+   * the flex default (auto) this view refuses to shrink below that, is laid out
+   * wider than the window, and every row's action buttons sit off-screen right. */
+  min-width: 0;
+  min-height: 0;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+}
+#history-view[hidden] { display: none; }
+#history-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border3) transparent;
+}
+#history-ws,
+#history-provider {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--term-bg);
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  padding: 5px 8px;
+  max-width: 220px;
+}
+#history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* the section bar shares the task board's archive styling but lives inside the
+ * scrolling column here, so it must not be squeezed by the list below it */
+#history-list-head { flex: none; }
+.hist-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  cursor: pointer; /* the row itself opens the transcript */
+}
+.hist-row:hover { border-color: var(--border-hover); }
+.hist-body {
+  flex: 1;
+  min-width: 0;
+}
+/* wraps instead of ellipsing: a narrow window would otherwise cut the preview
+ * down to nothing. Capped at three lines so a 1200-character first message
+ * cannot turn one row into a page — the full text is still in the tooltip. */
+.hist-preview {
+  color: var(--text);
+  font-size: 12px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.hist-meta {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.hist-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hist-copy,
+.hist-resume {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.hist-copy:hover { color: var(--text); border-color: var(--border-hover); }
+.hist-resume {
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.hist-resume:hover {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.hist-resume:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* the transcript modal — one past conversation, read in place */
+#hist-modal,
+#coord-modal {
+  /* fixed, not absolute: the view it lives in is laid out wider than the
+   * window (the grid behind it sets that width), so an inset:0 overlay would
+   * centre itself off-screen to the right */
+  position: fixed;
+  inset: 0;
+  /* #history-view's own z-index opens a stacking context below the top bar's,
+   * so no z-index here can lift the box over it — it clears it instead */
+  z-index: 60;
+  /* only the dim: the box inside is placed and sized by its own module */
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+#hist-modal[hidden],
+#coord-modal[hidden] { display: none; }
+#hist-modal-box,
+#coord-modal-box {
+  /* absolute, not flex-centred: the box is resizable, and a centred box grows
+   * in both directions under the grip. history.js/coordinator.js place it. */
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  width: min(980px, 96vw);
+  /* a set height, not one that follows the content: the box is centred once,
+   * when it opens, and a box that grew as the transcript arrived would walk
+   * off the bottom of the window */
+  height: min(760px, calc(100vh - 120px));
+  min-width: 460px;
+  min-height: 320px;
+  max-width: 96vw;
+  /* the box is centred in the whole window now, so this is also what keeps a
+   * tall one clear of the top bar */
+  max-height: calc(100vh - 120px);
+  overflow: hidden; /* `resize` does nothing while overflow is visible */
+  resize: both;
+  padding: 14px 16px 20px; /* the deeper bottom is the resize grip's room */
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+/* the coordinator opens on one textarea — a transcript's height would be empty
+   box until a plan comes back */
+#coord-modal-box { height: min(520px, calc(100vh - 120px)); }
+#hist-modal-head,
+#coord-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: space-between;
+}
+#hist-modal-title,
+#coord-modal-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#hist-modal-meta,
+#coord-modal-meta {
+  margin: 6px 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+#hist-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border3) transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hist-turn {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border3);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--term-bg) 60%, transparent);
+}
+.hist-turn-user { border-left-color: var(--accent); }
+.hist-turn-sub { opacity: 0.8; }
+.hist-who {
+  margin-bottom: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.hist-turn-text {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* the coordinator modal — the shell is shared with the transcript modal
+   above; only the request box, the split rows and the footer are its own */
+#coord-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border3) transparent;
+}
+#coord-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+#coord-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.coord-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.coord-row textarea {
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.coord-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.coord-row-controls select {
+  padding: 3px 6px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.coord-drop { margin-left: auto; }
+#coord-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+#coord-split:disabled,
+#coord-create:disabled { opacity: 0.5; cursor: not-allowed; }
+/* .pill and #coord-plan both set display, which beats the UA [hidden] rule —
+   the two states of this modal swap by hiding, so say it explicitly */
+#coord-plan[hidden],
+#coord-input[hidden],
+#coord-split[hidden],
+#coord-create[hidden] { display: none; }

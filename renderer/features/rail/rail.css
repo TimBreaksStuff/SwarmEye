@@ -1,0 +1,649 @@
+/* ---- rail: top bar, icon rail, the usage bars and gauges, and the swarm map above Archived ----
+ *
+ * Cut out of styles/app.css. Linked in app.css's own order and BEFORE
+ * chrome-clean.css, which exists to override these rules — a per-area sheet
+ * loading after it would flip every one of those overrides at once.
+ */
+
+/* ---------- top bar ---------- */
+
+#topbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  background: var(--header-bg);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+/* ---------- icon rail (collapsed left bar) ---------- */
+
+#body-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* #leftbar is a plain placeholder box that reserves width in the #body-wrap
+ * flex row; #leftbar-surface (absolutely positioned, inset:0) carries the
+ * actual visuals and scrolling. Splitting them lets a hover-preview widen
+ * the surface past its placeholder's edge — overlaying the grid without
+ * resizing #leftbar itself, so panes never reflow just from a mouse hover.
+ * The permanent "expanded" mode widens the placeholder too, for a real
+ * (intentional) layout change. */
+/* 57px, not a round number picked by eye: 1px of it is the surface's right
+ * border, so a centred 42px tile lands its icon at x=28 — exactly where the
+ * expanded row puts it (10px list padding + 10px row padding + 8px half-icon).
+ * Hovering the rail open no longer slides the whole icon column sideways. */
+#leftbar {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: 57px;
+  min-height: 0;
+  overflow: visible;
+  transition: width 0.16s ease;
+}
+#leftbar.expanded { width: 256px; }
+
+#leftbar-surface {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 57px;
+  padding: 14px 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  scrollbar-width: none;
+  transition: width 0.16s ease, padding 0.16s ease, gap 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+#leftbar-surface::-webkit-scrollbar { display: none; }
+
+#leftbar.expanded #leftbar-surface,
+#leftbar.hover-expanded #leftbar-surface {
+  width: 256px;
+  align-items: stretch;
+  padding: 16px 12px;
+}
+/* a hover preview floats above the grid (placeholder width is unchanged —
+ * see the comment above) — give it a popover-style shadow so it reads as
+ * a temporary overlay rather than a settled layout */
+#leftbar.hover-expanded #leftbar-surface {
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.75);
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+}
+
+#leftbar.expanded #workspaces,
+#leftbar.hover-expanded #workspaces {
+  align-items: stretch;
+  gap: 6px;
+}
+
+.rail-tile-glyph { display: block; }
+.rail-tile-name { display: none; }
+#leftbar.expanded .rail-tile-name,
+#leftbar.hover-expanded .rail-tile-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the glyph (letter / emoji) is redundant once the full name is shown */
+#leftbar.expanded .rail-tile-glyph,
+#leftbar.hover-expanded .rail-tile-glyph {
+  display: none;
+}
+
+.rail-div {
+  width: 26px;
+  height: 1px;
+  flex: none;
+  background: var(--border);
+}
+#leftbar.expanded .rail-div,
+#leftbar.hover-expanded .rail-div {
+  width: 100%;
+}
+
+.leftbar-spacer { flex: 1; }
+
+.rail-tile {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 13px;
+  background: var(--glass);
+  border: 1px solid var(--border3);
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.rail-tile svg { width: 18px; height: 18px; flex: none; }
+.rail-tile:hover {
+  color: var(--accent-text);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px -4px var(--accent-glow);
+}
+.rail-tile.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 8px 24px -8px var(--accent-glow);
+}
+.rail-tile.selected:hover { color: var(--on-accent); }
+/* an agent in this workspace needs attention */
+.rail-tile.attn {
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.rail-tile.attn.selected {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.rail-tile .ws-attn {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+  animation: attn-pulse 1.1s ease-in-out infinite;
+}
+/* workspace identity colour: a dot in the bottom-left corner (mirrors the
+ * top-right .ws-attn); the same colour rings the agent's swarm-map slot */
+.rail-tile .ws-color-dot {
+  position: absolute;
+  bottom: -3px;
+  left: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--surface);
+}
+/* pinned workspaces float to the top of the rail — the marker sits in the
+ * free top-left corner, opposite .ws-attn */
+.rail-tile .ws-pin {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  font-size: 9px;
+  line-height: 1;
+  filter: drop-shadow(0 0 3px var(--bg));
+}
+/* small corner counter (agents per workspace, archived count) */
+.rail-n {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 100px;
+  background: var(--surface);
+  border: 1px solid var(--border3);
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
+}
+.rail-tile.selected .rail-n {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* expanded rail: tiles become full-width pill rows (icon/name left, badges
+ * trail on the right) instead of centered squares */
+#leftbar.expanded .rail-tile,
+#leftbar.hover-expanded .rail-tile {
+  width: 100%;
+  height: 38px;
+  flex: none;
+  border-radius: 100px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 14px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+#leftbar.expanded .rail-tile-name,
+#leftbar.hover-expanded .rail-tile-name {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+#leftbar.expanded .rail-tile .ws-pin,
+#leftbar.hover-expanded .rail-tile .ws-pin,
+#leftbar.expanded .rail-tile .ws-attn,
+#leftbar.hover-expanded .rail-tile .ws-attn,
+#leftbar.expanded .rail-tile .rail-n,
+#leftbar.hover-expanded .rail-tile .rail-n {
+  position: static;
+  flex: none;
+  margin-left: auto;
+}
+#leftbar.expanded .rail-tile .ws-pin ~ .ws-attn,
+#leftbar.hover-expanded .rail-tile .ws-pin ~ .ws-attn,
+#leftbar.expanded .rail-tile .ws-pin ~ .rail-n,
+#leftbar.hover-expanded .rail-tile .ws-pin ~ .rail-n {
+  margin-left: 6px;
+}
+#leftbar.expanded .rail-tile .ws-attn ~ .rail-n,
+#leftbar.hover-expanded .rail-tile .ws-attn ~ .rail-n {
+  margin-left: 6px;
+}
+
+#add-workspace.rail-tile {
+  background: transparent;
+  border-style: dashed;
+  color: var(--accent-text);
+  font-size: 20px;
+  font-weight: 400;
+}
+#add-workspace.rail-tile:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 18px -4px var(--accent-glow);
+}
+
+/* drag a workspace tile up/down to reorder */
+.rail-tile.dragging { opacity: 0.35; }
+.rail-tile.drop-before { box-shadow: 0 -3px 0 0 var(--accent); }
+.rail-tile.drop-after { box-shadow: 0 3px 0 0 var(--accent); }
+
+/* hover flyout: full workspace name + rename (dblclick) + remove (✕) */
+#rail-flyout {
+  position: fixed;
+  z-index: 24;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(18px);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
+  border-radius: 10px;
+  padding: 7px 12px;
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+#rail-flyout[hidden] { display: none; }
+.rail-flyout-info { min-width: 0; }
+.rail-flyout-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+  white-space: nowrap;
+  cursor: text;
+}
+.rail-flyout-name[contenteditable] {
+  outline: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0 3px;
+  text-transform: none;
+}
+.rail-flyout-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+.rail-flyout-pin,
+.rail-flyout-x {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  flex: none;
+  padding: 0;
+}
+.rail-flyout-x:hover { color: var(--err); border-color: rgba(255, 90, 90, 0.4); }
+/* pinned reads as "on" — the unpinned state is deliberately dim, so the two
+ * are distinguishable without hovering for the tooltip */
+.rail-flyout-pin { opacity: 0.35; }
+.rail-flyout-pin:hover { opacity: 0.8; border-color: var(--border-hover); }
+.rail-flyout-pin.on { opacity: 1; border-color: var(--accent); }
+/* workspace colour picker inside the flyout */
+.rail-flyout-colors {
+  display: flex;
+  gap: 5px;
+  margin-top: 7px;
+}
+.ws-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0;
+  cursor: pointer;
+  flex: none;
+  transition: transform 0.12s;
+}
+.ws-swatch:hover { transform: scale(1.18); }
+.ws-swatch.active {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--text2);
+}
+
+#logo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  user-select: none;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+#logo .logo-icon {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+#logo .logo-word {
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+#logo .logo-eye {
+  color: var(--accent);
+}
+
+#workspaces {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+.pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border3);
+  border-radius: 100px;
+  padding: 7px 14px;
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: border-color 0.15s, color 0.15s, background 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+}
+.pill:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+  background: var(--pill-hover);
+}
+@keyframes pill-attn {
+  0%, 100% { box-shadow: 0 0 0 1px var(--amber), 0 0 16px -2px rgba(245, 181, 68, 0.55); }
+  50% { box-shadow: 0 0 0 1px var(--amber), 0 0 6px -2px rgba(245, 181, 68, 0.2); }
+}
+
+#topbar .spacer { flex: 1; }
+
+#add-agent {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
+  border-radius: 100px;
+  padding: 9px 18px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: box-shadow 0.15s, transform 0.15s, opacity 0.15s;
+}
+#add-agent:hover:not(:disabled) {
+  box-shadow: 0 0 0 1px var(--accent), 0 10px 30px -6px var(--accent-glow);
+  transform: translateY(-1px);
+}
+#add-agent:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ---------- usage widget (mini vertical bars in the rail) ---------- */
+
+#usage {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 8px 0;
+  flex: none;
+  cursor: pointer;
+  user-select: none;
+}
+.u-track {
+  display: block;
+  width: 6px;
+  height: 38px;
+  border-radius: 3px;
+  background: var(--border2);
+  position: relative;
+  overflow: hidden;
+}
+.u-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* renderRow sets --u; the collapsed rail's bars fill upward, the expanded
+   * rail's flip the same value to a width (styles/chrome-clean.css) */
+  height: var(--u, 0%);
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+  transition: height 0.4s ease;
+}
+#usage-7d .u-fill { background: var(--amber); box-shadow: 0 0 6px rgba(245, 181, 68, 0.5); }
+.u-fill.warn { background: var(--amber); box-shadow: 0 0 6px rgba(245, 181, 68, 0.5); }
+.u-fill.crit { background: var(--err); box-shadow: 0 0 6px rgba(255, 90, 90, 0.5); }
+
+/* ---------- usage gauges (radial dials shown in the expanded rail) ---------- */
+
+#usage-gauges {
+  display: none;
+  gap: 14px;
+  justify-content: space-around;
+  flex: none;
+  width: 100%;
+  padding: 14px;
+  background: color-mix(in srgb, var(--hover) 60%, transparent);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+#leftbar.expanded #usage,
+#leftbar.hover-expanded #usage {
+  display: none;
+}
+#leftbar.expanded #usage-gauges,
+#leftbar.hover-expanded #usage-gauges {
+  display: flex;
+}
+.gauge-box { text-align: center; }
+.gauge {
+  position: relative;
+  width: 78px;
+  height: 78px;
+}
+.gauge svg {
+  display: block;
+  transform: rotate(-90deg);
+}
+.gauge-track { stroke: var(--border2); }
+.gauge-fill {
+  stroke: var(--accent);
+  filter: drop-shadow(0 0 6px var(--accent-glow));
+  transition: stroke-dashoffset 0.4s ease;
+}
+.gauge.gauge-amber .gauge-fill { stroke: var(--amber); filter: drop-shadow(0 0 6px rgba(245, 181, 68, 0.5)); }
+.gauge-fill.warn { stroke: var(--amber); filter: drop-shadow(0 0 6px rgba(245, 181, 68, 0.5)); }
+.gauge-fill.crit { stroke: var(--err); filter: drop-shadow(0 0 6px rgba(255, 90, 90, 0.5)); }
+.gauge-pct {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.gauge.gauge-amber .gauge-pct { color: var(--amber); }
+.gauge-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text2);
+  margin-top: 6px;
+}
+
+/* ---------- swarm map (per-agent status grid, above Archived) ---------- */
+
+#swarm-map {
+  width: 100%;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+}
+/* title + counts share one row; both hide with the collapsed rail, so the
+ * wrapper goes with them rather than leaving an empty flex child behind */
+.swarm-map-head {
+  display: none;
+}
+#leftbar.expanded .swarm-map-head,
+#leftbar.hover-expanded .swarm-map-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%; /* #swarm-map centres its children — the head has to span to push the counts right */
+}
+.swarm-map-title {
+  display: none;
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+#leftbar.expanded .swarm-map-title,
+#leftbar.hover-expanded .swarm-map-title {
+  display: block;
+}
+.swarm-map-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 12px);
+  gap: 4px;
+}
+#leftbar.expanded .swarm-map-grid,
+#leftbar.hover-expanded .swarm-map-grid {
+  grid-template-columns: repeat(5, 1fr);
+  width: 100%;
+  gap: 6px;
+}
+.swarm-map-slot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--border3);
+  /* a transparent border by default; a live slot gets its workspace colour set
+   * inline (box-sizing: border-box keeps the 12px footprint) */
+  border: 2px solid transparent;
+}
+.swarm-map-slot.clickable {
+  cursor: pointer;
+}
+.swarm-map-slot.clickable:hover {
+  outline: 1px solid var(--text2);
+  outline-offset: 1px;
+}
+#leftbar.expanded .swarm-map-slot,
+#leftbar.hover-expanded .swarm-map-slot {
+  width: auto;
+  height: 16px;
+}
+.swarm-map-slot.busy {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.swarm-map-slot.attn {
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(245, 181, 68, 0.5);
+  animation: swarm-map-pulse 1.4s ease-in-out infinite;
+}
+.swarm-map-slot.idle { background: var(--muted2); }
+.swarm-map-footer {
+  display: none;
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text2);
+  letter-spacing: 0.05em;
+}
+#leftbar.expanded .swarm-map-footer,
+#leftbar.hover-expanded .swarm-map-footer {
+  display: block;
+}
+@keyframes swarm-map-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.38; }
+}
+.gauge-sub {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 2px;
+}
