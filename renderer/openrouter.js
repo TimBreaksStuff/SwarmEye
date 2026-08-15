@@ -301,6 +301,19 @@ window.OpenRouterUI = {
     // the + Agent button hugs the right window edge and the slugs are long —
     // clamp after appending, when the menu's real width is measurable
     menu.style.left = `${Math.round(Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)))}px`;
+    // a pane's model chip sits at the *bottom* of the pane, so a bottom-row
+    // agent opened 60vh of catalog below the middle of the window and all of
+    // it but the harness row hung off the screen. Flip above the anchor the
+    // way the branch and scope menus already do — and, since this menu is far
+    // taller than those, cap it to the room on whichever side it lands, so a
+    // chip too low for either half still shows a scrollable list.
+    const below = window.innerHeight - r.bottom - 14;
+    const above = r.top - 14;
+    if (menu.offsetHeight > below) {
+      const flip = above > below;
+      menu.style.maxHeight = `${Math.round(flip ? above : below)}px`;
+      if (flip) menu.style.top = `${Math.round(Math.max(8, r.top - 6 - menu.offsetHeight))}px`;
+    }
     input.focus();
     this._menuEl = menu;
     this._onMenuDismiss = (e) => {

@@ -1798,34 +1798,40 @@ function onAgentKindDismiss(e) {
 addAgentBtn.addEventListener('click', () => {
   if (agentKindMenuEl) { closeAgentKindMenu(); return; }
   const menu = document.createElement('div');
-  menu.className = 'branch-menu';
+  // its own class as well: the rows sit indented under their section labels,
+  // which the branch and scope menus using .branch-menu must not pick up
+  menu.className = 'branch-menu agent-kind-menu';
   // the two plain agents lead the menu and are emphasised — they are the
   // provider choice, the roles below are flavours of the first one
-  const entries = [{ label: 'Anthropic Subscription', strong: true, tip: 'A plain agent — your Options default model, no role prompt' }];
+  const entries = [{ label: 'Provider', section: true },
+    { label: 'Anthropic Subscription', strong: true, tip: 'A plain agent — your Options default model, no role prompt' }];
   // an OpenRouter agent is a plain agent on a catalog model — the entry only
   // exists once a key is saved (Options → Setup) and the catalog is in
-  if (OpenRouterUI.models.length) entries.push({ label: 'OpenRouter…', openrouter: true, strong: true, tip: 'A plain agent on any OpenRouter model — pick it from the catalog' });
+  if (OpenRouterUI.models.length) entries.push({ label: 'OpenRouter', openrouter: true, strong: true, tip: 'A plain agent on any OpenRouter model — pick it from the catalog' });
+  entries.push({ divider: true });
+  entries.push({ label: 'Roles', section: true });
   for (const r of roles) entries.push({ label: r.label, role: r.key, tip: `${r.label} role prompt · ${r.model || 'default tier'}` });
-  // a plain Claude confined to one folder — the second menu lists this
-  // workspace's own, and picking one is what starts the agent
-  entries.push({ label: 'Scoped to a folder…', scoped: true, tip: 'A plain agent that may read the whole workspace but only edit inside one folder' });
   // the coordinator is the odd one out: it starts no agent of its own, it
   // splits a request into board tasks that the scheduler then starts
   entries.push({ label: 'Coordinator', coordinate: true, tip: 'Split one multi-part request into subtasks on the board — nothing starts until you approve them' });
   // the lead agent: unlike the coordinator it *is* an agent — it reads the
   // code, then delegates each piece to a worker on the model you picked
-  entries.push({ label: 'Orchestrator…', orchestrate: true, tip: 'One agent plans and delegates; its workers run on a model of their own' });
+  entries.push({ label: 'Orchestrator', orchestrate: true, tip: 'One agent plans and delegates; its workers run on a model of their own' });
   // the roles above are editable, and this is where you would look for that
   entries.push({ label: 'Edit roles…', editRoles: true, tip: 'Reword a preset, change the tier it launches on, or add your own' });
-  for (const { label, role, tip, coordinate, orchestrate, editRoles, openrouter, scoped, strong } of entries) {
+  for (const { label, role, tip, coordinate, orchestrate, editRoles, openrouter, strong, divider, section } of entries) {
+    if (divider) {
+      menu.appendChild(Object.assign(document.createElement('div'), { className: 'branch-menu-divider' }));
+      continue;
+    }
+    if (section) {
+      menu.appendChild(Object.assign(document.createElement('div'), { className: 'branch-menu-label', textContent: label }));
+      continue;
+    }
     const row = document.createElement('button');
     row.className = 'branch-item' + (editRoles ? ' branch-item-quiet' : '') + (strong ? ' branch-item-strong' : '');
     row.textContent = label;
     row.dataset.tip = tip;
-    // one rule under the two provider rows, so the roles read as a group
-    if (!strong && menu.lastChild?.classList.contains('branch-item-strong')) {
-      menu.appendChild(Object.assign(document.createElement('div'), { className: 'branch-menu-divider' }));
-    }
     row.addEventListener('click', () => {
       closeAgentKindMenu();
       if (coordinate) openCoordinator();
@@ -1836,7 +1842,6 @@ addAgentBtn.addEventListener('click', () => {
       else if (openrouter) OpenRouterUI.openModelMenu(addAgentBtn, (model) => addAgent({
         launch: { model, effort: 'default', focus: null, startMode: localStorage.getItem('swarmeye.defaultStartMode') || 'default' },
       }));
-      else if (scoped) Scope.open(addAgentBtn, state.selectedWorkspaceId, (dir) => addAgent({ claudeOnly: true, scope: dir }));
       else addAgent({ role, claudeOnly: true });
     });
     menu.appendChild(row);

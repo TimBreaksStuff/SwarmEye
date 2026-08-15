@@ -422,10 +422,9 @@ them duplicating each other's **work**: an agent scoped to `renderer/` may edit
 only inside that folder, so a swarm can be split across a repo by area.
 
 Pick one in the **Scope** field of the launch card that fills an empty
-workspace — it applies to every agent in that launch — or start a single one
-from **`+ Agent` → `Scoped to a folder…`**, which offers the same list and
-launches as soon as you pick. `whole workspace` is the default and means no
-boundary at all.
+workspace — it applies to every agent in that launch — or set one on a running
+agent from its pane's **scope chip**, which offers the same list. `whole
+workspace` is the default and means no boundary at all.
 
 Two kinds of thing to pick, under a heading each:
 

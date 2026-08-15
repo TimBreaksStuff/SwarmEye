@@ -2278,6 +2278,20 @@
 /* the two plain-agent rows lead the + Coding Agent menu — the provider choice,
  * pulled forward from the role presets under them */
 .branch-menu .branch-item-strong { color: var(--text); font-weight: 600; }
+/* and the groups those rules separate are named, so the menu reads as sections
+ * rather than one long list of rows */
+.branch-menu-label {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 6px 10px 3px;
+}
+/* the rows under a label are indented past it, so the label reads as the head
+ * of its group rather than another row */
+.agent-kind-menu .branch-item { padding-left: 20px; }
 
 /* --- the message box's @ file picker --- */
 .msg-mentions {
