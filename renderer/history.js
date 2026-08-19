@@ -80,8 +80,7 @@ const History = (() => {
   }
 
   function makeTurn(t, answerer) {
-    const el = document.createElement('div');
-    el.className = 'hist-turn hist-turn-' + t.role + (t.sub ? ' hist-turn-sub' : '');
+    const wrap = elt('div', 'hist-turn hist-turn-' + t.role + (t.sub ? ' hist-turn-sub' : ''));
     const who = document.createElement('div');
     who.className = 'hist-who';
     who.textContent = (t.role === 'user' ? 'you' : answerer)
@@ -90,8 +89,8 @@ const History = (() => {
     const text = document.createElement('pre');
     text.className = 'hist-turn-text';
     text.textContent = t.text;
-    el.append(who, text);
-    return el;
+    wrap.append(who, text);
+    return wrap;
   }
 
   /* One conversation in full. Re-read on every open rather than cached — an
@@ -214,9 +213,7 @@ ${rows}
     // harness wrote is named by it too: the CLI is half of what that
     // conversation was, and it is the only thing that can reopen it.
     if (s.harness || (s.model && s.model.includes('/'))) {
-      const badge = document.createElement('span');
-      badge.className = 'hist-model';
-      badge.textContent = [s.harness, s.model && s.model.split('/').pop()].filter(Boolean).join(' · ');
+      const badge = elt('span', 'hist-model', [s.harness, s.model && s.model.split('/').pop()].filter(Boolean).join(' · '));
       badge.dataset.tip = s.harness
         ? `Ran in the ${s.harness} agent${s.model ? ' on ' + s.model : ''} via OpenRouter`
           + ' — resume reopens the conversation in that CLI'
@@ -248,8 +245,7 @@ ${rows}
       toast('session id copied');
     });
 
-    const dl = document.createElement('button');
-    dl.className = 'hist-copy';
+    const dl = elt('button', 'hist-copy');
     Icons.set(dl, 'download');
     dl.dataset.tip = 'Save this conversation as a text file';
     dl.addEventListener('click', (e) => {
@@ -259,9 +255,7 @@ ${rows}
 
     // the same conversation as a page: one self-contained file that reads the
     // way the modal does, for anyone who is not going to open SwarmEye
-    const dlHtml = document.createElement('button');
-    dlHtml.className = 'hist-copy hist-html';
-    dlHtml.textContent = 'HTML';
+    const dlHtml = elt('button', 'hist-copy hist-html', 'HTML');
     dlHtml.dataset.tip = 'Save this conversation as a self-contained HTML page';
     dlHtml.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -332,12 +326,7 @@ ${rows}
 
   function fillWorkspaceSelect() {
     wsSel.innerHTML = '';
-    for (const ws of workspaces) {
-      const opt = document.createElement('option');
-      opt.value = ws.id;
-      opt.textContent = ws.name;
-      wsSel.appendChild(opt);
-    }
+    for (const ws of workspaces) wsSel.add(new Option(ws.name, ws.id));
     if (workspaceId) wsSel.value = workspaceId;
   }
 
@@ -390,21 +379,7 @@ ${rows}
     provider = providerEl.value;
     render();
   });
-  searchEl.addEventListener('input', () => {
-    query = searchEl.value.trim().toLowerCase();
-    render();
-  });
-  // Esc clears the filter; everything else is kept off the document-level
-  // shortcut handler (bare Tab would move focus into a terminal mid-typing)
-  searchEl.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') e.stopPropagation();
-    if (e.key === 'Escape' && searchEl.value) {
-      searchEl.value = '';
-      query = '';
-      render();
-      e.stopPropagation();
-    }
-  });
+  wireSearch(searchEl, (q) => { query = q; render(); });
 
   /* Read one conversation without going through this screen — the
    * notification centre opens a running agent's own transcript this way.

@@ -22,33 +22,26 @@ const Roles = (() => {
   let onSaved = () => {};
   let rows = []; // [{key, label, model, prompt}] — the working copy
 
-  const el = (tag, className, text) => {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text;
-    return node;
-  };
-
   const SIZE_KEY = 'swarmeye.rolesSize'; // drag the corner; kept between opens
 
-  const pop = el('div');
+  const pop = elt('div');
   pop.id = 'roles-pop';
   pop.hidden = true;
 
-  const head = el('div', 'roles-head');
-  const titleEl = el('div', 'kbd-title', 'Role presets');
-  const addBtn = el('button', 'pill', '+ Role');
+  const head = elt('div', 'roles-head');
+  const titleEl = elt('div', 'kbd-title', 'Role presets');
+  const addBtn = elt('button', 'pill', '+ Role');
   addBtn.type = 'button';
-  const closeBtn = el('button', 'pill', 'Close');
+  const closeBtn = elt('button', 'pill', 'Close');
   closeBtn.type = 'button';
   closeBtn.dataset.tip = 'Close (Esc)';
   head.append(titleEl, addBtn, closeBtn);
 
-  const listEl = el('div', 'roles-list');
-  const foot = el('div', 'roles-foot');
-  const noteEl = el('span', 'roles-note',
+  const listEl = elt('div', 'roles-list');
+  const foot = elt('div', 'roles-foot');
+  const noteEl = elt('span', 'roles-note',
     'Quotes, $, backticks and backslashes are dropped from a prompt — it is passed to the agent on a shell command line.');
-  const saveBtn = el('button', 'pill pill-primary', 'Save');
+  const saveBtn = elt('button', 'pill pill-primary', 'Save');
   saveBtn.type = 'button';
   foot.append(noteEl, saveBtn);
 
@@ -60,7 +53,7 @@ const Roles = (() => {
   function render() {
     listEl.textContent = '';
     for (const row of rows) {
-      const card = el('div', 'roles-card');
+      const card = elt('div', 'roles-card');
 
       const label = document.createElement('input');
       label.className = 'roles-label';
@@ -73,16 +66,11 @@ const Roles = (() => {
       // Pane.MODELS is the renderer's one model table — a new tier is one edit
       const model = document.createElement('select');
       model.className = 'roles-model';
-      for (const [value, text] of Pane.MODELS) {
-        const opt = document.createElement('option');
-        opt.value = value === 'default' ? '' : value;
-        opt.textContent = value === 'default' ? 'Anthropic Subscription: default tier' : text;
-        model.appendChild(opt);
-      }
+      for (const [value, text] of Pane.MODELS) model.add(new Option(value === 'default' ? 'Anthropic Subscription: default tier' : text, value === 'default' ? '' : value));
       model.value = row.model || '';
       model.addEventListener('change', () => { row.model = model.value; });
 
-      const del = el('button', 'roles-del', '✕');
+      const del = elt('button', 'roles-del', '✕');
       del.type = 'button';
       del.dataset.tip = 'Delete this role (click twice)';
       del.addEventListener('click', () => {
@@ -92,7 +80,7 @@ const Roles = (() => {
         });
       });
 
-      const top = el('div', 'roles-card-top');
+      const top = elt('div', 'roles-card-top');
       top.append(label, model, del);
 
       const prompt = document.createElement('textarea');
@@ -102,7 +90,7 @@ const Roles = (() => {
       prompt.rows = 3;
       prompt.spellcheck = false;
       prompt.placeholder = 'what this agent is, in a sentence or two';
-      const warn = el('div', 'roles-warn');
+      const warn = elt('div', 'roles-warn');
       const syncWarn = () => {
         const bad = (row.prompt || '').match(UNSAFE);
         warn.textContent = bad ? `${bad.length} character${bad.length > 1 ? 's' : ''} will be dropped on save` : '';
@@ -117,7 +105,7 @@ const Roles = (() => {
       card.append(top, prompt, warn);
       listEl.append(card);
     }
-    if (!rows.length) listEl.append(el('div', 'roles-empty', 'no roles — add one, or save to restore the four built-ins'));
+    if (!rows.length) listEl.append(elt('div', 'roles-empty', 'no roles — add one, or save to restore the four built-ins'));
   }
 
   async function save() {

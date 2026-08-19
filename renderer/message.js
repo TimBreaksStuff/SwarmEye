@@ -25,8 +25,7 @@ const Messenger = (() => {
   let mentionAt = -1; // index of the @ the picker is completing
   let mentionSel = 0;
 
-  const mentionEl = document.createElement('div');
-  mentionEl.className = 'msg-mentions';
+  const mentionEl = elt('div', 'msg-mentions');
   mentionEl.hidden = true;
 
   /* Subsequence match, ranked by how early and how tightly the letters land —
@@ -66,9 +65,7 @@ const Messenger = (() => {
   function renderMentions() {
     mentionEl.textContent = '';
     mentions.forEach((file, i) => {
-      const row = document.createElement('button');
-      row.className = 'msg-mention' + (i === mentionSel ? ' sel' : '');
-      row.textContent = file;
+      const row = elt('button', 'msg-mention' + (i === mentionSel ? ' sel' : ''), file);
       // mousedown, not click: the input must not blur before the pick lands
       row.addEventListener('mousedown', (e) => { e.preventDefault(); pickMention(i); });
       mentionEl.appendChild(row);

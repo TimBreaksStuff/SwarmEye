@@ -38,15 +38,11 @@ Object.assign(Pane.prototype, {
       ? [...lines.slice(0, DIFF_STAT_MAX_LINES - 2), '…', lines[lines.length - 1]]
       : lines;
     for (const line of shown) {
-      const row = document.createElement('div');
-      row.className = 'branch-diff-line';
-      row.textContent = line;
+      const row = elt('div', 'branch-diff-line', line);
       el.appendChild(row);
     }
     if (d.untracked) {
-      const row = document.createElement('div');
-      row.className = 'branch-diff-line branch-diff-untracked';
-      row.textContent = `${d.untracked} untracked file${d.untracked === 1 ? '' : 's'}`;
+      const row = elt('div', 'branch-diff-line branch-diff-untracked', `${d.untracked} untracked file${d.untracked === 1 ? '' : 's'}`);
       el.appendChild(row);
     }
   },
@@ -63,17 +59,11 @@ Object.assign(Pane.prototype, {
     if (this.branchMenuEl) { this.closeBranchMenu(); return; }
     const menu = document.createElement('div');
     menu.className = 'branch-menu';
-    const diffEl = document.createElement('div');
-    diffEl.className = 'branch-diff';
-    diffEl.textContent = 'checking changes…';
-    const listEl = document.createElement('div');
-    listEl.className = 'branch-list';
-    listEl.textContent = 'fetching branches…';
+    const diffEl = elt('div', 'branch-diff', 'checking changes…');
+    const listEl = elt('div', 'branch-list', 'fetching branches…');
     // the stat above is a summary; this opens the patch itself, with commit
     // and — for an isolated agent — merge back into the workspace (diff.js)
-    const reviewBtn = document.createElement('button');
-    reviewBtn.className = 'branch-review';
-    reviewBtn.textContent = 'Review changes…';
+    const reviewBtn = elt('button', 'branch-review', 'Review changes…');
     reviewBtn.addEventListener('click', () => {
       this.closeBranchMenu();
       this.handlers.onReview(this);
@@ -110,9 +100,7 @@ Object.assign(Pane.prototype, {
     const current = this.gitInfo && this.gitInfo.branch;
     listEl.textContent = '';
     for (const b of branches) {
-      const row = document.createElement('button');
-      row.className = 'branch-item' + (b === current ? ' current' : '');
-      row.textContent = b;
+      const row = elt('button', 'branch-item' + (b === current ? ' current' : ''), b);
       if (b !== current) row.addEventListener('click', () => this.pickBranch(b));
       listEl.appendChild(row);
     }
@@ -121,9 +109,7 @@ Object.assign(Pane.prototype, {
     const divider = document.createElement('div');
     divider.className = 'branch-menu-divider';
     listEl.appendChild(divider);
-    const add = document.createElement('button');
-    add.className = 'branch-item new';
-    add.textContent = '+ new branch…';
+    const add = elt('button', 'branch-item new', '+ new branch…');
     add.addEventListener('click', () => {
       const input = document.createElement('input');
       input.className = 'branch-new-input';

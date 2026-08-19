@@ -67,7 +67,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  gap: 12px;
+  min-height: 32px;
 }
 .board-head .kbd-title {
   margin-bottom: 0;
@@ -81,7 +83,7 @@
 .board-head-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 #board-archive-btn.active,
 #board-new-btn {
@@ -264,11 +266,12 @@
   gap: 8px;
 }
 .board-form-actions button {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  border-radius: 100px;
-  padding: 6px 14px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  border-radius: 8px;
+  padding: 7px 14px;
   cursor: pointer;
+  font-weight: 500;
 }
 #board-form-cancel {
   color: var(--text2);
@@ -382,16 +385,6 @@
   border-radius: 8px;
   padding: 10px 12px;
 }
-.board-card-active {
-  border-left-color: var(--accent);
-  background: color-mix(in srgb, var(--surface) 62%, transparent);
-  box-shadow: 0 0 18px -8px var(--accent-glow);
-}
-.board-card-completed {
-  border-left-color: var(--border3);
-  background: color-mix(in srgb, var(--surface) 45%, transparent);
-  opacity: 0.78;
-}
 .board-card.jumpable { cursor: pointer; }
 .board-card.jumpable:hover { border-color: var(--border-hover); }
 .board-card-top {
@@ -455,7 +448,6 @@
   border-radius: 4px;
   font-weight: 600;
 }
-.board-card-completed .board-card-badge::before { content: '✓ '; color: var(--accent); }
 .board-card-stopped .board-card-badge::before { content: '■ '; color: var(--err); }
 .board-card-priority-low { color: var(--muted2); border-color: var(--border3); background: color-mix(in srgb, var(--muted2) 12%, transparent); }
 .board-card-priority-medium { color: var(--tag); border-color: var(--tag); background: color-mix(in srgb, var(--tag) 12%, transparent); }
@@ -464,13 +456,14 @@
 .board-card-category {
   font-family: var(--font-mono);
   font-size: 9px;
-  color: var(--tag);
+  color: var(--text2);
   white-space: nowrap;
   flex: none;
   border: 1px solid var(--tag);
   border-radius: 100px;
   padding: 2px 7px;
-  background: color-mix(in srgb, var(--tag) 10%, transparent);
+  background: transparent;
+  border-color: var(--border2);
 }
 .board-card[draggable='true'] { cursor: grab; }
 .board-card.dragging { opacity: 0.45; cursor: grabbing; }
@@ -616,7 +609,7 @@
   justify-content: space-between;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 .board-archive-title {
   font-family: var(--font-mono);
@@ -816,3 +809,51 @@
   scrollbar-width: thin;
   scrollbar-color: var(--border3) transparent;
 }
+
+/* ---- moved out of chrome-clean.css: per-area styling belongs to the area,
+ * and this is the tail of the cascade for it, exactly where chrome-clean sat ---- */
+
+/* --- the page header --- */
+
+/* --- the board's four columns --- */
+.board-col {
+  border-radius: 10px;
+  border-color: var(--border);
+}
+
+.board-col-head {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* the category colour moves off the container and onto the icon and the
+ * count — four differently-outlined boxes read as four unrelated widgets */
+.board-col-cat-manual,
+.board-col-cat-scheduled,
+.board-col-cat-active,
+.board-col-cat-completed { border-color: var(--border); }
+
+.board-col-cat-manual .board-col-head,
+.board-col-cat-scheduled .board-col-head,
+.board-col-cat-active .board-col-head,
+.board-col-cat-completed .board-col-head {
+  color: var(--text2);
+  border-bottom-color: var(--border);
+}
+
+.board-col-cat-manual .board-col-icon { color: var(--entry-dot); }
+
+.board-col-cat-scheduled .board-col-icon { color: var(--amber); }
+
+.board-col-cat-active .board-col-icon { color: var(--accent-text); }
+
+.board-col-cat-completed .board-col-icon { color: var(--tag); }
+
+.board-col-n { font-family: var(--font-mono); font-size: 11px; }
+
+/* a category is a label, not a state — the priority chip beside it is the one
+ * that earns a colour */
+

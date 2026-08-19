@@ -20,7 +20,6 @@ const path = require('path');
 
 const PLAN_DIR = '.swarmeye';
 const PLAN_NAME = 'plan.json';
-const PLAN_POSIX = '.swarmeye/plan.json'; // what the lead's brief says, both platforms
 
 // a lead that misunderstands its brief must not be able to queue fifty agents
 const MAX_ROWS = 8;
@@ -123,4 +122,4 @@ function unwatch(sessionId) {
   watchers.delete(sessionId);
 }
 
-module.exports = { watch, unwatch, PLAN_POSIX, MAX_ROWS };
+module.exports = { watch, unwatch };

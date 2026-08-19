@@ -88,18 +88,18 @@ const Launcher = {
     this.headlineEl = headline;
     this.hintEl = hint;
 
-    const root = launchEl('div', 'empty-launcher');
+    const root = elt('div', 'empty-launcher');
     root.hidden = true;
-    root.appendChild(launchEl('div', 'empty-launcher__hex'));
-    root.appendChild(launchEl('div', 'empty-launcher__fade'));
+    root.appendChild(elt('div', 'empty-launcher__hex'));
+    root.appendChild(elt('div', 'empty-launcher__fade'));
 
-    const card = launchEl('div', 'launcher-card');
-    const head = launchEl('div', 'launcher-card__head');
-    head.appendChild(launchEl('span', 'launcher-card__title', 'How many agents?'));
-    head.appendChild(launchEl('span', 'launcher-card__sub', 'Pick a swarm size to fill this workspace'));
+    const card = elt('div', 'launcher-card');
+    const head = elt('div', 'launcher-card__head');
+    head.appendChild(elt('span', 'launcher-card__title', 'How many agents?'));
+    head.appendChild(elt('span', 'launcher-card__sub', 'Pick a swarm size to fill this workspace'));
     card.appendChild(head);
 
-    const tiles = launchEl('div', 'count-tiles');
+    const tiles = elt('div', 'count-tiles');
     tiles.setAttribute('role', 'radiogroup');
     tiles.setAttribute('aria-label', 'Number of agents');
     for (const n of LAUNCH_COUNTS) {
@@ -109,29 +109,24 @@ const Launcher = {
       btn.setAttribute('role', 'radio');
       btn.setAttribute('aria-checked', 'false');
       btn.dataset.count = String(n);
-      btn.appendChild(launchEl('span', 'count-tile__n', String(n)));
+      btn.appendChild(elt('span', 'count-tile__n', String(n)));
       btn.addEventListener('click', () => this.select(n));
       btn.addEventListener('keydown', (e) => this.onTileKey(e, n));
       this.tiles.push({ n, btn });
       tiles.appendChild(btn);
     }
     card.appendChild(tiles);
-    card.appendChild(launchEl('div', 'launcher-card__rule'));
+    card.appendChild(elt('div', 'launcher-card__rule'));
 
-    const options = launchEl('div', 'launch-options');
+    const options = elt('div', 'launch-options');
     for (const f of LAUNCH_FIELDS) {
-      const field = launchEl('div', 'launch-field' + (f.wide ? ' launch-field--wide' : ''));
+      const field = elt('div', 'launch-field' + (f.wide ? ' launch-field--wide' : ''));
       if (f.tip) field.dataset.tip = f.tip;
-      field.appendChild(launchEl('span', 'launch-field__label', f.label));
+      field.appendChild(elt('span', 'launch-field__label', f.label));
       const sel = document.createElement('select');
       sel.className = 'launch-field__select';
       sel.setAttribute('aria-label', f.label);
-      for (const [value, label] of f.table()) {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = label;
-        sel.appendChild(opt);
-      }
+      for (const [value, label] of f.table()) sel.add(new Option(label, value));
       this.selects[f.key] = sel;
       field.appendChild(sel);
       options.appendChild(field);
@@ -139,7 +134,7 @@ const Launcher = {
     this.selects.provider.addEventListener('change', () => this.fillModels());
     card.appendChild(options);
 
-    const foot = launchEl('div', 'launcher-card__foot');
+    const foot = elt('div', 'launcher-card__foot');
     this.goEl = document.createElement('button');
     this.goEl.type = 'button';
     this.goEl.className = 'launcher-card__go';
@@ -236,12 +231,7 @@ const Launcher = {
     const or = this.selects.provider.value === 'openrouter';
     const sel = this.selects.defaultModel;
     sel.textContent = '';
-    for (const [value, label] of (or ? launchOrModels() : launchClaudeModels())) {
-      const opt = document.createElement('option');
-      opt.value = value;
-      opt.textContent = label;
-      sel.appendChild(opt);
-    }
+    for (const [value, label] of (or ? launchOrModels() : launchClaudeModels())) sel.add(new Option(label, value));
     if (want != null) sel.value = want;
     if (sel.selectedIndex < 0) sel.selectedIndex = 0;
     // hidden, not disabled: a Claude launch has no harness to pick, and the
@@ -373,12 +363,5 @@ const Launcher = {
     };
   },
 };
-
-function launchEl(tag, className, text) {
-  const node = document.createElement(tag);
-  node.className = className;
-  if (text != null) node.textContent = text;
-  return node;
-}
 
 window.Launcher = Launcher;

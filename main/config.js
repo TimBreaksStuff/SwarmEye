@@ -54,12 +54,15 @@ function load() {
     }
     cache = { ...DEFAULTS };
   }
-  // backfill categories on workspaces saved before this field existed
-  for (const ws of cache.workspaces) if (!Array.isArray(ws.categories)) ws.categories = [...DEFAULT_TASK_CATEGORIES];
-  for (const ws of cache.archivedWorkspaces || []) if (!Array.isArray(ws.categories)) ws.categories = [...DEFAULT_TASK_CATEGORIES];
-  // backfill identity colour on workspaces saved before this field existed
-  cache.workspaces.forEach((ws, i) => { if (!ws.color) ws.color = WORKSPACE_COLORS[i % WORKSPACE_COLORS.length]; });
-  (cache.archivedWorkspaces || []).forEach((ws, i) => { if (!ws.color) ws.color = WORKSPACE_COLORS[i % WORKSPACE_COLORS.length]; });
+  // backfill fields added after a workspace was first saved. Archived entries
+  // get them too: re-adding a removed folder pushes the old record straight
+  // back into cache.workspaces, without passing through the code that mints one
+  for (const list of [cache.workspaces, cache.archivedWorkspaces || []]) {
+    list.forEach((ws, i) => {
+      if (!Array.isArray(ws.categories)) ws.categories = [...DEFAULT_TASK_CATEGORIES];
+      if (!ws.color) ws.color = WORKSPACE_COLORS[i % WORKSPACE_COLORS.length];
+    });
+  }
   return cache;
 }
 

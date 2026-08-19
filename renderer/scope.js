@@ -110,9 +110,7 @@ const Scope = {
     for (const { label, scope, tip, group, strong, disabled } of rows) {
       // one rule under "whole workspace", one more where areas give way to folders
       if (lastGroup !== null && group !== lastGroup) rule();
-      const row = document.createElement('button');
-      row.className = 'branch-item' + (strong || group === 'Areas' ? ' branch-item-strong' : '');
-      row.textContent = label;
+      const row = elt('button', 'branch-item' + (strong || group === 'Areas' ? ' branch-item-strong' : ''), label);
       row.dataset.tip = tip;
       row.disabled = !!disabled;
       row.addEventListener('click', () => { this.close(); onPick(scope); });

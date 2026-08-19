@@ -79,41 +79,33 @@ function modelLabel(model) {
 
 /* ── the card ─────────────────────────────────────────────────────────── */
 
-const el = (tag, className, text) => {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text != null) node.textContent = text;
-  return node;
-};
-
-const pop = el('div');
+const pop = elt('div');
 pop.id = 'orch-pop';
 pop.hidden = true;
 
-const box = el('div', 'orch-box');
-const head = el('div', 'orch-head');
-const titleEl = el('div', 'kbd-title', 'Orchestrator');
-const closeBtn = el('button', 'pill', 'Close');
+const box = elt('div', 'orch-box');
+const head = elt('div', 'orch-head');
+const titleEl = elt('div', 'kbd-title', 'Orchestrator');
+const closeBtn = elt('button', 'pill', 'Close');
 closeBtn.type = 'button';
 closeBtn.dataset.tip = 'Close (Esc)';
 head.append(titleEl, closeBtn);
 
-const metaEl = el('div', 'orch-meta');
-const inputEl = document.createElement('textarea');
-inputEl.className = 'orch-input';
+const metaEl = elt('div', 'orch-meta');
+const inputEl = elt('textarea', 'orch-input');
 inputEl.rows = 6;
 inputEl.maxLength = REQUEST_MAX;
 inputEl.placeholder = 'What should get built? The lead reads the code, then delegates the pieces…';
 
-const rowsEl = el('div', 'orch-rows');
+const rowsEl = elt('div', 'orch-rows');
 const leadSel = document.createElement('select');
 const workerSel = document.createElement('select');
 const harnessSel = document.createElement('select');
 harnessSel.hidden = true;
 
 function labelled(text, tip, ...controls) {
-  const row = el('label', 'orch-row');
-  const name = el('span', 'orch-label', text);
+  const row = elt('label', 'orch-row');
+  const name = elt('span', 'orch-label', text);
   name.dataset.tip = tip;
   row.append(name, ...controls);
   return row;
@@ -121,13 +113,13 @@ function labelled(text, tip, ...controls) {
 
 rowsEl.append(
   labelled('lead', 'The agent that plans and delegates — it reads the code, so this is where a strong model pays', leadSel),
-  labelled('workers', 'Every task the lead queues runs on this. Change it later from the lead’s pane.', workerSel, harnessSel)
+  labelled('workers', 'Every task the lead queues runs on this — defaults one tier below the lead until you pick one. Change it later from the lead’s pane.', workerSel, harnessSel)
 );
 
-const noteEl = el('div', 'orch-note');
-const launchBtn = el('button', 'pill pill-primary', 'Launch lead');
+const noteEl = elt('div', 'orch-note');
+const launchBtn = elt('button', 'pill pill-primary', 'Launch lead');
 launchBtn.type = 'button';
-const foot = el('div', 'orch-foot');
+const foot = elt('div', 'orch-foot');
 foot.append(noteEl, launchBtn);
 
 box.append(head, metaEl, inputEl, rowsEl, foot);
@@ -140,12 +132,7 @@ document.body.appendChild(pop);
  * the catalog isn't in yet. */
 function fillModels(sel, chosen) {
   sel.textContent = '';
-  for (const [value, text] of Pane.MODELS) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = value === 'default' ? 'Anthropic Subscription: default model' : text;
-    sel.appendChild(opt);
-  }
+  for (const [value, text] of Pane.MODELS) sel.add(new Option(value === 'default' ? 'Anthropic Subscription: default model' : text, value));
   if (chosen && [...sel.options].some((o) => o.value === chosen)) sel.value = chosen;
 }
 
@@ -596,11 +583,11 @@ export function hiddenIds() {
 function memberLabel(sessionId, isLead) {
   const pane = ctx.state.panes.get(sessionId);
   if (!pane) return sessionId;
-  const state = pane.exited ? 'done'
-    : pane.status === 'attention' ? 'needs you'
-    : pane.working ? 'working'
-    : 'idle';
-  return `${isLead ? 'lead · ' : ''}${pane.session.agentName} · ${state}`;
+  // the lead is the row on screen most of the time, and the chip is as wide as
+  // its label — its own status dot already says idle/working/needs you, so the
+  // name alone is enough. Workers keep their state: theirs is the one thing the
+  // switcher can say about a pane that isn't mounted.
+  return isLead ? pane.session.agentName : `${pane.session.agentName} · working`;
 }
 
 /* One select per lead, moved into the header of whichever member is showing —
@@ -618,8 +605,7 @@ export function paintCrew() {
     const pane = ctx.state.panes.get(lead.shown);
     if (!pane) continue;
     if (!lead.tabs) {
-      const sel = document.createElement('select');
-      sel.className = 'pane-crew';
+      const sel = elt('select', 'pane-crew');
       sel.dataset.tip = 'This lead and its workers share this slot — pick which one to look at';
       sel.addEventListener('change', () => {
         const live = leads.get(leadId);
@@ -669,7 +655,7 @@ function attachChip(sessionId) {
   if (!header) return;
   let chip = header.querySelector('.pane-workers');
   if (!chip) {
-    chip = el('span', 'pane-workers');
+    chip = elt('span', 'pane-workers');
     chip.addEventListener('click', () => {
       // the Claude tiers ride in as `extra` so one menu covers both providers,
       // exactly as the pane's own model chip does it

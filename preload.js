@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld('swarm', {
   skillTerminalCommand: (id) => ipcRenderer.invoke('skills:terminal-command', id),
   onSkillUpdateStatus: (cb) => ipcRenderer.on('skills:update-status', (e, p) => cb(p)),
   copyText: (text) => ipcRenderer.send('clipboard:write', text),
+  readText: () => ipcRenderer.invoke('clipboard:read'),
 
   speechInstalled: () => ipcRenderer.invoke('speech:installed'),
   speechInstall: () => ipcRenderer.invoke('speech:install'),

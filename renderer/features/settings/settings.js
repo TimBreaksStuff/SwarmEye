@@ -483,7 +483,7 @@ export function init(context) {
     for (const p of ctx.state.panes.values()) p.syncUsagePanel();
   });
 
-  /* "Fixed agent pane buttons" — off by default: the five rarely-used header
+  /* "Fixed agent pane buttons" — off by default: the two rarely-used text-size
    * buttons fold behind each pane's ⋯. On puts them back inline. */
   applied.fixedPaneActions = boolOption('pane-fixed-actions-toggle', 'paneFixedActions', false, (on) => {
     Pane.setFixedActions(on);
@@ -550,12 +550,7 @@ export function init(context) {
 
   /* notification sound — the picker in the ⌨ popover; persisted locally and
    * played whenever an agent's turn finishes (see onStatusChange in app.js) */
-  for (const [value, label] of Sounds.OPTIONS) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = label;
-    notifSoundSel.appendChild(opt);
-  }
+  for (const [value, label] of Sounds.OPTIONS) notifSoundSel.add(new Option(label, value));
   notifSoundSel.value = notifSound;
   notifSoundSel.addEventListener('change', () => {
     notifSound = notifSoundSel.value;

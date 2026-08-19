@@ -99,26 +99,11 @@ const Board = (() => {
   // option (stay off the scheduler until moved to Scheduled). Relabeled here
   // only, so the two stop reading as the same choice.
   startModeSel.dataset.tip = 'Claude’s starting permission mode for the agent — unrelated to the scheduling mode above';
-  for (const [value, label] of Pane.MODES) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = value === 'default' ? 'default' : label;
-    startModeSel.appendChild(opt);
-  }
+  for (const [value, label] of Pane.MODES) startModeSel.add(new Option(value === 'default' ? 'default' : label, value));
 
-  for (const [value, label] of Pane.MODELS) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = label;
-    modelSel.appendChild(opt);
-  }
+  for (const [value, label] of Pane.MODELS) modelSel.add(new Option(label, value));
 
-  for (const [value, label] of Pane.EFFORTS) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = label;
-    effortSel.appendChild(opt);
-  }
+  for (const [value, label] of Pane.EFFORTS) effortSel.add(new Option(label, value));
 
   // startMode's own "manual" label (from Pane.MODES) reads as the same word
   // as the scheduling-mode badge right next to it — relabeled to "default"
@@ -226,12 +211,7 @@ const Board = (() => {
   function syncModelDeps() {
     const or = isOrPick();
     if (or && !harnessSel.options.length) {
-      for (const [prefix, label] of OpenRouterUI.HARNESSES) {
-        const opt = document.createElement('option');
-        opt.value = prefix;
-        opt.textContent = label;
-        harnessSel.appendChild(opt);
-      }
+      for (const [prefix, label] of OpenRouterUI.HARNESSES) harnessSel.add(new Option(label, prefix));
     }
     harnessSel.hidden = !or;
     effortSel.disabled = or;
@@ -262,12 +242,7 @@ const Board = (() => {
     const cats = (ws && ws.categories) || [];
     const prev = categorySel.value;
     categorySel.innerHTML = '';
-    for (const c of cats) {
-      const opt = document.createElement('option');
-      opt.value = c;
-      opt.textContent = c;
-      categorySel.appendChild(opt);
-    }
+    for (const c of cats) categorySel.add(new Option(c, c));
     if (cats.includes(prev)) categorySel.value = prev;
     else if (cats.includes('maintenance')) categorySel.value = 'maintenance';
     else if (cats.length) categorySel.value = cats[0];
@@ -283,16 +258,8 @@ const Board = (() => {
     const sorted = [...names].sort((a, b) => a.localeCompare(b));
     const prev = selectEl.value;
     selectEl.innerHTML = '';
-    const allOpt = document.createElement('option');
-    allOpt.value = '';
-    allOpt.textContent = 'all categories';
-    selectEl.appendChild(allOpt);
-    for (const name of sorted) {
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      selectEl.appendChild(opt);
-    }
+    selectEl.add(new Option('all categories', ''));
+    for (const name of sorted) selectEl.add(new Option(name, name));
     if (sorted.includes(prev)) selectEl.value = prev;
   }
 
@@ -350,11 +317,7 @@ const Board = (() => {
     textEl.classList.remove('file-drop');
     if (![...e.dataTransfer.types].includes('Files')) return;
     e.preventDefault();
-    const paths = [...e.dataTransfer.files]
-      .map((f) => window.swarm.pathForFile(f))
-      .filter(Boolean)
-      .map(agentPath)
-      .map((p) => (/\s/.test(p) ? `"${p}"` : p));
+    const paths = droppedPaths(e);
     if (!paths.length) return;
     const insert = paths.join(' ') + ' ';
     const start = textEl.selectionStart ?? textEl.value.length;
@@ -532,12 +495,7 @@ const Board = (() => {
   function makeCardSelect(card, className, options, value, onPick) {
     const sel = document.createElement('select');
     sel.className = 'board-card-select ' + className;
-    for (const [v, label] of options) {
-      const opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = label;
-      sel.appendChild(opt);
-    }
+    for (const [v, label] of options) sel.add(new Option(label, v));
     sel.value = value;
     sel.addEventListener('mousedown', () => { card.draggable = false; });
     // renders were skipped while this held focus — catch up now that it
@@ -577,8 +535,7 @@ const Board = (() => {
   function buildCardBody(card, task, workspaces, handlers, editable) {
     const top = document.createElement('div');
     top.className = 'board-card-top';
-    const whoWrap = document.createElement('span');
-    whoWrap.className = 'board-card-who-wrap';
+    const whoWrap = elt('span', 'board-card-who-wrap');
     if (task.status === 'active') {
       const dot = document.createElement('span');
       dot.className = 'board-card-dot';
@@ -613,9 +570,7 @@ const Board = (() => {
       }
     }
     if (REPEAT_LABEL[task.repeat]) {
-      const repeatBadge = document.createElement('span');
-      repeatBadge.className = 'board-card-badge';
-      repeatBadge.textContent = '⟳ ' + REPEAT_LABEL[task.repeat];
+      const repeatBadge = elt('span', 'board-card-badge', '⟳ ' + REPEAT_LABEL[task.repeat]);
       // a queued next run carries its due time; the run currently in flight
       // (or already finished) has none, and only says how often it repeats
       repeatBadge.dataset.tip = task.nextRunAt && task.status === 'pending'
@@ -624,9 +579,7 @@ const Board = (() => {
       badges.appendChild(repeatBadge);
     }
     if (task.chain && task.chain.length) {
-      const chainBadge = document.createElement('span');
-      chainBadge.className = 'board-card-badge';
-      chainBadge.textContent = '+' + task.chain.length + ' next';
+      const chainBadge = elt('span', 'board-card-badge', '+' + task.chain.length + ' next');
       chainBadge.dataset.tip = 'follow-up agents once this finishes:\n— ' + task.chain.join('\n— ');
       badges.appendChild(chainBadge);
     }
@@ -641,16 +594,12 @@ const Board = (() => {
       const meta = document.createElement('div');
       meta.className = 'board-card-meta';
       if (agentName) {
-        const agentEl = document.createElement('span');
-        agentEl.className = 'board-card-agent';
-        agentEl.textContent = '▸ ' + agentName;
+        const agentEl = elt('span', 'board-card-agent', '▸ ' + agentName);
         agentEl.dataset.tip = 'agent: ' + agentName;
         meta.appendChild(agentEl);
       }
       if (git && git.branch) {
-        const branchEl = document.createElement('span');
-        branchEl.className = 'board-card-branch';
-        branchEl.textContent = '⎇ ' + git.branch;
+        const branchEl = elt('span', 'board-card-branch', '⎇ ' + git.branch);
         branchEl.classList.toggle('dirty', !!git.dirty);
         branchEl.dataset.tip = git.dirty === null
           ? `branch ${git.branch} — could not read status`
@@ -687,8 +636,7 @@ const Board = (() => {
   // to be retyped from scratch to run it again
   function addRunAgainButton(actions, task, handlers) {
     if (task.status !== 'completed') return;
-    const btn = document.createElement('button');
-    btn.className = 'board-card-rerun';
+    const btn = elt('button', 'board-card-rerun');
     btn.dataset.tip = 'Run this task again';
     Icons.set(btn, 'refresh');
     btn.addEventListener('click', (e) => {
@@ -703,8 +651,7 @@ const Board = (() => {
   // no-ops for every other status
   function addSessionButton(actions, task, workspaces, handlers) {
     if (!task.sessionLog && !task.hasSessionLog) return;
-    const viewBtn = document.createElement('button');
-    viewBtn.className = 'board-card-session';
+    const viewBtn = elt('button', 'board-card-session');
     viewBtn.dataset.tip = 'View agent session transcript';
     Icons.set(viewBtn, 'view');
     viewBtn.addEventListener('click', (e) => {
@@ -791,9 +738,7 @@ const Board = (() => {
     const actions = document.createElement('div');
     actions.className = 'board-card-actions';
     if (task.status === 'completed' && task.stopped) {
-      const stoppedBadge = document.createElement('span');
-      stoppedBadge.className = 'board-card-stopped-badge';
-      stoppedBadge.textContent = '■ stopped';
+      const stoppedBadge = elt('span', 'board-card-stopped-badge', '■ stopped');
       stoppedBadge.dataset.tip = 'You stopped this agent before it finished';
       actions.appendChild(stoppedBadge);
     }
@@ -801,8 +746,7 @@ const Board = (() => {
   }
 
   function addDeleteButton(actions, { tip, key, fire }) {
-    const delBtn = document.createElement('button');
-    delBtn.className = 'board-del';
+    const delBtn = elt('button', 'board-del');
     Icons.set(delBtn, 'close');
     delBtn.dataset.tip = tip;
     delBtn.addEventListener('click', (e) => {
@@ -827,8 +771,7 @@ const Board = (() => {
     const actions = makeActionsRow(task);
 
     if (task.status === 'manual') {
-      const rightBtn = document.createElement('button');
-      rightBtn.className = 'board-card-move';
+      const rightBtn = elt('button', 'board-card-move');
       rightBtn.dataset.tip = 'Move to Scheduled';
       Icons.set(rightBtn, 'right');
       rightBtn.addEventListener('click', (e) => {
@@ -837,8 +780,7 @@ const Board = (() => {
       });
       actions.appendChild(rightBtn);
     } else if (task.status === 'pending') {
-      const leftBtn = document.createElement('button');
-      leftBtn.className = 'board-card-move';
+      const leftBtn = elt('button', 'board-card-move');
       leftBtn.dataset.tip = 'Move to Manual';
       Icons.set(leftBtn, 'left');
       leftBtn.addEventListener('click', (e) => {
@@ -847,8 +789,7 @@ const Board = (() => {
       });
       actions.appendChild(leftBtn);
 
-      const startBtn = document.createElement('button');
-      startBtn.className = 'board-card-start';
+      const startBtn = elt('button', 'board-card-start');
       startBtn.dataset.tip = 'Start this task now';
       Icons.set(startBtn, 'play', 'start');
       startBtn.addEventListener('click', (e) => {
@@ -970,12 +911,7 @@ const Board = (() => {
     if (active !== wsSel && active !== categorySel && active !== categoryFilterEl) {
       const prevWs = wsSel.value;
       wsSel.innerHTML = '';
-      for (const ws of workspaces) {
-        const opt = document.createElement('option');
-        opt.value = ws.id;
-        opt.textContent = ws.name;
-        wsSel.appendChild(opt);
-      }
+      for (const ws of workspaces) wsSel.add(new Option(ws.name, ws.id));
       if (workspaces.some((w) => w.id === prevWs)) wsSel.value = prevWs;
       populateCategorySelect();
       populateCategoryFilter(categoryFilterEl, tasks, workspaces);

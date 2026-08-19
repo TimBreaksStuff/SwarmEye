@@ -398,8 +398,7 @@ const SwarmView = (() => {
   }
 
   function makeNode(pane) {
-    const root = document.createElement('div');
-    root.className = 'sv-node';
+    const root = elt('div', 'sv-node');
     root.dataset.id = pane.session.id;
 
     const dot = document.createElement('span');
@@ -549,9 +548,7 @@ const SwarmView = (() => {
   }
 
   const rowEls = new Map();
-  const rowsEmptyEl = document.createElement('div');
-  rowsEmptyEl.className = 'sv-notes-empty';
-  rowsEmptyEl.textContent = 'no agents yet — every workspace is quiet';
+  const rowsEmptyEl = elt('div', 'sv-notes-empty', 'no agents yet — every workspace is quiet');
 
   function paintRows(panes) {
     const seen = new Set();
@@ -594,8 +591,7 @@ const SwarmView = (() => {
   const termCards = new Map(); // sessionId -> {card, dot, ws, name, state, body, actions}
 
   function makeTermCard(pane) {
-    const card = document.createElement('div');
-    card.className = 'sv-term';
+    const card = elt('div', 'sv-term');
 
     const bar = document.createElement('div');
     bar.className = 'sv-term-bar';
@@ -653,9 +649,7 @@ const SwarmView = (() => {
     rec.body.dataset.text = text;
     rec.body.textContent = '';
     for (const line of lines) {
-      const div = document.createElement('div');
-      div.className = /^[●⏺✻]/.test(line) ? 'sv-term-line-run' : /^\s*[⎿│]/.test(line) ? 'sv-term-line-dim' : '';
-      div.textContent = line;
+      const div = elt('div', /^[●⏺✻]/.test(line) ? 'sv-term-line-run' : /^\s*[⎿│]/.test(line) ? 'sv-term-line-dim' : '', line);
       rec.body.appendChild(div);
     }
   }
@@ -701,8 +695,7 @@ const SwarmView = (() => {
    * once it was the only thing showing could never be switched off again. */
 
   const chipEls = new Map();
-  const totalEl = document.createElement('span');
-  totalEl.className = 'sv-count-total';
+  const totalEl = elt('span', 'sv-count-total');
 
   function toggleFilter(status) {
     if (filter.has(status)) filter.delete(status);
@@ -824,9 +817,7 @@ const SwarmView = (() => {
     menuEl.appendChild(head);
 
     const item = (label, fire, opts = {}) => {
-      const btn = document.createElement('button');
-      btn.className = 'sv-menu-item' + (opts.danger ? ' sv-menu-danger' : '');
-      btn.textContent = label;
+      const btn = elt('button', 'sv-menu-item' + (opts.danger ? ' sv-menu-danger' : ''), label);
       btn.disabled = !!opts.disabled;
       btn.addEventListener('click', () => {
         // ending an agent is the one irreversible item — click twice, the
@@ -842,8 +833,7 @@ const SwarmView = (() => {
       menuEl.appendChild(btn);
     };
     const sep = () => {
-      const d = document.createElement('div');
-      d.className = 'sv-menu-sep';
+      const d = elt('div', 'sv-menu-sep');
       menuEl.appendChild(d);
     };
 
@@ -916,22 +906,13 @@ const SwarmView = (() => {
 
     const head = document.createElement('div');
     head.className = 'sv-menu-head';
-    const title = document.createElement('span');
-    title.className = 'sv-menu-name';
-    title.textContent = 'New agent';
-    const where = document.createElement('span');
-    where.className = 'sv-menu-ws';
-    where.textContent = 'nearest workspace';
+    const title = elt('span', 'sv-menu-name', 'New agent');
+    const where = elt('span', 'sv-menu-ws', 'nearest workspace');
     head.append(title, where);
 
     const pick = document.createElement('select');
     pick.className = 'sv-menu-pick';
-    for (const w of workspaces) {
-      const opt = document.createElement('option');
-      opt.value = w.id;
-      opt.textContent = w.name;
-      pick.appendChild(opt);
-    }
+    for (const w of workspaces) pick.add(new Option(w.name, w.id));
     pick.value = guess;
 
     const prompt = document.createElement('textarea');
@@ -952,8 +933,7 @@ const SwarmView = (() => {
     mic.dataset.tip = 'Dictate the prompt (click to start/stop)';
     mic.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>';
 
-    const autoLabel = document.createElement('label');
-    autoLabel.className = 'sv-menu-check';
+    const autoLabel = elt('label', 'sv-menu-check');
     autoLabel.dataset.tip = 'End the agent as soon as it finishes its first turn';
     const autoBox = document.createElement('input');
     autoBox.type = 'checkbox';
@@ -977,9 +957,7 @@ const SwarmView = (() => {
       },
     });
 
-    const launch = document.createElement('button');
-    launch.className = 'sv-menu-item sv-menu-go';
-    launch.textContent = 'Launch agent';
+    const launch = elt('button', 'sv-menu-item sv-menu-go', 'Launch agent');
 
     const fire = () => {
       // read the form before closeMenu takes it down

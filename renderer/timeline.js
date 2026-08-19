@@ -59,8 +59,7 @@ const Timeline = (() => {
   }
 
   function makeLane() {
-    const row = document.createElement('div');
-    row.className = 'tl-lane';
+    const row = elt('div', 'tl-lane');
     const name = document.createElement('span');
     name.className = 'tl-lane-name';
     const track = document.createElement('span');

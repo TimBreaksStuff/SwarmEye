@@ -66,7 +66,8 @@
 }
 .sv-seg {
   display: inline-flex;
-  gap: 6px;
+  gap: 0;
+  align-items: center;
 }
 .sv-seg .pill.active,
 #history-archive-btn.active,
@@ -90,6 +91,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+  margin-right: 6px;
 }
 .sv-font-btn:disabled {
   opacity: 0.35;
@@ -603,6 +605,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-ui);
+  font-weight: 500;
 }
 .sv-row-what {
   font-family: var(--font-mono);
@@ -778,4 +782,35 @@
  * A width you dragged yourself is an inline style and outranks this. */
 @media (max-width: 1100px) {
   #sv-dock { width: 340px; }
+}
+
+/* ---- moved out of chrome-clean.css: per-area styling belongs to the area,
+ * and this is the tail of the cascade for it, exactly where chrome-clean sat ---- */
+
+/* the ± pairs become one segmented control, like #topbar-actions. Neighbours
+ * overlap their 1px borders instead of one side dropping its border: dropping
+ * it left every button but the first 1px narrower than its neighbour and its
+ * label half a pixel off centre. */
+
+.sv-seg .pill { border-radius: 0; }
+
+.sv-seg .pill + .pill { margin-left: -1px; }
+
+.sv-seg .pill:first-of-type { border-radius: 8px 0 0 8px; }
+
+.sv-seg .pill:last-of-type { border-radius: 0 8px 8px 0; }
+
+/* the label the pair belongs to is not part of the control — gap: 0 above
+ * glued it to the − button */
+
+/* --- swarm view chrome (the dock and the header counts, not the map) --- */
+.sv-count { border-radius: 7px; }
+
+.sv-menu-item { font-family: var(--font-ui); letter-spacing: 0; text-transform: none; }
+
+/* the paint sites. `stroke`/`background`/`color` as properties, not attributes
+ * or inline styles, so the cascade above is what decides them. */
+#sv-links line.ws-tint {
+  stroke: var(--ws-ink);
+  opacity: calc(var(--ws-op) * var(--ws-op-boost));
 }

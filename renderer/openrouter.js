@@ -151,9 +151,7 @@ window.OpenRouterUI = {
       ['openrouter', 'OpenRouter…', 'Pick any catalog model'],
     ];
     for (const [provider, label, tip] of entries) {
-      const row = document.createElement('button');
-      row.className = 'branch-item';
-      row.textContent = label;
+      const row = elt('button', 'branch-item', label);
       row.dataset.tip = tip;
       row.addEventListener('click', () => {
         if (remember.checked) this.applyNewAgentProvider(provider);
@@ -162,8 +160,7 @@ window.OpenRouterUI = {
       });
       menu.appendChild(row);
     }
-    const rememberRow = document.createElement('label');
-    rememberRow.className = 'or-provider-remember';
+    const rememberRow = elt('label', 'or-provider-remember');
     rememberRow.appendChild(remember);
     rememberRow.appendChild(document.createTextNode('remember for future agents'));
     menu.appendChild(rememberRow);
@@ -213,8 +210,7 @@ window.OpenRouterUI = {
       for (const b of row.children) b.classList.toggle('on', b.dataset.prefix === active);
     };
     for (const [prefix, label, tip] of this.HARNESSES) {
-      const b = document.createElement('button');
-      b.className = 'or-harness';
+      const b = elt('button', 'or-harness');
       b.dataset.prefix = prefix;
       b.textContent = label;
       b.dataset.tip = tip;
@@ -269,9 +265,7 @@ window.OpenRouterUI = {
       const needle = q.trim().toLowerCase();
       for (const m of rows) {
         if (needle && !(m.text + ' ' + m.tip).toLowerCase().includes(needle)) continue;
-        const row = document.createElement('button');
-        row.className = 'branch-item';
-        row.textContent = m.text;
+        const row = elt('button', 'branch-item', m.text);
         row.dataset.tip = m.tip;
         row.addEventListener('click', () => {
           this.closeModelMenu();

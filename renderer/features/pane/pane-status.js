@@ -15,10 +15,6 @@ Object.assign(Pane.prototype, {
     this.dot.classList.toggle('attn', status === 'attention');
     this.el.classList.toggle('attn', status === 'attention');
     this.busyEl.style.display = status === 'working' ? '' : 'none';
-    // /clear appears once the agent is done working and free (not mid-turn, not
-    // blocked on a permission prompt, not exited)
-    const canClear = !this.exited && !this.working && !this.awaitingPrompt;
-    this.btnClear.style.display = canClear ? '' : 'none';
     this.syncWaitChip();
     this.syncSubagents();
   },

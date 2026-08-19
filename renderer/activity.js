@@ -18,32 +18,25 @@ const Activity = (() => {
   let pane = null;
   let raf = 0;
 
-  const el = (tag, className, text) => {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text;
-    return node;
-  };
-
-  const pop = el('div');
+  const pop = elt('div');
   pop.id = 'activity-pop';
   pop.hidden = true;
 
-  const head = el('div', 'activity-head');
-  const titleEl = el('div', 'kbd-title activity-title', 'Activity');
-  const countEl = el('span', 'activity-count');
-  const closeBtn = el('button', 'pill', 'Close');
+  const head = elt('div', 'activity-head');
+  const titleEl = elt('div', 'kbd-title activity-title', 'Activity');
+  const countEl = elt('span', 'activity-count');
+  const closeBtn = elt('button', 'pill', 'Close');
   closeBtn.type = 'button';
   closeBtn.dataset.tip = 'Close (Esc)';
   head.append(titleEl, countEl, closeBtn);
 
-  const callsEl = el('div', 'activity-calls');
-  const subsEl = el('div', 'activity-subs');
-  const filesEl = el('div', 'activity-files');
-  const readsEl = el('div', 'activity-col');
-  const writesEl = el('div', 'activity-col');
+  const callsEl = elt('div', 'activity-calls');
+  const subsEl = elt('div', 'activity-subs');
+  const filesEl = elt('div', 'activity-files');
+  const readsEl = elt('div', 'activity-col');
+  const writesEl = elt('div', 'activity-col');
   filesEl.append(readsEl, writesEl);
-  const noteEl = el('div', 'activity-note',
+  const noteEl = elt('div', 'activity-note',
     'Calls are read from the hook stream, so a burst can lose a row — the terminal is the record.');
 
   pop.append(head, callsEl, subsEl, filesEl, noteEl);
@@ -68,25 +61,25 @@ const Activity = (() => {
     const rows = pane.activity.slice(-ROWS_MAX).reverse();
     callsEl.textContent = '';
     if (!rows.length) {
-      callsEl.append(el('div', 'activity-empty', 'no tool calls seen yet'));
+      callsEl.append(elt('div', 'activity-empty', 'no tool calls seen yet'));
       return;
     }
     for (const call of rows) {
-      const row = el('div', 'activity-row'
+      const row = elt('div', 'activity-row'
         + (call.failed ? ' failed' : '')
         + (call.cancelled ? ' cancelled' : '')
         + (call.done ? '' : ' live'));
-      row.append(el('span', 'activity-tool', call.tool || 'tool'));
+      row.append(elt('span', 'activity-tool', call.tool || 'tool'));
       // a path is shown from the workspace down, like the file columns below;
       // a command or a pattern is shown as it was written. The full string is
       // on the tooltip either way.
       const isPath = call.target && !/\s/.test(call.target) && /[\\/]/.test(call.target);
-      const target = el('span', 'activity-target', isPath ? shortPath(call.target) : (call.target || ''));
+      const target = elt('span', 'activity-target', isPath ? shortPath(call.target) : (call.target || ''));
       if (call.target) target.dataset.tip = call.target;
       row.append(target);
       // a call still in flight has no duration yet, and saying "0ms" would be a
       // lie about the one row the user is most likely looking at
-      row.append(el('span', 'activity-ms',
+      row.append(elt('span', 'activity-ms',
         call.cancelled ? 'not run' : call.done ? fmtMs(call.ms) : '…'));
       callsEl.append(row);
     }
@@ -94,21 +87,21 @@ const Activity = (() => {
 
   function renderFiles(col, label, map) {
     col.textContent = '';
-    col.append(el('div', 'activity-col-head', `${label} (${map.size})`));
+    col.append(elt('div', 'activity-col-head', `${label} (${map.size})`));
     if (!map.size) {
-      col.append(el('div', 'activity-empty', 'none'));
+      col.append(elt('div', 'activity-empty', 'none'));
       return;
     }
     // newest last in a Map, and the recent ones are the interesting ones
     const paths = [...map.keys()].reverse();
     for (const path of paths.slice(0, FILES_MAX)) {
       const n = map.get(path);
-      const row = el('div', 'activity-file', shortPath(path) + (n > 1 ? ` ×${n}` : ''));
+      const row = elt('div', 'activity-file', shortPath(path) + (n > 1 ? ` ×${n}` : ''));
       row.dataset.tip = path;
       col.append(row);
     }
     if (paths.length > FILES_MAX) {
-      col.append(el('div', 'activity-empty', `+${paths.length - FILES_MAX} more`));
+      col.append(elt('div', 'activity-empty', `+${paths.length - FILES_MAX} more`));
     }
   }
 
@@ -119,13 +112,13 @@ const Activity = (() => {
     subsEl.textContent = '';
     if (!pane.subagents.length) { subsEl.hidden = true; return; }
     subsEl.hidden = false;
-    subsEl.append(el('div', 'activity-col-head', 'Subagents'));
+    subsEl.append(elt('div', 'activity-col-head', 'Subagents'));
     for (const sub of pane.subagents.slice().reverse()) {
-      const row = el('div', 'activity-row' + (sub.done ? '' : ' live'));
-      row.append(el('span', 'activity-tool', sub.done ? 'done' : 'running'));
-      const desc = el('span', 'activity-target', sub.desc || 'subagent');
+      const row = elt('div', 'activity-row' + (sub.done ? '' : ' live'));
+      row.append(elt('span', 'activity-tool', sub.done ? 'done' : 'running'));
+      const desc = elt('span', 'activity-target', sub.desc || 'subagent');
       desc.dataset.tip = sub.desc || 'subagent';
-      row.append(desc, el('span', 'activity-ms', sub.done ? fmtMs(sub.ms) : '…'));
+      row.append(desc, elt('span', 'activity-ms', sub.done ? fmtMs(sub.ms) : '…'));
       subsEl.append(row);
     }
   }

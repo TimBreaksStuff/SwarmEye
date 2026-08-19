@@ -1023,11 +1023,6 @@ const paneHandlers = {
     }
     syncChrome(); // keep workspace pill badges current
   },
-  async onExport(pane) {
-    const res = await window.swarm.exportSession(pane.session.agentName, pane.getBufferText());
-    if (res.ok) toast('transcript saved to ' + res.path);
-    else if (!res.canceled) toast('could not save: ' + res.reason);
-  },
   async onRestart(pane, { resume, model, scope }) {
     // a detached pane's agent is still running — reconnect, don't respawn
     if (pane.detached) {
@@ -1828,9 +1823,7 @@ addAgentBtn.addEventListener('click', () => {
       menu.appendChild(Object.assign(document.createElement('div'), { className: 'branch-menu-label', textContent: label }));
       continue;
     }
-    const row = document.createElement('button');
-    row.className = 'branch-item' + (editRoles ? ' branch-item-quiet' : '') + (strong ? ' branch-item-strong' : '');
-    row.textContent = label;
+    const row = elt('button', 'branch-item' + (editRoles ? ' branch-item-quiet' : '') + (strong ? ' branch-item-strong' : ''), label);
     row.dataset.tip = tip;
     row.addEventListener('click', () => {
       closeAgentKindMenu();

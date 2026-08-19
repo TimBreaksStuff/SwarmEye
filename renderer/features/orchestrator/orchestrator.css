@@ -130,11 +130,12 @@
    is showing, so it is styled here beside the chip it sits next to. */
 .pane-crew {
   flex: none;
-  max-width: 200px;
-  padding: 2px 7px;
+  max-width: 140px;
+  padding: 2px 6px;
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--text);
   background: transparent;
   border: 1px solid var(--border3);

@@ -73,8 +73,7 @@ const Skills = (() => {
       toggle.appendChild(name);
     }
 
-    const activeToggle = document.createElement('label');
-    activeToggle.className = 'skill-row-active';
+    const activeToggle = elt('label', 'skill-row-active');
     // Claude agents only — a typed /command means nothing to the bare
     // harnesses, which is what the toggle beside this one is for
     const BARE_NOTE = ' Claude agents only: for clean, opencode and pi use the next toggle.';
@@ -92,15 +91,13 @@ const Skills = (() => {
       if (!res || !res.ok) toast('could not update: ' + (res && res.reason));
       await refresh();
     });
-    const activeLabel = document.createElement('span');
-    activeLabel.textContent = 'Active in new sessions';
+    const activeLabel = elt('span', null, 'Active in new sessions');
     activeToggle.appendChild(activeCheckbox);
     activeToggle.appendChild(activeLabel);
 
     // third toggle: inject this skill into bare-harness agents at launch
     // (they have no on-demand skill mechanism — startup is the only way in)
-    const orToggle = document.createElement('label');
-    orToggle.className = 'skill-row-active';
+    const orToggle = elt('label', 'skill-row-active');
     orToggle.dataset.tip = 'Load this skill into every new clean, opencode and pi agent\'s system prompt '
       + 'at launch — the three harnesses where "Active in new sessions" cannot reach. '
       + 'Its full text rides every turn of those agents — leave off unless it earns its tokens.'
@@ -114,8 +111,7 @@ const Skills = (() => {
       if (!res || !res.ok) toast('could not update: ' + (res && res.reason));
       await refresh();
     });
-    const orLabel = document.createElement('span');
-    orLabel.textContent = 'In OpenRouter agents';
+    const orLabel = elt('span', null, 'In OpenRouter agents');
     orToggle.appendChild(orCheckbox);
     orToggle.appendChild(orLabel);
 
@@ -150,8 +146,7 @@ const Skills = (() => {
     actions.className = 'skill-row-actions';
 
     if (skill.updateAvailable && !skill.local) {
-      const updateBtn = document.createElement('button');
-      updateBtn.className = 'skill-update-btn';
+      const updateBtn = elt('button', 'skill-update-btn');
       Icons.set(updateBtn, 'refresh', 'update');
       updateBtn.dataset.tip = 'Pull the latest commit for this skill';
       updateBtn.addEventListener('click', async () => {
@@ -164,8 +159,7 @@ const Skills = (() => {
     }
 
     if (!skill.enabled && !skill.local) {
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'skill-copy-btn';
+      const copyBtn = elt('button', 'skill-copy-btn');
       Icons.set(copyBtn, 'copy');
       copyBtn.dataset.tip = 'Copy a command to load this skill in one project\'s terminal';
       copyBtn.addEventListener('click', async () => {
@@ -176,8 +170,7 @@ const Skills = (() => {
       actions.appendChild(copyBtn);
     }
 
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'skill-remove-btn';
+    const removeBtn = elt('button', 'skill-remove-btn');
     Icons.set(removeBtn, 'trash');
     removeBtn.dataset.tip = skill.local
       ? 'Delete this skill\'s folder from disk (click twice) — there\'s no clone to restore it from'
@@ -226,8 +219,7 @@ const Skills = (() => {
   }
 
   function makeRepoGroup(group, hueIndex) {
-    const wrap = document.createElement('div');
-    wrap.className = 'skill-repo-group';
+    const wrap = elt('div', 'skill-repo-group');
     // repos cycle through the tint hues; disk-found sources stay grey
     if (group.local) wrap.classList.add('skill-repo-group-local');
     else if (hueIndex % 3) wrap.classList.add('skill-repo-hue-' + (hueIndex % 3));
@@ -275,8 +267,7 @@ const Skills = (() => {
     header.appendChild(count);
 
     if (!group.local) {
-      const removeAllBtn = document.createElement('button');
-      removeAllBtn.className = 'skill-repo-remove-btn';
+      const removeAllBtn = elt('button', 'skill-repo-remove-btn');
       Icons.set(removeAllBtn, 'trash', 'all');
       removeAllBtn.dataset.tip = 'Remove every skill from this repo (click twice)';
       removeAllBtn.addEventListener('click', (e) => {
@@ -385,22 +376,7 @@ const Skills = (() => {
     if (e.key === 'Enter') submitBtn.click();
   });
 
-  searchEl.addEventListener('input', () => {
-    query = searchEl.value.trim().toLowerCase();
-    render();
-  });
-  // Esc clears the filter rather than closing the whole screen, as long as
-  // there is something to clear; every other key is kept off the document-level
-  // shortcut handler (bare Tab would move focus into a terminal mid-typing)
-  searchEl.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') e.stopPropagation();
-    if (e.key === 'Escape' && searchEl.value) {
-      searchEl.value = '';
-      query = '';
-      render();
-      e.stopPropagation();
-    }
-  });
+  wireSearch(searchEl, (q) => { query = q; render(); });
 
   window.swarm.onSkillUpdateStatus(({ id, updateAvailable }) => {
     const skill = skills.find((s) => s.id === id);

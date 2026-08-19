@@ -197,6 +197,52 @@ function envPrefix(slug) {
  * the substitution, a no-op in dev where the path has no app.asar segment. */
 const SAFE_ARG_RE = /^[^"'$`\\]+$/;
 
+/* `node` is not reliably on PATH for the shell a launch command runs in. A
+ * launch is a login shell, but not an interactive one, so it never reads
+ * .bashrc — which is the only place nvm puts its node. The pane then died on
+ * "node: command not found" the instant it opened, and tmux took the session
+ * (and the message) down with it, so it just read [exited]. Hand the command
+ * nvm's newest install as a PATH *suffix*: anything the shell already found
+ * still wins, and the whole thing stays one `env`-prefixed command, which is
+ * what the no-tmux `exec <cmd>` path needs. */
+const NODE_PATH = 'PATH="$PATH:$(ls -d $HOME/.nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -1)"';
+
+/* Which CLI each bare harness actually runs. A missing one was invisible: the
+ * launch died on "not found" before the pane drew a character, and tmux took
+ * the session — and the message — down with it, so the pane just read
+ * [exited]. The builders below ask this and return null instead, which
+ * sessions.js already turns into a one-line explanation in the pane. */
+const HARNESS_BIN = { clean: 'node', opencode: 'opencode', pi: 'pi' };
+
+/* One shell line naming the harness binaries a launch would find (PtyManager
+ * .init folds it into the tmux probe's round trip). It re-enters a *login*
+ * shell first, because that is what a launch gets and exec() on Windows is a
+ * plain `bash -c`: ~/.local/bin, where these CLIs install themselves, is on
+ * one PATH and not the other, and probing the wrong shell reported both as
+ * missing. node is looked up the way NODE_PATH resolves it, nvm install
+ * included; the answers carry no digits, so the caller's tmux-version regex
+ * can share the output. */
+const TOOL_PROBE = '${SHELL:-/bin/bash} -lc \''
+  + 'for b in opencode pi; do command -v $b >/dev/null 2>&1 && echo have:$b; done; '
+  + '{ command -v node >/dev/null 2>&1 || ls -d $HOME/.nvm/versions/node/*/bin/node >/dev/null 2>&1; }'
+  + ' && echo have:node; true\'';
+
+/* What that probe found, from its raw output. Until it has run — and whenever
+ * the shell doesn't answer at all — every binary counts as present: a probe
+ * that failed must never block a launch that would have worked. */
+let found = null;
+function setTools(out) {
+  found = typeof out === 'string' && out
+    ? new Set(Object.values(HARNESS_BIN).filter((b) => out.includes('have:' + b)))
+    : null;
+}
+
+/* The binary this harness needs and the agent's shell cannot find, else null. */
+function missingBin(harness) {
+  const bin = HARNESS_BIN[harness];
+  return bin && found && !found.has(bin) ? bin : null;
+}
+
 /* The skill folders a bare-harness launch carries (skills.js orSkillDirs),
  * narrowed to the ones every builder below can express — paths only, never
  * content, so the no-quotes rule stays satisfiable and a path it can't satisfy
@@ -209,12 +255,13 @@ function safeSkillDirs(skills) {
 function cleanCmd(slug, { system, yolo, skills } = {}) {
   const key = config.load().openrouterKey || '';
   if (!KEY_RE.test(key) || !SLUG_RE.test(slug)) return null;
+  if (missingBin('clean')) return null;
   const script = toShellPath(path.join(__dirname, '..', 'agent', 'clean.js').replace('app.asar', 'app.asar.unpacked'));
   if (!script || !SAFE_ARG_RE.test(script)) return null;
   if (system && !SAFE_ARG_RE.test(system)) return null;
   // no OPENROUTER_API_KEY here: keyEnv() hands it to the session over the
   // tmux socket, so the key never sits in a command line anyone can read
-  let cmd = `node "${script}" --model ${slug}`;
+  let cmd = `env ${NODE_PATH} node "${script}" --model ${slug}`;
   if (system) cmd += ` --system "${system}"`;
   if (yolo) cmd += ' --yolo';
   // skill folders the script loads into its system prompt
@@ -322,6 +369,7 @@ function continueEnv(continueFrom) {
 function opencodeCmd(slug, { yolo, continueFrom, resumeId, skills } = {}) {
   const key = config.load().openrouterKey || '';
   if (!KEY_RE.test(key) || !SLUG_RE.test(slug)) return null;
+  if (missingBin('opencode')) return null;
   const plugin = adapterPath('opencode-plugin.js');
   if (!plugin) return null;
   const cfg = writeOpencodeConfig(plugin, yolo, skills);
@@ -343,6 +391,7 @@ function opencodeCmd(slug, { yolo, continueFrom, resumeId, skills } = {}) {
 function piCmd(slug, { system, continueFrom, resumeId, skills } = {}) {
   const key = config.load().openrouterKey || '';
   if (!KEY_RE.test(key) || !SLUG_RE.test(slug)) return null;
+  if (missingBin('pi')) return null;
   const ext = adapterPath('pi-extension.ts');
   if (!ext) return null;
   if (system && !SAFE_ARG_RE.test(system)) return null;
@@ -461,4 +510,4 @@ function priceFor(modelId) {
   return { input: m.in * 1e6, output: m.out * 1e6, cacheRead: m.cr * 1e6, cacheWrite: m.cw * 1e6 };
 }
 
-module.exports = { slugOf, cleanSlugOf, cleanCmd, cleanContinueArg, opencodeSlugOf, piSlugOf, isForeign, opencodeCmd, piCmd, foreignResumeId, foreignHarness, keyEnv, hasKey, setKey, clearKey, status, catalog, fetchCatalog, alts, setAlts, envPrefix, priceFor, fetchSpend };
+module.exports = { TOOL_PROBE, setTools, missingBin, slugOf, cleanSlugOf, cleanCmd, cleanContinueArg, opencodeSlugOf, piSlugOf, isForeign, opencodeCmd, piCmd, foreignResumeId, foreignHarness, keyEnv, hasKey, setKey, clearKey, status, catalog, fetchCatalog, alts, setAlts, envPrefix, priceFor, fetchSpend };

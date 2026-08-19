@@ -80,8 +80,8 @@
 }
 .hist-meta {
   margin-top: 3px;
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-family: var(--font-ui);
+  font-size: 11px;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -291,3 +291,23 @@
 #coord-input[hidden],
 #coord-split[hidden],
 #coord-create[hidden] { display: none; }
+
+/* ---- moved out of chrome-clean.css: per-area styling belongs to the area,
+ * and this is the tail of the cascade for it, exactly where chrome-clean sat ---- */
+
+/* --- history --- */
+
+/* the History row's model badge — only non-Claude (OpenRouter) conversations
+ * carry one; same chip shape as the rest of the meta line's context */
+.hist-model {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text2);
+  font-size: 10px;
+  line-height: 1.5;
+  vertical-align: 1px;
+}

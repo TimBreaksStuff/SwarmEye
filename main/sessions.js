@@ -143,9 +143,20 @@ function toDim(v, fallback, max) {
 /* Claude Code stores conversations in ~/.claude/projects/<munged-path>/,
  * where the munge is the cwd as the shell sees it, with every
  * non-alphanumeric char as '-'. On Windows that means the WSL form:
- * C:\foo bar\baz -> /mnt/c/foo bar/baz -> -mnt-c-foo-bar-baz */
+ * C:\foo bar\baz -> /mnt/c/foo bar/baz -> -mnt-c-foo-bar-baz
+ *
+ * Claude munges its *own* `process.cwd()`, and getcwd() hands back the real
+ * spelling on disk — symlinks resolved, and on macOS the true case. So a
+ * workspace added as `01-swarmeye` when the folder is really `01-SwarmEye`
+ * opens, chdirs and runs perfectly on that case-insensitive filesystem while
+ * the two munges differ by one letter — and hooks.js, which checks the
+ * transcript an agent reports against this name, dropped every event from
+ * every agent in that workspace. Resolve first, and both sides build the same
+ * string. */
 function claudeProjectDirName(cwd) {
-  return (toShellPath(cwd) || cwd).replace(/[^A-Za-z0-9]/g, '-');
+  let real = cwd;
+  try { real = fs.realpathSync.native(cwd); } catch { /* gone, or a share realpath cannot follow */ }
+  return (toShellPath(real) || real).replace(/[^A-Za-z0-9]/g, '-');
 }
 
 /* Role presets live in main/roles.js now — seeded from four built-ins and
@@ -219,6 +230,23 @@ function scopeDeny(cwd, want) {
   return rules;
 }
 
+/* The one line a pane shows when a bare harness cannot be launched. A CLI the
+ * agent's shell can't find is the common cause and used to be invisible — the
+ * command died on "not found" before anything was drawn and tmux took the
+ * message down with the session, leaving a bare [exited]. */
+function cannotLaunch(harness) {
+  const bin = providers.missingBin(harness);
+  const why = bin
+    ? `${bin} is not on PATH in the agent shell — install it, then restart SwarmEye`
+    : 'OpenRouter key missing or app path not shell-safe';
+  // `read` holds the pane on the message: a command that exits takes its tmux
+  // session down before the client has drawn a frame, so anything it printed
+  // is lost — which is what made this message invisible until now. Enter
+  // dismisses it. The trailing `#` comments out the --settings flag
+  // decorateCmd appends after the command it is given.
+  return `echo ${harness} agent: ${why}; read -r _; #`;
+}
+
 /* --allow-dangerously-skip-permissions is opt-in (⌨ Options) — without it
  * claude won't offer bypass-permissions ("auto") mode in the Shift+Tab cycle
  * at all. Unlike --dangerously-skip-permissions, the --allow- variant only
@@ -250,7 +278,7 @@ function claudeBase({ model, resume, role, notes, effort, orSkills, continueFrom
   if (cleanSlug) {
     const appendedClean = [preset && preset.prompt, notes && notesPrompt(notes)].filter(Boolean).join(' ');
     return providers.cleanCmd(cleanSlug, { system: appendedClean, yolo: !!config.load().skipPermissions, skills: orSkills })
-      || 'echo clean agent: OpenRouter key missing or app path not shell-safe';
+      || cannotLaunch('clean');
   }
   // 'opencode:' / 'pi:' replace claude with a third-party CLI carrying our own
   // adapter (opencode-pi-plan.md). Same failure rule as the clean agent: a
@@ -265,13 +293,13 @@ function claudeBase({ model, resume, role, notes, effort, orSkills, continueFrom
   const opencodeSlug = providers.opencodeSlugOf(effectiveModel);
   if (opencodeSlug) {
     return providers.opencodeCmd(opencodeSlug, { yolo: !!config.load().skipPermissions, continueFrom, resumeId, skills: orSkills })
-      || 'echo opencode agent: OpenRouter key missing or app path not shell-safe';
+      || cannotLaunch('opencode');
   }
   const piSlug = providers.piSlugOf(effectiveModel);
   if (piSlug) {
     const appendedPi = [preset && preset.prompt, notes && notesPrompt(notes)].filter(Boolean).join(' ');
     return providers.piCmd(piSlug, { system: appendedPi, continueFrom, resumeId, skills: orSkills })
-      || 'echo pi agent: OpenRouter key missing or app path not shell-safe';
+      || cannotLaunch('pi');
   }
   // an 'or:<slug>' value launches through OpenRouter: the model rides an env
   // prefix (providers.js maps every tier alias to the one slug) rather than
@@ -341,8 +369,11 @@ class PtyManager {
     // from "shell fine, tmux missing" (probe echoed, no version line): the two
     // must not be conflated, or a slow boot reads as a no-tmux install and every
     // consumer treats the surviving agents as gone.
-    const ver = await exec('echo probe; command -v tmux >/dev/null && tmux -V; true');
+    // the harness probe rides along rather than costing a second spawn (its
+    // answers are digit-free, so the version match below still reads tmux's)
+    const ver = await exec('echo probe; command -v tmux >/dev/null && tmux -V; true; ' + providers.TOOL_PROBE);
     this.shellOk = !!(ver && ver.includes('probe'));
+    providers.setTools(this.shellOk ? ver : null);
     const m = /(\d+)\.(\d+)/.exec(ver || '');
     this.tmuxOk = !!m;
     if (this.tmuxOk) {
@@ -678,14 +709,23 @@ class PtyManager {
     // The quotes and `$` are the shell's and sit outside the single quotes
     // wrapping `cmd`, so the no-metacharacters rule inside those is untouched:
     // this is our own literal variable name, never data.
+    //
+    // On Windows the dollar is escaped: wsl.exe joins the argv it is given
+    // into one string and runs it through `/bin/bash -c`, so that wrapper
+    // expands `$NAME` *before* the login shell inside it starts — against an
+    // environment the `env NAME=value` prefix has not reached yet. tmux then
+    // got an empty key, and every bare-harness agent died on its own "key is
+    // not set" line, in a session tmux tore down before the message could be
+    // drawn. Escaping leaves the expansion to the shell that has the value.
     const keyVar = cmd ? providers.keyEnv(meta.model) : null;
+    const keyRef = IS_WIN ? '\\$' : '$';
     const attach = `exec ${TMUX} attach-session -t '=${meta.tmuxName}'`;
     const script = this.tmuxOk
       ? (cmd
         ? (keyVar
           ? `env -u ${keyVar.name} ${TMUX} start-server 2>/dev/null; `
             + `${TMUX} new-session -Ad -s ${meta.tmuxName} -x ${cols} -y ${rows}`
-            + ` -e ${keyVar.name}="$${keyVar.name}" '${cmd}'; ${attach}`
+            + ` -e ${keyVar.name}="${keyRef}${keyVar.name}" '${cmd}'; ${attach}`
           : `exec ${TMUX} new-session -A -s ${meta.tmuxName} -x ${cols} -y ${rows} '${cmd}'`)
         : attach)
       : `exec ${cmd || 'claude'}`;

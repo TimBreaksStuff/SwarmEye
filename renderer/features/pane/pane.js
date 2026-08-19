@@ -61,26 +61,21 @@ class Pane {
     this.usageTimer = null; // 1s tick, only while the panel is visible
     livePanes.add(this);
 
-    this.el = document.createElement('section');
-    this.el.className = 'pane';
+    this.el = elt('section', 'pane');
     this.el.dataset.sessionId = session.id;
 
     const header = document.createElement('div');
     header.className = 'pane-header';
 
-    this.dot = document.createElement('span');
-    this.dot.className = 'pane-dot idle';
+    this.dot = elt('span', 'pane-dot idle');
 
-    this.taskEl = document.createElement('span');
-    this.taskEl.className = 'pane-task';
-    this.taskEl.textContent = 'task';
+    this.taskEl = elt('span', 'pane-task', 'task');
     this.taskEl.dataset.tip = 'Started by a board task';
     this.taskEl.style.display = this.managed ? '' : 'none';
 
     // role preset this agent was launched with (main/sessions.js ROLES) —
     // persisted on the session, so it survives a reattach after a restart
-    this.roleEl = document.createElement('span');
-    this.roleEl.className = 'pane-role';
+    this.roleEl = elt('span', 'pane-role');
     if (session.role) {
       this.roleEl.textContent = session.role;
       this.roleEl.dataset.tip = `Launched as a ${session.role} — its own system prompt and model`;
@@ -89,14 +84,12 @@ class Pane {
     }
 
     // model and effort are drawn in exactly one place at a time — see syncModelChip
-    this.effortEl = document.createElement('span');
-    this.effortEl.className = 'pane-effort';
+    this.effortEl = elt('span', 'pane-effort');
     this.effortEl.style.display = 'none';
     this.effortLabel = '';
     this.effortTip = 'Claude reasoning effort for this agent';
 
-    this.llmEl = document.createElement('span');
-    this.llmEl.className = 'pane-llm';
+    this.llmEl = elt('span', 'pane-llm');
     this.llmEl.style.display = 'none';
     this.llmEl.addEventListener('click', () => this.openModelPicker());
     // the launch model is session state (sessions.js persists meta.model for
@@ -120,16 +113,13 @@ class Pane {
       : viaOr ? 'Model this agent runs, via OpenRouter' : 'Claude model for this agent';
     this.transcriptId = null; // Claude conversation id, from the hook payload
 
-    this.gitEl = document.createElement('span');
-    this.gitEl.className = 'pane-git';
+    this.gitEl = elt('span', 'pane-git');
     this.gitEl.style.display = 'none';
     this.gitEl.addEventListener('click', () => this.openBranchMenu());
     this.gitInfo = null;
     this.branchMenuEl = null;
 
-    this.titleEl = document.createElement('span');
-    this.titleEl.className = 'pane-title';
-    this.titleEl.textContent = session.agentName;
+    this.titleEl = elt('span', 'pane-title', session.agentName);
     this.titleEl.dataset.tip = 'Click to rename';
     this.titleEl.addEventListener('click', () => this.startRename());
 
@@ -142,21 +132,19 @@ class Pane {
      * harness (clean/opencode/pi) gets none — no permission layer to deny
      * with, main refuses a scope there. */
     if (!this.viaClean) {
-      this.scopeEl = document.createElement('span');
-      this.scopeEl.className = 'pane-scope';
+      this.scopeEl = elt('span', 'pane-scope');
       this.scopeEl.addEventListener('click', () => this.openScopePicker());
       if (session.scope && session.scope.paths) {
         this.scopeEl.textContent = session.scope.label;
         this.scopeEl.dataset.tip = `Scoped: may only edit ${session.scope.paths.join(', ')} — everything else in this workspace is denied. Click to switch or lift the boundary (restarts the agent, conversation continues).`;
       } else {
         this.scopeEl.classList.add('off');
-        this.scopeEl.textContent = '⊘ unscoped';
+        this.scopeEl.innerHTML = Icons.markup('folder');
         this.scopeEl.dataset.tip = 'May edit the whole workspace. Click to confine this agent to one area or folder (restarts the agent, conversation continues).';
       }
     }
 
-    this.modeSel = document.createElement('select');
-    this.modeSel.className = 'pane-mode';
+    this.modeSel = elt('select', 'pane-mode');
     this.modeSel.dataset.tip = MODE_TIP;
     for (const [value, label] of MODES) {
       const opt = document.createElement('option');
@@ -171,12 +159,7 @@ class Pane {
     // Options skip-permissions launched it with the gate already off.
     if (this.viaClean) {
       this.modeSel.textContent = '';
-      for (const [value, label] of [['default', 'manual'], ['bypass', 'auto']]) {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = label;
-        this.modeSel.appendChild(opt);
-      }
+      for (const [value, label] of [['default', 'manual'], ['bypass', 'auto']]) this.modeSel.add(new Option(label, value));
       this.modeSel.value = skipPermissions ? 'bypass' : 'default';
       this.modeSel.dataset.tip = 'Permission gate — auto runs every tool call without asking (types /yolo into the agent)';
     }
@@ -189,8 +172,7 @@ class Pane {
 
     // live agent state from Claude Code hooks (tool name + what it is on,
     // waiting, done) — click it for the full list of calls behind it
-    this.statusEl = document.createElement('span');
-    this.statusEl.className = 'pane-status';
+    this.statusEl = elt('span', 'pane-status');
     this.statusEl.style.display = 'none';
     this.statusEl.dataset.tip = 'What this agent has been doing — click for the full list';
     this.statusEl.addEventListener('click', () => Activity.open(this));
@@ -198,21 +180,18 @@ class Pane {
     // how long the agent has been blocked on the user. A 40-second wait and a
     // 40-minute one are the same pane otherwise, and only one of them is worth
     // walking over to.
-    this.waitEl = document.createElement('span');
-    this.waitEl.className = 'pane-wait';
+    this.waitEl = elt('span', 'pane-wait');
     this.waitEl.style.display = 'none';
     this.waitEl.addEventListener('click', () => this.handlers.onFocus(this));
 
     // Claude Code's Task subagents, which are otherwise invisible: their whole
     // run is one line of the parent's output
-    this.subEl = document.createElement('span');
-    this.subEl.className = 'pane-sub';
+    this.subEl = elt('span', 'pane-sub');
     this.subEl.style.display = 'none';
     this.subEl.addEventListener('click', () => Activity.open(this));
 
     // equalizer-style busy indicator, shown only while the agent is working
-    this.busyEl = document.createElement('span');
-    this.busyEl.className = 'pane-busy';
+    this.busyEl = elt('span', 'pane-busy');
     this.busyEl.style.display = 'none';
     for (let i = 0; i < 5; i++) {
       const bar = document.createElement('span');
@@ -224,8 +203,7 @@ class Pane {
     // quick-respond to a live numbered permission prompt (Notification hook
     // event) without opening the pane — reuses the same menu-line parsing as
     // the clickable option links below (MENU_OPTION_RE)
-    this.btnApprove = document.createElement('button');
-    this.btnApprove.className = 'pane-btn approve';
+    this.btnApprove = elt('button', 'pane-btn approve');
     this.btnApprove.dataset.tip = 'Approve (shift-click: always allow)';
     this.btnApprove.innerHTML = icon('<path d="M5 12.5l5 5L19 7"/>');
     this.btnApprove.style.display = 'none';
@@ -233,8 +211,7 @@ class Pane {
       if (!this.respondToPrompt('yes', e.shiftKey)) toast("couldn't read the prompt — open the pane");
     });
 
-    this.btnDeny = document.createElement('button');
-    this.btnDeny.className = 'pane-btn deny';
+    this.btnDeny = elt('button', 'pane-btn deny');
     this.btnDeny.dataset.tip = 'Deny';
     this.btnDeny.innerHTML = icon('<path d="M6 6l12 12M18 6L6 18"/>');
     this.btnDeny.style.display = 'none';
@@ -242,17 +219,14 @@ class Pane {
       if (!this.respondToPrompt('no', false)) toast("couldn't read the prompt — open the pane");
     });
 
-    this.badge = document.createElement('span');
-    this.badge.className = 'pane-badge';
+    this.badge = elt('span', 'pane-badge');
     this.badge.style.display = 'none';
 
     // "this Opus agent has only been reading" — click twice to bring it back
     // on Haiku. A button, not a chip: it is the one thing in the header that
     // changes what the agent costs.
     this.readOnlyStreak = 0;
-    this.rightsizeEl = document.createElement('button');
-    this.rightsizeEl.className = 'pane-rightsize';
-    this.rightsizeEl.textContent = '→ Haiku';
+    this.rightsizeEl = elt('button', 'pane-rightsize', '→ Haiku');
     this.rightsizeEl.style.display = 'none';
     this.rightsizeEl.addEventListener('click', () => {
       Confirm.armOrFire(this.rightsizeEl, 'rightsize:' + this.session.id, () => {
@@ -262,32 +236,7 @@ class Pane {
       });
     });
 
-    // /clear — only shown once the agent is idle (finished a turn); wipes its
-    // conversation context without restarting the process.
-    this.btnClear = document.createElement('button');
-    this.btnClear.className = 'pane-btn clear';
-    this.btnClear.dataset.tip = "Clear this agent's context (/clear)";
-    this.btnClear.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20H8.5L3.6 15a1.4 1.4 0 0 1 0-2L12.8 3.8a1.4 1.4 0 0 1 2 0l5.2 5.2a1.4 1.4 0 0 1 0 2L11.5 20"/><path d="M6.5 10.5l7 7"/></svg>';
-    this.btnClear.style.display = 'none';
-    this.btnClear.addEventListener('click', () => {
-      if (this.exited) return;
-      window.swarm.writeSession(this.session.id, '/clear\r');
-    });
-
-    const btnExport = document.createElement('button');
-    btnExport.className = 'pane-btn export';
-    btnExport.dataset.tip = 'Save transcript to a file';
-    btnExport.innerHTML = icon('<path d="M12 3v11"/><path d="M7.5 10L12 14.5 16.5 10"/><path d="M4 20h16"/>');
-    btnExport.addEventListener('click', () => handlers.onExport(this));
-
-    const btnSearch = document.createElement('button');
-    btnSearch.className = 'pane-btn search';
-    btnSearch.dataset.tip = 'Search (Ctrl+Shift+F)';
-    btnSearch.innerHTML = icon('<circle cx="11" cy="11" r="6.5"/><path d="M20.5 20.5l-4.8-4.8"/>');
-    btnSearch.addEventListener('click', () => this.toggleSearch());
-
-    const btnMic = document.createElement('button');
-    btnMic.className = 'pane-btn mic';
+    const btnMic = elt('button', 'pane-btn mic');
     btnMic.dataset.tip = 'Dictate (click to start/stop, Ctrl+R) — say "send it" to submit, double-click for hands-free';
     btnMic.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>';
     // closing the pane mid-dictation must release the mic (see dispose).
@@ -323,39 +272,33 @@ class Pane {
     this.toggleDictation = mic.toggle;
     this.stopDictation = mic.stop;
 
-    const btnFontDown = document.createElement('button');
-    btnFontDown.className = 'pane-btn font-down';
+    const btnFontDown = elt('button', 'pane-btn font-down');
     btnFontDown.dataset.tip = 'Smaller text';
     btnFontDown.innerHTML = icon('<path d="M5 12h14"/>');
     btnFontDown.addEventListener('click', () => this.setFontSize(this.term.options.fontSize - 1));
 
-    const btnFontUp = document.createElement('button');
-    btnFontUp.className = 'pane-btn font-up';
+    const btnFontUp = elt('button', 'pane-btn font-up');
     btnFontUp.dataset.tip = 'Larger text';
     btnFontUp.innerHTML = icon('<path d="M12 5v14M5 12h14"/>');
     btnFontUp.addEventListener('click', () => this.setFontSize(this.term.options.fontSize + 1));
 
-    const btnMax = document.createElement('button');
-    btnMax.className = 'pane-btn max';
+    const btnMax = elt('button', 'pane-btn max');
     btnMax.dataset.tip = 'Maximize / restore (Ctrl+Shift+M)';
     btnMax.innerHTML = icon('<path d="M9 4H4v5"/><path d="M15 4h5v5"/><path d="M20 15v5h-5"/><path d="M4 15v5h5"/>');
     btnMax.addEventListener('click', () => handlers.onMaximize(this));
 
-    this.btnSplitRight = document.createElement('button');
-    this.btnSplitRight.className = 'pane-btn split-right';
+    this.btnSplitRight = elt('button', 'pane-btn split-right');
     this.btnSplitRight.dataset.tip = 'Open a new agent to the right';
     this.btnSplitRight.innerHTML = icon('<path d="M4 12h15"/><path d="M13.5 6.5L19 12l-5.5 5.5"/>');
     this.btnSplitRight.addEventListener('click', () => handlers.onSplit(this, 'right'));
 
-    this.btnSplitDown = document.createElement('button');
-    this.btnSplitDown.className = 'pane-btn split-down';
+    this.btnSplitDown = elt('button', 'pane-btn split-down');
     this.btnSplitDown.dataset.tip = 'Open a new agent below';
     this.btnSplitDown.innerHTML = icon('<path d="M12 4v15"/><path d="M6.5 13.5L12 19l5.5-5.5"/>');
     this.btnSplitDown.addEventListener('click', () => handlers.onSplit(this, 'down'));
     this.syncSplitButtons();
 
-    this.btnClose = document.createElement('button');
-    this.btnClose.className = 'pane-btn close';
+    this.btnClose = elt('button', 'pane-btn close');
     this.btnClose.dataset.tip = 'Close session';
     this.btnClose.innerHTML = icon('<path d="M6 6l12 12M18 6L6 18"/>');
     // mousedown, not click: a click needs down+up on the same element and
@@ -367,20 +310,18 @@ class Pane {
       this.requestClose();
     });
 
-    // the three buttons nobody reaches for mid-turn — inline when "Fixed agent
-    // pane buttons" is on, folded under the ⋯ otherwise. Search and text size
-    // have keyboard shortcuts, and text size is an Options row as well, so a
-    // pane header that shows all eight at once is eight equal-weight glyphs per
-    // pane and none of them louder than the agent's own name. The mic stays
-    // out: dictation is reached mid-turn, so it sits in the cluster itself.
-    this.overflowEl = document.createElement('span');
-    this.overflowEl.className = 'pane-overflow';
-    this.overflowEl.append(btnExport, btnSearch, btnFontDown, btnFontUp);
+    // the two buttons nobody reaches for mid-turn — inline when "Fixed agent
+    // pane buttons" is on, folded under the ⋯ otherwise. Text size is an
+    // Options row as well, so a pane header that shows every glyph at once is
+    // equal-weight glyphs per pane and none of them louder than the agent's own
+    // name. The mic stays out: dictation is reached mid-turn, so it sits in the
+    // cluster itself.
+    this.overflowEl = elt('span', 'pane-overflow');
+    this.overflowEl.append(btnFontDown, btnFontUp);
     this.overflowEl.addEventListener('click', () => this.closeActionTray());
 
-    this.btnMore = document.createElement('button');
-    this.btnMore.className = 'pane-btn more';
-    this.btnMore.dataset.tip = 'Export, search, text size';
+    this.btnMore = elt('button', 'pane-btn more');
+    this.btnMore.dataset.tip = 'Text size';
     this.btnMore.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>';
     this.btnMore.addEventListener('click', () => this.toggleActionTray());
 
@@ -388,7 +329,7 @@ class Pane {
     const actions = document.createElement('span');
     actions.className = 'pane-actions';
     actions.append(
-      this.btnClear, btnMic, this.overflowEl, this.btnMore,
+      btnMic, this.overflowEl, this.btnMore,
       btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
 
@@ -401,20 +342,16 @@ class Pane {
     this.syncActionsMode();
 
     // search row (hidden until toggled)
-    this.searchEl = document.createElement('div');
-    this.searchEl.className = 'pane-search';
+    this.searchEl = elt('div', 'pane-search');
     this.searchEl.style.display = 'none';
     this.searchInput = document.createElement('input');
     this.searchInput.placeholder = 'search';
     this.searchInput.spellcheck = false;
-    const sPrev = document.createElement('button');
-    sPrev.textContent = '↑';
+    const sPrev = elt('button', null, '↑');
     sPrev.dataset.tip = 'Previous match';
-    const sNext = document.createElement('button');
-    sNext.textContent = '↓';
+    const sNext = elt('button', null, '↓');
     sNext.dataset.tip = 'Next match';
-    const sClose = document.createElement('button');
-    sClose.textContent = '✕';
+    const sClose = elt('button', null, '✕');
     sClose.dataset.tip = 'Close search (Esc)';
     this.searchEl.append(this.searchInput, sPrev, sNext, sClose);
 
@@ -422,13 +359,10 @@ class Pane {
     // entered in this pane (the task prompt it was launched with, until the
     // user types a new line, which then takes over); hidden unless both the
     // option is on and there is a command to show
-    this.subheaderEl = document.createElement('div');
-    this.subheaderEl.className = 'pane-subheader';
+    this.subheaderEl = elt('div', 'pane-subheader');
     this.subheaderEl.style.display = 'none';
-    const subheaderBar = document.createElement('span');
-    subheaderBar.className = 'pane-subheader-bar';
-    this.subheaderTextEl = document.createElement('span');
-    this.subheaderTextEl.className = 'pane-subheader-text';
+    const subheaderBar = elt('span', 'pane-subheader-bar');
+    this.subheaderTextEl = elt('span', 'pane-subheader-text');
     this.subheaderEl.append(subheaderBar, this.subheaderTextEl);
     this.initialCommandText = '';
     // survives a reattach after the app was closed and reopened — tmux keeps
@@ -437,32 +371,24 @@ class Pane {
     this.typedInitialCommand = session.lastCommand || null;
     this.typedLineBuffer = '';
 
-    this.termEl = document.createElement('div');
-    this.termEl.className = 'pane-term';
+    this.termEl = elt('div', 'pane-term');
 
     // bottom panel: what this agent has spent and how full its context is.
     // Two rows — the meter, and the slower-moving detail under it — hidden
     // entirely unless the option is on.
-    this.usageEl = document.createElement('div');
-    this.usageEl.className = 'pane-usage';
+    this.usageEl = elt('div', 'pane-usage');
     this.usageEl.style.display = 'none';
-    this.usageBarEl = document.createElement('span');
-    this.usageBarEl.className = 'pane-usage-bar';
+    this.usageBarEl = elt('span', 'pane-usage-bar');
     this.usageBarFillEl = document.createElement('i');
     this.usageBarEl.appendChild(this.usageBarFillEl);
-    this.usageCtxEl = document.createElement('span');
-    this.usageCtxEl.className = 'pane-usage-ctx';
-    this.usageCostEl = document.createElement('span');
-    this.usageCostEl.className = 'pane-usage-cost';
-    this.usageCacheEl = document.createElement('span');
-    this.usageCacheEl.className = 'pane-usage-cache';
+    this.usageCtxEl = elt('span', 'pane-usage-ctx');
+    this.usageCostEl = elt('span', 'pane-usage-cost');
+    this.usageCacheEl = elt('span', 'pane-usage-cache');
     // which upstream this agent talks to, left of the effort. Fixed at launch:
     // main persists meta.model for OpenRouter agents alone, so the 'or:' prefix
     // is the whole signal, and a restart builds a fresh Pane rather than
     // mutating this one.
-    this.usageProviderEl = document.createElement('span');
-    this.usageProviderEl.className = 'pane-usage-provider';
-    this.usageProviderEl.textContent = this.viaClean ? 'OpenRouter · ' + this.harness : viaOr ? 'OpenRouter' : 'Anthropic';
+    this.usageProviderEl = elt('span', 'pane-usage-provider', this.viaClean ? 'OpenRouter · ' + this.harness : viaOr ? 'OpenRouter' : 'Anthropic');
     this.usageProviderEl.dataset.tip = this.viaClean
       // pi has no permission prompts at all — its author considers them
       // security theatre — so it runs unattended whatever the Options toggle
@@ -470,34 +396,27 @@ class Pane {
       ? (this.harness === 'pi' ? 'pi agent — straight to OpenRouter, no Claude Code. Always auto: pi gates no tool calls'
         : `${this.harness === 'clean' ? 'Clean' : this.harness} agent — straight to OpenRouter, no Claude Code`)
       : viaOr ? 'Runs through OpenRouter' : 'Runs on Anthropic';
-    this.usageEffortEl = document.createElement('span');
-    this.usageEffortEl.className = 'pane-usage-effort';
-    this.usageModelEl = document.createElement('span');
-    this.usageModelEl.className = 'pane-usage-model';
+    this.usageEffortEl = elt('span', 'pane-usage-effort');
+    this.usageModelEl = elt('span', 'pane-usage-model');
     this.usageModelEl.addEventListener('click', () => this.openModelPicker());
     // provider / effort / model ride to the right edge together — one wrapper
     // instead of an auto margin that would move whenever the effort label is
     // hidden
-    const usageRight = document.createElement('span');
-    usageRight.className = 'pane-usage-right';
+    const usageRight = elt('span', 'pane-usage-right');
     usageRight.append(this.usageProviderEl, this.usageEffortEl, this.usageModelEl);
-    const usageTop = document.createElement('div');
-    usageTop.className = 'pane-usage-row';
+    const usageTop = elt('div', 'pane-usage-row');
     usageTop.append(this.usageBarEl, this.usageCtxEl, this.usageCostEl, this.usageCacheEl, usageRight);
 
-    this.usageSparkEl = document.createElement('span');
-    this.usageSparkEl.className = 'pane-usage-spark';
+    this.usageSparkEl = elt('span', 'pane-usage-spark');
     this.usageTurnsEl = document.createElement('span');
     this.usageTimeEl = document.createElement('span');
     this.usageShareEl = document.createElement('span');
     // the tool trail, under the model in the panel's own bottom right — the
     // one place that says what the agent is doing right now, so it is also the
     // way into the full list rather than a second header chip
-    this.usageToolsEl = document.createElement('span');
-    this.usageToolsEl.className = 'pane-usage-tools';
+    this.usageToolsEl = elt('span', 'pane-usage-tools');
     this.usageToolsEl.addEventListener('click', () => Activity.open(this));
-    const usageSub = document.createElement('div');
-    usageSub.className = 'pane-usage-row pane-usage-sub';
+    const usageSub = elt('div', 'pane-usage-row pane-usage-sub');
     usageSub.append(this.usageSparkEl, this.usageTurnsEl, this.usageTimeEl, this.usageShareEl, this.usageToolsEl);
     this.usageEl.append(usageTop, usageSub);
 
@@ -600,6 +519,27 @@ class Pane {
         this.term.clearSelection();
         return false;
       }
+      // Ctrl+V pastes on Windows, the other half of that convention. xterm
+      // maps Ctrl+V to ^V and calls preventDefault on the keystroke, which
+      // also cancels Chromium's own paste — so nothing ever reached the
+      // agent. Returning false leaves the default action alone: the browser
+      // pastes into xterm's textarea and xterm's paste handler writes it to
+      // the pty (bracketed when the TUI asked for it). macOS is untouched —
+      // ⌘V is already native there, and Ctrl+V stays a literal ^V.
+      if (e.type === 'keydown' && e.code === 'KeyV' && e.ctrlKey
+          && !e.altKey && !e.metaKey && !window.swarm.isMac) {
+        return false;
+      }
+      // Shift+Insert, the other terminal paste key. Nothing native to lean
+      // on here — xterm turns Insert into an escape sequence — so read the
+      // clipboard and paste it, and cancel the keystroke so a browser that
+      // does bind Shift+Insert cannot paste a second copy.
+      if (e.type === 'keydown' && e.code === 'Insert' && e.shiftKey
+          && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        this.pasteClipboard();
+        return false;
+      }
       return !handlers.onShortcut(e);
     });
 
@@ -680,15 +620,19 @@ class Pane {
       if (![...e.dataTransfer.types].includes('Files')) return;
       e.preventDefault();
       if (this.exited) return;
-      const paths = [...e.dataTransfer.files]
-        .map((f) => window.swarm.pathForFile(f))
-        .filter(Boolean)
-        .map(agentPath)
-        .map((p) => (/\s/.test(p) ? `"${p}"` : p));
+      const paths = droppedPaths(e);
       if (!paths.length) return;
       // paste, not raw write: respects bracketed-paste mode in the TUI
       this.term.paste(paths.join(' ') + ' ');
       this.focus();
+    });
+
+    // right-click pastes (the Windows Terminal convention): a pane has no
+    // context menu of its own for it to compete with, and the selection is
+    // left alone so Ctrl+C still copies it
+    this.termEl.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.pasteClipboard();
     });
 
     let fitTimer = null;
@@ -1252,6 +1196,15 @@ class Pane {
     while (out.length && !out[out.length - 1]) out.pop();
     this.bufferTextCache = out.join('\n');
     return this.bufferTextCache;
+  }
+
+  /* The clipboard into the agent, for the two paste routes the browser does
+   * not serve by itself (right-click, Shift+Insert). term.paste, not a raw
+   * write: it brackets the text when the TUI asked for bracketed paste, which
+   * is what makes a multi-line paste arrive as one block. */
+  pasteClipboard() {
+    if (this.exited) return;
+    window.swarm.readText().then((text) => { if (text) this.term.paste(text); });
   }
 
   focus() {

@@ -53,8 +53,7 @@ const Topbar = (() => {
     flyoutWsId = ws.id;
     flyout.innerHTML = '';
 
-    const infoEl = document.createElement('div');
-    infoEl.className = 'rail-flyout-info';
+    const infoEl = elt('div', 'rail-flyout-info');
     const name = document.createElement('div');
     name.className = 'rail-flyout-name';
     name.textContent = ws.name;
@@ -186,8 +185,7 @@ const Topbar = (() => {
 
       // identity-colour dot (bottom-left corner, mirrors the top-right .ws-attn)
       if (ws.color) {
-        const cdot = document.createElement('span');
-        cdot.className = 'ws-color-dot ws-tint';
+        const cdot = elt('span', 'ws-color-dot ws-tint');
         cdot.style.setProperty('--ws', ws.color);
         tile.appendChild(cdot);
       }
@@ -241,9 +239,7 @@ const Topbar = (() => {
 
       // the expanded rail keeps the count column aligned by showing an em dash
       // for an empty workspace; the collapsed rail hides that placeholder
-      const badge = document.createElement('span');
-      badge.className = info.n > 0 ? 'rail-n' : 'rail-n rail-n-zero';
-      badge.textContent = info.n > 0 ? info.n : '–';
+      const badge = elt('span', info.n > 0 ? 'rail-n' : 'rail-n rail-n-zero', info.n > 0 ? info.n : '–');
       if (info.n > 0) badge.dataset.tip = `${info.n} agent${info.n > 1 ? 's' : ''} in this workspace`;
       tile.appendChild(badge);
 
@@ -337,9 +333,7 @@ const Topbar = (() => {
 
   // per-row dismiss — splices exactly this row without clearing the rest
   function notifDismissButton(n, handlers) {
-    const x = document.createElement('button');
-    x.className = 'notif-dismiss';
-    x.textContent = '✕';
+    const x = elt('button', 'notif-dismiss', '✕');
     x.dataset.tip = 'Dismiss this notification';
     x.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -352,8 +346,7 @@ const Topbar = (() => {
   // the pane header's ✓/✕, so a permission prompt can be cleared straight
   // from the bell without switching workspace or opening the pane
   function notifRespondButtons(n, handlers) {
-    const wrap = document.createElement('span');
-    wrap.className = 'notif-respond';
+    const wrap = elt('span', 'notif-respond');
     const approve = document.createElement('button');
     approve.className = 'pane-btn approve';
     approve.dataset.tip = 'Approve (shift-click: always allow)';
@@ -379,20 +372,16 @@ const Topbar = (() => {
    * payload, so a pane whose hooks never reported one (an old reattached
    * session) gets a disabled button rather than a missing one. */
   function notifActionButtons(n, handlers) {
-    const wrap = document.createElement('div');
-    wrap.className = 'notif-acts';
+    const wrap = elt('div', 'notif-acts');
 
-    const go = document.createElement('button');
-    go.className = 'notif-act';
-    go.textContent = '↗ Agent';
+    const go = elt('button', 'notif-act', '↗ Agent');
     go.dataset.tip = 'Jump to this agent';
     go.addEventListener('click', (e) => {
       e.stopPropagation();
       handlers.onOpen(n.paneId);
     });
 
-    const script = document.createElement('button');
-    script.className = 'notif-act';
+    const script = elt('button', 'notif-act');
     script.textContent = '☰ Transcript';
     script.disabled = !n.transcriptId;
     script.dataset.tip = n.transcriptId
@@ -426,9 +415,7 @@ const Topbar = (() => {
     title.className = 'kbd-title';
     title.textContent = 'Notifications';
     head.appendChild(title);
-    const expand = document.createElement('button');
-    expand.className = 'notif-clear';
-    expand.textContent = 'details ▸';
+    const expand = elt('button', 'notif-clear', 'details ▸');
     expand.dataset.tip = 'Open the full notification panel';
     expand.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -480,9 +467,7 @@ const Topbar = (() => {
         cmd.className = 'notif-cmd';
         const bar = document.createElement('span');
         bar.className = 'pane-subheader-bar';
-        const cmdText = document.createElement('span');
-        cmdText.className = 'notif-what';
-        cmdText.textContent = n.cmd;
+        const cmdText = elt('span', 'notif-what', n.cmd);
         cmd.append(bar, cmdText);
         body.appendChild(cmd);
       }
@@ -509,21 +494,16 @@ const Topbar = (() => {
     return new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' });
   }
 
-  // "1d 3h", "1h 12m", "3m"
-  function fmtDur(minutes) {
+  // "1d 3h", "1h 12m", "3m". Elapsed time rounds down; time remaining rounds
+  // up, so a countdown never shows "0m" while it still has seconds left on it
+  function fmtDur(ms, round = Math.floor) {
+    const minutes = round(ms / 60000);
     const d = Math.floor(minutes / 1440);
     const h = Math.floor((minutes % 1440) / 60);
     const min = minutes % 60;
     if (d > 0) return `${d}d ${h}h`;
     if (h > 0) return `${h}h ${min}m`;
     return `${min}m`;
-  }
-
-  // how long the agent had been running when the event fired — elapsed time
-  // rounds down, and "no start time recorded" is not the same as "0m"
-  function fmtRuntime(ms) {
-    if (ms == null || ms < 0) return null;
-    return fmtDur(Math.floor(ms / 60000));
   }
 
   // which kinds the panel shows — a chip click re-renders off the captured
@@ -546,12 +526,9 @@ const Topbar = (() => {
 
     // Exited folds 'detach' in — both mean the pane is gone
     const FILTERS = [['all', 'All'], ['wait', 'Needs input'], ['done', 'Done'], ['exit', 'Exited']];
-    const chips = document.createElement('div');
-    chips.className = 'notif-filter';
+    const chips = elt('div', 'notif-filter');
     for (const [key, label] of FILTERS) {
-      const chip = document.createElement('button');
-      chip.className = 'notif-act' + (notifFilter === key ? ' on' : '');
-      chip.textContent = label;
+      const chip = elt('button', 'notif-act' + (notifFilter === key ? ' on' : ''), label);
       chip.addEventListener('click', (e) => {
         e.stopPropagation();
         notifFilter = key;
@@ -594,16 +571,15 @@ const Topbar = (() => {
         cmd.className = 'notif-cmd';
         const bar = document.createElement('span');
         bar.className = 'pane-subheader-bar';
-        const cmdText = document.createElement('span');
-        cmdText.className = 'notif-panel-what';
-        cmdText.textContent = n.cmd;
+        const cmdText = elt('span', 'notif-panel-what', n.cmd);
         cmd.append(bar, cmdText);
         body.appendChild(cmd);
       }
 
-      // model / permission mode / how-long-it-had-been-running when the event fired
-      const runtime = fmtRuntime(n.createdAt ? n.time - n.createdAt : null);
-      const metaParts = [n.model || 'default model', n.mode ? `${n.mode} mode` : null, runtime ? `running ${runtime}` : null].filter(Boolean);
+      // model / permission mode / how-long-it-had-been-running when the event
+      // fired ("no start time recorded" is not the same as "0m")
+      const ran = n.createdAt && n.time >= n.createdAt ? n.time - n.createdAt : null;
+      const metaParts = [n.model || 'default model', n.mode ? `${n.mode} mode` : null, ran == null ? null : `running ${fmtDur(ran)}`].filter(Boolean);
       const meta = document.createElement('div');
       meta.className = 'notif-panel-meta';
       meta.textContent = metaParts.join(' · ');
@@ -718,12 +694,9 @@ const Topbar = (() => {
     if (addAgentBtn.dataset.tip !== tip) addAgentBtn.dataset.tip = tip;
   }
 
-  // time remaining rounds up, so a countdown never shows "0m" while it still
-  // has seconds left on it
-  function fmtIn(ms) {
-    if (ms <= 0) return 'now';
-    return fmtDur(Math.ceil(ms / 60000));
-  }
+  // time remaining rounds up, so a countdown never shows "0m" while it still has
+  // seconds left on it. Public: app.js dates the usage popover's rows with it
+  const fmtIn = (ms) => (ms <= 0 ? 'now' : fmtDur(ms, Math.ceil));
 
   // the expanded rail labels each bar with its level and a one-unit countdown
   // ("3h", "2d") — the collapsed rail hides that head and shows the bar alone

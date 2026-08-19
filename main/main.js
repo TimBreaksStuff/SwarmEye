@@ -1181,6 +1181,7 @@ function registerIpc() {
   ipcMain.handle('skills:terminal-command', (e, id) => skills.terminalCommand(id));
 
   ipcMain.on('clipboard:write', (e, text) => clipboard.writeText(String(text || '')));
+  ipcMain.handle('clipboard:read', () => clipboard.readText());
 
   // module-level so before-quit can shut the recogniser and any TTS child down
   speech = new SpeechBridge({ send: sendToWin, debugLog });

@@ -190,4 +190,4 @@ async function merge(ws, branch) {
   };
 }
 
-module.exports = { create, list, remove, patch, commit, merge, worktreePath, slugify };
+module.exports = { create, list, remove, patch, commit, merge, worktreePath };

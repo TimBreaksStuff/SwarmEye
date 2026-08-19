@@ -31,12 +31,7 @@ const Coordinator = (() => {
 
   function select(options, value) {
     const sel = document.createElement('select');
-    for (const [val, label] of options) {
-      const o = document.createElement('option');
-      o.value = val;
-      o.textContent = label;
-      sel.appendChild(o);
-    }
+    for (const [val, label] of options) sel.add(new Option(label, val));
     sel.value = value;
     return sel;
   }
@@ -44,8 +39,7 @@ const Coordinator = (() => {
   function renderPlan() {
     planEl.innerHTML = '';
     rows.forEach((row, i) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'coord-row';
+      const wrap = elt('div', 'coord-row');
 
       const text = document.createElement('textarea');
       text.rows = 3;

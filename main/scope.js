@@ -150,4 +150,4 @@ function readAreas(wsPath) {
   return areas;
 }
 
-module.exports = { resolve, denyRules, readAreas, AREAS_REL };
+module.exports = { resolve, denyRules, readAreas };

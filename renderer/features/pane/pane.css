@@ -21,7 +21,8 @@
  * more panes need a sliver of bottom/right padding or the last row's or
  * column's border — amber "attn" ring included — renders flush against the
  * window edge and disappears */
-#grid-wrap.no-pane-gap:has(#grid > .pane ~ .pane) {
+#grid-wrap.no-pane-gap:has(#grid .pane ~ .pane),
+#grid-wrap.no-pane-gap:has(#grid .grid-row ~ .grid-row) {
   padding-bottom: 10px;
   padding-right: 10px;
 }
@@ -30,6 +31,13 @@
   display: grid;
   width: 100%;
   height: 100%;
+}
+/* one row of panes: its own nested grid, so its column dividers move only its
+ * own panes and never the row below */
+.grid-row {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
 }
 
 #empty-state {
@@ -78,6 +86,71 @@
   background: var(--accent);
   box-shadow: 0 0 10px var(--accent-glow);
 }
+/* with the pane gap off the track a gutter sits in is 0px, so there is nothing
+ * to grab and no room for the hover line either — nothing on screen could be
+ * resized at all. Give the handle its own hit area and its own line, both
+ * overhanging the panes either side; the panes themselves stay flush. */
+#grid-wrap.no-pane-gap .gutter::before {
+  content: '';
+  position: absolute;
+}
+#grid-wrap.no-pane-gap .gutter-h::before { inset: -4px 0; }
+#grid-wrap.no-pane-gap .gutter-v::before { inset: 0 -4px; }
+#grid-wrap.no-pane-gap .gutter-h::after { inset: -2px 0; }
+#grid-wrap.no-pane-gap .gutter-v::after { inset: 0 -2px; }
+
+/* ---------- the free canvas (auto-organize off) ---------- */
+
+/* no rows and no shared tracks: every pane is placed by its own rectangle,
+ * which is what makes resizing or closing one leave all the others alone */
+#grid.free {
+  display: block;
+  position: relative;
+}
+
+/* one pane's resize frame, laid over that pane rather than inside it so
+ * nothing the pane draws has to make room for it. The frame itself takes no
+ * pointer events — only the three strips do, and each straddles the pane's
+ * edge so there is something to grab with the pane gap turned off too. */
+.pane-frame {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+.pane-handle {
+  position: absolute;
+  pointer-events: auto;
+}
+.pane-handle::after {
+  content: '';
+  position: absolute;
+  background: transparent;
+  border-radius: 4px;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.pane-handle:hover::after,
+.pane-handle.dragging::after {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+/* every edge is a strip, every corner a square; the strips stop 12px short of
+ * each end so the corner square there stays reachable */
+.handle-e { top: 12px; bottom: 12px; right: -6px; width: 12px; cursor: col-resize; }
+.handle-w { top: 12px; bottom: 12px; left: -6px; width: 12px; cursor: col-resize; }
+.handle-e::after,
+.handle-w::after { inset: 0 5px; }
+.handle-s { left: 12px; right: 12px; bottom: -6px; height: 12px; cursor: row-resize; }
+.handle-n { left: 12px; right: 12px; top: -6px; height: 12px; cursor: row-resize; }
+.handle-s::after,
+.handle-n::after { inset: 5px 0; }
+.handle-se { right: -6px; bottom: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
+.handle-nw { left: -6px; top: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
+.handle-ne { right: -6px; top: -6px; width: 12px; height: 12px; cursor: nesw-resize; }
+.handle-sw { left: -6px; bottom: -6px; width: 12px; height: 12px; cursor: nesw-resize; }
+.handle-se::after,
+.handle-nw::after,
+.handle-ne::after,
+.handle-sw::after { inset: 4px; }
 
 /* ---------- panes ---------- */
 
@@ -100,7 +173,7 @@
   box-shadow: 0 30px 70px -26px rgba(0, 0, 0, 0.85), 0 0 26px -10px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 /* pointless when there is nothing to distinguish it from */
-#grid > .pane:only-child.focused,
+#grid.single .pane.focused,
 #grid.max-mode > .pane.maximized.focused {
   border-color: var(--border);
   box-shadow: 0 26px 64px -26px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -116,6 +189,7 @@
   background: color-mix(in srgb, var(--text) 2%, transparent);
   flex: none;
   user-select: none;
+  cursor: grab;
 }
 
 .pane-subheader {
@@ -132,8 +206,8 @@
   width: 2px;
   flex: none;
   border-radius: 1px;
-  background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow);
+  background: var(--border3);
+  box-shadow: none;
 }
 
 .pane-subheader-text {
@@ -190,7 +264,7 @@
   width: 0;
   border-radius: 3px;
   background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow);
+  box-shadow: none;
   transition: width 0.3s ease;
 }
 
@@ -218,8 +292,9 @@
 
 /* the model reads in the theme's own accent, the way the header chip did */
 .pane-usage-model {
-  color: var(--entry-dot);
+  color: var(--text2);
   letter-spacing: 0.04em;
+  cursor: pointer;
 }
 
 /* the reasoning effort is the quieter half of the pair */
@@ -229,11 +304,15 @@
   text-transform: uppercase;
   white-space: nowrap;
 }
-.pane-usage-tools { flex: 1 1 auto; text-align: right; }
+.pane-usage-tools {
+  flex: 1 1 auto;
+  text-align: right;
+  cursor: pointer;
+}
 
 .pane-usage-spark {
-  letter-spacing: 1px;
-  color: var(--accent);
+  letter-spacing: 0;
+  color: var(--text2);
 }
 
 .pane-dot {
@@ -313,12 +392,14 @@
 }
 .pane-scope:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 /* every Claude pane wears the chip now — unscoped is the quiet default state,
- * outlined like a label rather than filled like a boundary */
+ * a bare ⊘ glyph, outlined like a label rather than filled like a boundary */
 .pane-scope.off {
   color: var(--muted);
   background: transparent;
   border-style: dashed;
+  padding: 3px 5px;
 }
+.pane-scope.off svg { width: 12px; height: 12px; display: block; }
 
 .pane-title {
   font-family: var(--font-mono);
@@ -329,7 +410,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
+  /* only as wide as the name: stretching it across the header's spare room
+   * put the rename hover target — and so its tooltip — over half the bar.
+   * margin-right keeps everything after it against the right edge. */
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: auto;
+  cursor: text;
 }
 
 /* shared floating tooltip look — used for both the static data-tip hints
@@ -417,7 +504,6 @@
   background: rgba(255, 90, 90, 0.18);
 }
 .pane-btn.mic svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
-.pane-btn.clear svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
 .pane-btn.mic.listening { color: var(--err); border-color: var(--err); }
 /* hands-free (double-click): stays open across submits, so it reads as armed
    rather than as the single red phrase the plain listening state marks */
@@ -461,7 +547,7 @@
 }
 
 /* clickable title (rename) */
-.pane-title { cursor: text; }
+
 .pane-title[contenteditable] {
   color: var(--text);
   outline: 1px solid var(--accent);
@@ -516,6 +602,7 @@
    * is transparent (allowTransparency, see pane.js) and this supplies the
    * theme tint for all nine themes from one place */
   background: color-mix(in srgb, var(--term-bg) 45%, transparent);
+  background: var(--term-bg);
 }
 /* padding lives on .xterm (not .pane-term) so xterm-addon-fit — which reads
  * padding off the terminal element itself — sizes rows to the visible area
@@ -539,15 +626,21 @@
 /* visible cue while a pane is maximized */
 .pane.maximized .pane-btn.max {
   color: var(--accent);
-  border-color: var(--accent);
-  box-shadow: 0 0 10px -2px var(--accent-glow);
+  border-color: transparent;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* maximize mode */
-#grid.max-mode > .pane:not(.maximized),
+#grid.max-mode > .grid-row,
 #grid.max-mode > .gutter { display: none; }
 #grid.max-mode { grid-template-columns: 1fr !important; grid-template-rows: 1fr !important; }
 #grid.max-mode > .pane.maximized { grid-area: 1 / 1 / 2 / 2; }
+/* on the free canvas the other panes are positioned children of the grid, not
+ * rows it can hide, so they go one by one and the maximized one fills it */
+#grid.free.max-mode > .pane:not(.maximized),
+#grid.free.max-mode > .pane-frame { display: none; }
+#grid.free.max-mode > .pane.maximized { position: absolute; inset: 0; }
 
 /* toast */
 #toast {
@@ -752,13 +845,26 @@
 
 /* ---------- pane drag-to-swap ---------- */
 
-.pane-header { cursor: grab; }
 .pane-header:active { cursor: grabbing; }
 .pane.drag-src { opacity: 0.45; }
 .pane.drop-target {
   outline: 2px dashed var(--accent);
   outline-offset: -2px;
 }
+/* dropped on an edge instead of the middle: the pane moves to that side of this
+ * one rather than swapping with it, and the bar says which side */
+/* keyed off #grid so the bar outranks the focused/attn pane's own shadow,
+ * which this sheet sets further down */
+#grid .pane.drop-target.drop-left,
+#grid .pane.drop-target.drop-right,
+#grid .pane.drop-target.drop-up,
+#grid .pane.drop-target.drop-down {
+  outline: none;
+}
+#grid .pane.drop-left { box-shadow: inset 5px 0 0 var(--accent); }
+#grid .pane.drop-right { box-shadow: inset -5px 0 0 var(--accent); }
+#grid .pane.drop-up { box-shadow: inset 0 5px 0 var(--accent); }
+#grid .pane.drop-down { box-shadow: inset 0 -5px 0 var(--accent); }
 
 /* file dragged over a terminal — its path will be pasted on drop */
 .pane.file-drop {
@@ -771,3 +877,370 @@
   outline: 2px dashed var(--accent);
   outline-offset: -2px;
 }
+
+/* ---- moved out of chrome-clean.css: per-area styling belongs to the area,
+ * and this is the tail of the cascade for it, exactly where chrome-clean sat ---- */
+
+/* ========================== AGENT PANES ========================== */
+
+/* --- the surface: flat, like the top bar and the rail --- */
+/* app.css builds a pane out of 55% surface, a 14px blur and a 26/64px drop
+ * shadow — the last glass left in the app once the chrome went flat. */
+.pane {
+  background: var(--surface);
+  backdrop-filter: none;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.pane.focused { border-color: var(--accent); box-shadow: none; }
+
+#grid.single .pane.focused,
+#grid.max-mode > .pane.maximized.focused { box-shadow: none; }
+
+/* the terminal was translucent so the pane's glass could read through it;
+ * with an opaque pane there is nothing left to read through */
+
+/* one flat surface: the header, the command row and the usage panel are told
+ * apart by their hairlines, not by three different tints of the same colour */
+.pane-header,
+.pane-subheader,
+.pane-usage { background: transparent; }
+
+.pane-header {
+  position: relative;                    /* anchors the ⋯ tray below */
+  gap: 7px;
+  padding: 7px 8px 7px 10px;
+}
+
+/* --- the agent's name is the loudest thing in its own header --- */
+/* it was mono 10px uppercase --muted, quieter than every chip beside it */
+.pane-title {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+
+/* --- one chip shape, three tones --- */
+/* neutral: what the agent is (task, role, effort, model) */
+.pane-task,
+.pane-role,
+.pane-effort,
+.pane-llm,
+.pane-git,
+.pane-badge {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text2);
+  border: 1px solid var(--border2);
+  background: transparent;
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+/* accent: the branch chip is the loudest of the clickable ones */
+.pane-git { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 35%, var(--border2)); }
+
+.pane-git:hover { background: var(--hover); border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
+
+/* the model chip opens the model picker — clickable, but it stays neutral:
+   what the agent runs is not a call to action the way its branch is */
+.pane-llm { cursor: pointer; }
+
+.pane-llm:hover { background: var(--hover); border-color: var(--border); }
+
+.pane-git.dirty {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+}
+
+/* state: the pane is not running the way it should be */
+.pane-badge {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 40%, var(--border2));
+  background: color-mix(in srgb, var(--err) 8%, transparent);
+}
+
+.pane.detached .pane-badge {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+}
+
+/* the right-sizing offer: the one header control that changes what the agent
+   costs, so it reads as an action (accent, like the branch chip) rather than a
+   status. Armed, it commits to the colour of the tier it is moving to. */
+.pane-rightsize {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-text);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border2));
+  background: transparent;
+  border-radius: 6px;
+  padding: 2px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pane-rightsize:hover { background: var(--hover); border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
+
+.pane-rightsize.armed {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* the permission mode is a control, not a chip, but it reads on the same line */
+.pane-mode {
+  height: 22px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text2);
+  border-color: var(--border2);
+}
+
+/* a standing "stop editing" request that plan mode itself never took — amber
+   rather than the plain control colour, because it is the one mode reading the
+   footer would not tell you about */
+.pane-mode.asked {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+}
+
+/* the hook status says what the agent is doing — sentences, not shouting */
+.pane-status {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text2);
+  opacity: 1;
+  cursor: pointer;
+}
+
+/* --- one busy signal, not three --- */
+/* a pulsing dot, an equalizer and a status line all said "working" at once.
+ * The equalizer keeps the motion, the dot keeps the colour, the status keeps
+ * the words. */
+.pane-dot,
+.pane-dot.attn,
+.pane.exited .pane-dot { animation: none; box-shadow: none; }
+
+/* --- the usage panel reads in the same voice --- */
+
+/* the panel's spelling of the model chip, same picker behind it */
+
+.pane-usage-model:hover { color: var(--text); }
+
+/* which upstream the agent runs on, quiet like the effort next to it — the
+   panel's right edge reads as one run, "Anthropic / HIGH / opus-5" */
+.pane-usage-provider { color: var(--muted); white-space: nowrap; }
+
+.pane-usage-right > span + span::before {
+  content: '/';
+  margin-right: 8px;
+  color: var(--border3);
+}
+
+/* --- the actions: one segmented cluster, five buttons folded away --- */
+.pane-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 0;
+  padding: 1px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+}
+
+.pane-actions .pane-btn {
+  width: 24px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text2);
+  transition: color .15s, background .15s;
+}
+
+.pane-actions .pane-btn:hover { color: var(--text); background: var(--hover); border-color: transparent; }
+
+.pane-actions .pane-btn svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
+
+.pane-actions .pane-btn.close:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+
+.pane-actions .pane-btn.close.armed {
+  color: var(--err);
+  background: color-mix(in srgb, var(--err) 20%, transparent);
+  border-color: transparent;
+}
+
+.pane-actions .pane-btn.mic.listening { color: var(--err); border-color: transparent; }
+
+.pane-actions .pane-btn.mic.hands-free { color: var(--accent-text); border-color: transparent; }
+
+/* answering a live permission prompt is the one thing worth its own weight,
+ * so the pair stays outside the cluster */
+.pane-btn.approve,
+.pane-btn.deny {
+  width: 24px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.pane-btn.approve {
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border2));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.pane-btn.approve:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+
+.pane-btn.deny {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 40%, var(--border2));
+  background: color-mix(in srgb, var(--err) 8%, transparent);
+}
+
+.pane-btn.deny:hover { background: color-mix(in srgb, var(--err) 18%, transparent); }
+
+.pane-btn.approve svg,
+.pane-btn.deny svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
+
+/* folded (the default): export / search / text size drop out of the header
+ * into a tray under the ⋯ — the pane clips its own overflow, so the tray
+ * hangs inside the pane rather than over its neighbour */
+.pane-overflow {
+  display: none;
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 8px;
+  z-index: 6;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.pane-overflow.open { display: flex; }
+
+/* "Fixed agent pane buttons" on: the same four flow back into the cluster in
+ * place, and the ⋯ that opened them has nothing left to open */
+.pane.fixed-actions .pane-overflow { display: contents; }
+
+.pane.fixed-actions .pane-btn.more { display: none; }
+
+.pane-btn.more svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
+
+/* --- keyboard focus: app.css has no :focus-visible rule at all --- */
+.pane-btn:focus-visible,
+.pane-mode:focus-visible,
+.pane-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* the git chip's popover gains one action above the branch list */
+.branch-menu .branch-review {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--accent-text);
+  font: inherit;
+  text-align: left;
+  padding: 5px 9px;
+  margin: 4px 2px 2px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.branch-menu .branch-review:hover { background: var(--pill-hover); border-color: var(--border-hover); }
+
+/* --- an agent that wants you: the pane frame, not a 10px dot --- */
+/* At eight panes a status dot is invisible in peripheral vision, which is the
+   only vision spare while reading another pane. The frame takes the theme's own
+   accent — the border every other lit control in the app uses — and the signal
+   is the glow around it rather than a second colour: an amber-mixed border read
+   brown against the surface on every theme. Nothing moves when it appears (the
+   border width is unchanged), and it goes the moment the pane is looked at
+   (clearAttention). */
+.pane.attn {
+  border-color: var(--accent);
+  box-shadow: 0 0 18px 2px var(--accent-glow);
+}
+
+.pane.attn.focused {
+  box-shadow: 0 0 18px 2px var(--accent-glow);
+}
+
+/* how long it has been blocked. Amber — "this needs a human" — and clickable,
+   since the answer to reading it is almost always to go there. */
+.pane-wait {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  border-radius: 6px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pane-wait:hover { background: color-mix(in srgb, var(--amber) 16%, transparent); }
+
+/* the status line now opens the activity popover, so it has to look touchable */
+
+.pane-status:hover { color: var(--text); }
+
+/* --- subagents, and asking an agent to stop editing --- */
+/* a Task subagent is invisible in a terminal — its whole run is one line of its
+   parent's output. The count is the signal; the popover names them. */
+.pane-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--tag);
+  border: 1px solid color-mix(in srgb, var(--tag) 35%, var(--border2));
+  border-radius: 6px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pane-sub:hover { background: color-mix(in srgb, var(--tag) 12%, transparent); }
+
+/* the menu row that opens all this is an action, not another agent to start */
+.branch-item-quiet { color: var(--muted); }
+
+/* the two plain-agent rows lead the + Coding Agent menu — the provider choice,
+ * pulled forward from the role presets under them */
+.branch-menu .branch-item-strong { color: var(--text); font-weight: 600; }
+
+/* and the groups those rules separate are named, so the menu reads as sections
+ * rather than one long list of rows */
+.branch-menu-label {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 6px 10px 3px;
+}
+
+/* the tool trail is the way into the activity popover, so it reads as a
+   target — the header status chip is the same idea one row up */
+
+.pane-usage-tools:hover { color: var(--text); }

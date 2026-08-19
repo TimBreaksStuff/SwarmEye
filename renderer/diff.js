@@ -27,49 +27,42 @@ const Diff = (() => {
   let selected = 0;
   let loadToken = 0; // a second open/reload while one is in flight owns the box
 
-  const el = (tag, className, text) => {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text;
-    return node;
-  };
-
   /* ---- the popover itself ---- */
 
   const SIZE_KEY = 'swarmeye.diffSize'; // drag the corner; kept between opens
 
-  const pop = el('div');
+  const pop = elt('div');
   pop.id = 'diff-pop';
   pop.hidden = true;
 
-  const head = el('div', 'diff-head');
-  const titleEl = el('div', 'kbd-title diff-title', 'Review');
-  const branchEl = el('span', 'diff-branch');
-  const closeBtn = el('button', 'pill', 'Close');
+  const head = elt('div', 'diff-head');
+  const titleEl = elt('div', 'kbd-title diff-title', 'Review');
+  const branchEl = elt('span', 'diff-branch');
+  const closeBtn = elt('button', 'pill', 'Close');
   closeBtn.type = 'button';
   closeBtn.dataset.tip = 'Close (Esc)';
   head.append(titleEl, branchEl, closeBtn);
 
-  const body = el('div', 'diff-body');
-  const side = el('div', 'diff-side');
-  const filesEl = el('div', 'diff-files');
-  const wtHeadEl = el('div', 'diff-side-head', 'Worktrees');
-  const wtEl = el('div', 'diff-worktrees');
-  side.append(el('div', 'diff-side-head', 'Changed files'), filesEl, wtHeadEl, wtEl);
-  const patchEl = el('div', 'diff-patch');
+  const body = elt('div', 'diff-body');
+  const side = elt('div', 'diff-side');
+  const filesEl = elt('div', 'diff-files');
+  const wtHeadEl = elt('div', 'diff-side-head', 'Worktrees');
+  const wtEl = elt('div', 'diff-worktrees');
+  side.append(elt('div', 'diff-side-head', 'Changed files'), filesEl, wtHeadEl, wtEl);
+  const patchEl = elt('div', 'diff-patch');
   body.append(side, patchEl);
 
-  const foot = el('div', 'diff-foot');
-  const noteEl = el('span', 'diff-note');
+  const foot = elt('div', 'diff-foot');
+  const noteEl = elt('span', 'diff-note');
   const msgEl = document.createElement('input');
   msgEl.type = 'text';
   msgEl.className = 'diff-msg';
   msgEl.placeholder = 'commit message…';
   msgEl.maxLength = 500;
   msgEl.spellcheck = false;
-  const commitBtn = el('button', 'pill', 'Commit');
+  const commitBtn = elt('button', 'pill', 'Commit');
   commitBtn.type = 'button';
-  const mergeBtn = el('button', 'pill pill-primary', 'Merge');
+  const mergeBtn = elt('button', 'pill pill-primary', 'Merge');
   mergeBtn.type = 'button';
   foot.append(noteEl, msgEl, commitBtn, mergeBtn);
 
@@ -109,30 +102,30 @@ const Diff = (() => {
     patchEl.textContent = '';
     const file = files[selected];
     if (!file) {
-      patchEl.append(el('div', 'diff-empty', untracked.length
+      patchEl.append(elt('div', 'diff-empty', untracked.length
         ? 'nothing tracked has changed — only untracked files'
         : 'no changes since HEAD'));
       return;
     }
     if (file.untracked) {
-      patchEl.append(el('div', 'diff-empty', 'untracked — not part of the diff until it is added'));
+      patchEl.append(elt('div', 'diff-empty', 'untracked — not part of the diff until it is added'));
       return;
     }
     const shown = file.lines.slice(0, LINES_MAX);
     for (const line of shown) {
-      patchEl.append(el('div', lineClass(line), line || ' '));
+      patchEl.append(elt('div', lineClass(line), line || ' '));
     }
     if (file.lines.length > shown.length) {
-      patchEl.append(el('div', 'diff-line meta', `… ${file.lines.length - shown.length} more lines`));
+      patchEl.append(elt('div', 'diff-line meta', `… ${file.lines.length - shown.length} more lines`));
     }
   }
 
   function renderFiles() {
     filesEl.textContent = '';
     const rows = files.map((f, i) => ({ f, i }));
-    if (!rows.length) filesEl.append(el('div', 'diff-empty', 'no changes'));
+    if (!rows.length) filesEl.append(elt('div', 'diff-empty', 'no changes'));
     for (const { f, i } of rows) {
-      const row = el('button', 'diff-file' + (i === selected ? ' current' : '') + (f.untracked ? ' untracked' : ''));
+      const row = elt('button', 'diff-file' + (i === selected ? ' current' : '') + (f.untracked ? ' untracked' : ''));
       row.type = 'button';
       row.textContent = f.path;
       row.dataset.tip = f.path + (f.untracked ? ' — untracked' : '');
@@ -150,17 +143,17 @@ const Diff = (() => {
     wtEl.hidden = !any;
     wtEl.textContent = '';
     for (const w of worktrees) {
-      const row = el('div', 'diff-wt' + (label === w.name ? ' current' : ''));
-      const open = el('button', 'diff-wt-name');
+      const row = elt('div', 'diff-wt' + (label === w.name ? ' current' : ''));
+      const open = elt('button', 'diff-wt-name');
       open.type = 'button';
       open.textContent = w.name;
       open.dataset.tip = `${w.branch} — ${w.ahead} commit${w.ahead === 1 ? '' : 's'} ahead${w.dirty ? ', uncommitted changes' : ''}`;
       open.addEventListener('click', () => showWorktree(w));
-      const meta = el('span', 'diff-wt-meta',
+      const meta = elt('span', 'diff-wt-meta',
         (w.ahead ? `${w.ahead}▲` : '') + (w.dirty ? ' ●' : '') + (w.live ? '' : ' idle'));
       row.append(open, meta);
       if (!w.live) {
-        const rm = el('button', 'diff-wt-x', '✕');
+        const rm = elt('button', 'diff-wt-x', '✕');
         rm.type = 'button';
         rm.dataset.tip = 'Remove this worktree — its uncommitted changes go with it';
         rm.addEventListener('click', () => {
@@ -186,7 +179,7 @@ const Diff = (() => {
   async function load() {
     const token = ++loadToken;
     patchEl.textContent = '';
-    patchEl.append(el('div', 'diff-empty', 'reading the diff…'));
+    patchEl.append(elt('div', 'diff-empty', 'reading the diff…'));
     const [patch, list] = await Promise.all([
       window.swarm.gitPatch(target),
       window.swarm.listWorktrees(ws.id),

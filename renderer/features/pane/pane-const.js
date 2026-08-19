@@ -269,6 +269,17 @@ function agentPath(p) {
   return p;
 }
 
+/* Every file a drop carries, as agent-side paths a shell can take verbatim —
+ * quoted where the path has a space. Shared by the terminal drop target and
+ * the board's task box; both bail when it comes back empty. */
+function droppedPaths(e) {
+  return [...e.dataTransfer.files]
+    .map((f) => window.swarm.pathForFile(f))
+    .filter(Boolean)
+    .map(agentPath)
+    .map((p) => (/\s/.test(p) ? `"${p}"` : p));
+}
+
 /* "claude-opus-4-8" -> "Opus 4.8", "claude-3-5-sonnet-20241022" -> "Sonnet
  * 3.5". Best-effort: drops the claude- prefix and any trailing date stamp,
  * then puts the family name first and joins version numbers with a dot —

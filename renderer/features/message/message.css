@@ -79,3 +79,39 @@
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ---- moved out of chrome-clean.css: per-area styling belongs to the area,
+ * and this is the tail of the cascade for it, exactly where chrome-clean sat ---- */
+
+/* --- the message box's @ file picker --- */
+.msg-mentions {
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.msg-mentions[hidden] { display: none; }
+
+.msg-mention {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 5px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-mention:last-child { border-bottom: 0; }
+
+.msg-mention:hover { background: var(--hover); color: var(--text); }

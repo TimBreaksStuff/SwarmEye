@@ -185,7 +185,7 @@
 .skill-repo-count {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .skill-repo-remove-btn {
@@ -231,10 +231,10 @@
 .skill-row-state-on { border-left-color: var(--muted2); }
 .skill-row-state-active {
   border-left-color: var(--accent);
-  box-shadow: 0 0 18px -8px var(--accent-glow);
+  box-shadow: none;
 }
 .skill-row-state-off {
-  background: color-mix(in srgb, var(--surface) 45%, transparent);
+  background: var(--surface);
   opacity: 0.78;
 }
 .skill-row-state-off .skill-row-name { color: var(--muted2); }
@@ -265,8 +265,8 @@
 .skill-row-active input[type="checkbox"] { accent-color: var(--tag); }
 .skill-row-active:has(input:checked) { color: var(--tag); }
 .skill-row-name {
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--text);
 }
@@ -285,7 +285,7 @@
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--muted);
   word-break: break-all;
 }
@@ -328,3 +328,45 @@
   border-color: var(--err);
   background: color-mix(in srgb, var(--err) 12%, transparent);
 }
+
+/* ---- moved out of chrome-clean.css: per-area styling belongs to the area,
+ * and this is the tail of the cascade for it, exactly where chrome-clean sat ---- */
+
+.skills-stat-n { font-size: 20px; }
+
+.skill-update-btn {
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border2));
+}
+
+.skill-update-btn:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* --- skills --- */
+/* the per-repo hue outlined the whole group and its divider: two repos read as
+ * two unrelated widgets. The source is already named in the header. */
+.skill-repo-group {
+  border-color: var(--border);
+  border-radius: 10px;
+}
+
+.skill-repo-header,
+.skill-repo-header:hover { border-bottom-color: var(--border); }
+
+.skill-repo-chevron {
+  color: var(--text2);
+  background: transparent;
+  border-color: var(--border2);
+  border-radius: 6px;
+}
+
+.skill-repo-header:hover .skill-repo-chevron { background: var(--hover); }
+
+.skill-repo-label {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+
