@@ -554,6 +554,14 @@
   border-radius: 4px;
   padding: 1px 5px;
   background: var(--term-bg);
+  /* the resting title is flex: 1 so it eats the header's spare room; while
+   * editing that drew a full-width box around a short name — size to the text
+   * instead, capped at the 20 characters a name can hold */
+  flex: 0 1 auto;
+  min-width: 2ch;
+  max-width: 21ch;
+  overflow: hidden;
+  margin-right: auto; /* keeps the chrome after it against the right edge */
 }
 
 /* per-pane search row */
@@ -1054,7 +1062,7 @@
   color: var(--border3);
 }
 
-/* --- the actions: one segmented cluster, five buttons folded away --- */
+/* --- the actions: one segmented cluster --- */
 .pane-actions {
   display: flex;
   align-items: center;
@@ -1117,32 +1125,6 @@
 
 .pane-btn.approve svg,
 .pane-btn.deny svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
-
-/* folded (the default): export / search / text size drop out of the header
- * into a tray under the ⋯ — the pane clips its own overflow, so the tray
- * hangs inside the pane rather than over its neighbour */
-.pane-overflow {
-  display: none;
-  position: absolute;
-  top: calc(100% + 5px);
-  right: 8px;
-  z-index: 6;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--border2);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.pane-overflow.open { display: flex; }
-
-/* "Fixed agent pane buttons" on: the same four flow back into the cluster in
- * place, and the ⋯ that opened them has nothing left to open */
-.pane.fixed-actions .pane-overflow { display: contents; }
-
-.pane.fixed-actions .pane-btn.more { display: none; }
-
-.pane-btn.more svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
 
 /* --- keyboard focus: app.css has no :focus-visible rule at all --- */
 .pane-btn:focus-visible,

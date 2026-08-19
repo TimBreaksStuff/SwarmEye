@@ -22,10 +22,9 @@ let autoOrganize = true;
 // to answer one boolean
 let skipPermissions = false;
 
-// "Fixed agent pane buttons" option in ⌨ Options — off by default, which folds
-// the five rarely-used header buttons behind the ⋯ tray; on keeps every button
-// inline the way it used to be
-let fixedActions = false;
+// longest agent name a rename can produce — the header row has one line of
+// room, and anything longer only ever showed as ellipsis
+const NAME_MAX = 20;
 
 // every header glyph is drawn the same way — one stroke weight, one grid, so a
 // pane header reads as one row of icons rather than mono arrows beside SVGs

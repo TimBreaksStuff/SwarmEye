@@ -310,26 +310,11 @@ class Pane {
       this.requestClose();
     });
 
-    // the two buttons nobody reaches for mid-turn — inline when "Fixed agent
-    // pane buttons" is on, folded under the ⋯ otherwise. Text size is an
-    // Options row as well, so a pane header that shows every glyph at once is
-    // equal-weight glyphs per pane and none of them louder than the agent's own
-    // name. The mic stays out: dictation is reached mid-turn, so it sits in the
-    // cluster itself.
-    this.overflowEl = elt('span', 'pane-overflow');
-    this.overflowEl.append(btnFontDown, btnFontUp);
-    this.overflowEl.addEventListener('click', () => this.closeActionTray());
-
-    this.btnMore = elt('button', 'pane-btn more');
-    this.btnMore.dataset.tip = 'Text size';
-    this.btnMore.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>';
-    this.btnMore.addEventListener('click', () => this.toggleActionTray());
-
     // one bordered cluster, the way the top bar groups its secondary actions
     const actions = document.createElement('span');
     actions.className = 'pane-actions';
     actions.append(
-      btnMic, this.overflowEl, this.btnMore,
+      btnMic, btnFontDown, btnFontUp,
       btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
 
@@ -339,7 +324,6 @@ class Pane {
     // its own statement rather than a slot in the append above: that line is
     // the header's whole running order and every pane feature edits it
     if (this.scopeEl) header.insertBefore(this.scopeEl, this.titleEl);
-    this.syncActionsMode();
 
     // search row (hidden until toggled)
     this.searchEl = elt('div', 'pane-search');
@@ -984,30 +968,6 @@ class Pane {
     this.btnSplitDown.style.display = autoOrganize ? 'none' : '';
   }
 
-  /* ⋯ tray — the folded buttons drop under the header. Dismissed the way the
-   * branch menu is: a capture-phase mousedown anywhere outside it. */
-  toggleActionTray() {
-    if (this.overflowEl.classList.contains('open')) { this.closeActionTray(); return; }
-    this.overflowEl.classList.add('open');
-    // the mousedown fires before the ⋯ button's own click, so a click on the
-    // button itself must not count as "outside" — it would close and reopen
-    this._trayDismiss = (e) => {
-      if (!this.overflowEl.contains(e.target) && !this.btnMore.contains(e.target)) this.closeActionTray();
-    };
-    document.addEventListener('mousedown', this._trayDismiss, true);
-  }
-
-  closeActionTray() {
-    if (!this.overflowEl.classList.contains('open')) return;
-    this.overflowEl.classList.remove('open');
-    document.removeEventListener('mousedown', this._trayDismiss, true);
-  }
-
-  syncActionsMode() {
-    this.el.classList.toggle('fixed-actions', fixedActions);
-    if (fixedActions) this.closeActionTray();
-  }
-
   /* ---- rename ---- */
 
   startRename() {
@@ -1021,7 +981,7 @@ class Pane {
       // remove, don't set 'false': [contenteditable] CSS matches any value,
       // so a leftover attribute keeps the edit outline on forever
       this.titleEl.removeAttribute('contenteditable');
-      const name = (keep ? this.titleEl.textContent : orig).trim().slice(0, 40) || orig;
+      const name = (keep ? this.titleEl.textContent : orig).trim().slice(0, NAME_MAX) || orig;
       this.titleEl.textContent = name;
       document.getSelection().removeAllRanges();
       if (name !== orig) {
@@ -1029,6 +989,17 @@ class Pane {
         this.handlers.onRename(this, name);
       }
       this.term.focus();
+    };
+    // typing past the limit would grow the box past the header room it has
+    const onInput = () => {
+      if (this.titleEl.textContent.length <= NAME_MAX) return;
+      this.titleEl.textContent = this.titleEl.textContent.slice(0, NAME_MAX);
+      const r = document.createRange();
+      r.selectNodeContents(this.titleEl);
+      r.collapse(false);
+      const sel = document.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
     };
     const onKey = (e) => {
       e.stopPropagation();
@@ -1046,9 +1017,11 @@ class Pane {
     };
     document.addEventListener('mousedown', onDocDown, true);
     this.titleEl.addEventListener('keydown', onKey);
+    this.titleEl.addEventListener('input', onInput);
     this.titleEl.addEventListener('blur', () => {
       document.removeEventListener('mousedown', onDocDown, true);
       this.titleEl.removeEventListener('keydown', onKey);
+      this.titleEl.removeEventListener('input', onInput);
       commit(true);
     }, { once: true });
   }
@@ -1239,7 +1212,6 @@ class Pane {
 
   dispose() {
     this.closeBranchMenu();
-    this.closeActionTray();
     if (this.stopDictation) this.stopDictation();
     clearTimeout(this.idleTimer);
     clearTimeout(this.modeTimer);
@@ -1307,10 +1279,6 @@ Pane.setShowInitialCommand = (on) => { showInitialCommand = !!on; };
 
 /* same pattern as setShowInitialCommand, for the → / ↓ split buttons */
 Pane.setAutoOrganize = (on) => { autoOrganize = !!on; };
-
-/* and for "Fixed agent pane buttons" — on unfolds the ⋯ tray back into the
- * header cluster; the caller re-syncs already-open panes */
-Pane.setFixedActions = (on) => { fixedActions = !!on; };
 
 /* and again for "Default agent permissions: auto" — the only thing that reads
  * it here is autoAcceptDialogs, which must not stall on an IPC round trip in

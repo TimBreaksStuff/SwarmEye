@@ -219,7 +219,6 @@ async function resetOptions() {
   applied.showInitialCommand(false);
   applied.promptHistory(true);
   applied.usagePanel(false);
-  applied.fixedPaneActions(false);
   applied.autoOrganize(true);
   applied.agentPadding(true);
   for (const { key } of DEFAULT_PICKERS) applyDefault[key]('default');
@@ -481,13 +480,6 @@ export function init(context) {
   applied.usagePanel = boolOption('usage-panel-toggle', 'usagePanel', false, (on) => {
     Pane.setShowUsagePanel(on);
     for (const p of ctx.state.panes.values()) p.syncUsagePanel();
-  });
-
-  /* "Fixed agent pane buttons" — off by default: the two rarely-used text-size
-   * buttons fold behind each pane's ⋯. On puts them back inline. */
-  applied.fixedPaneActions = boolOption('pane-fixed-actions-toggle', 'paneFixedActions', false, (on) => {
-    Pane.setFixedActions(on);
-    for (const p of ctx.state.panes.values()) p.syncActionsMode();
   });
 
   /* "Auto-organize agent windows" — on by default; off lets each pane's → / ↓
