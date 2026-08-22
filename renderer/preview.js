@@ -53,6 +53,10 @@ const Preview = (() => {
     return local.includes(u.hostname) ? u.href : null;
   }
 
+  function sameOrigin(a, b) {
+    try { return new URL(a).origin === new URL(b).origin; } catch { return false; }
+  }
+
   function setMessage(text) {
     msgEl.textContent = text || '';
     msgEl.hidden = !text;
@@ -88,8 +92,12 @@ const Preview = (() => {
     resolving = true;
     setMessage('looking for a dev server…');
     try {
-      const r = await window.swarm.resolvePreview(workspaceId, storedUrl());
-      if (r && r.ok) navigate(r.url);
+      const stored = storedUrl();
+      const r = await window.swarm.resolvePreview(workspaceId, stored);
+      // resolve() answers with a bare origin — it probed a port, it knows no
+      // path. Same origin as the page we remember means it is that server, so
+      // go back to the page rather than to its front door.
+      if (r && r.ok) navigate(sameOrigin(r.url, stored) ? stored : r.url);
       else setMessage((r && REASONS[r.reason]) || 'no dev server found');
     } finally {
       resolving = false;
@@ -203,9 +211,17 @@ const Preview = (() => {
     });
 
     webEl.addEventListener('dom-ready', () => { ready = true; });
-    // the page can navigate itself (a link, a router push) — keep the box honest
+    // the page can navigate itself (a link, a router push) — keep the box
+    // honest, and remember the page actually on show: a reload that has to go
+    // through resolve() (dock reopened, dev server restarted) would otherwise
+    // come back to the site root, since that is all a port probe knows
     for (const ev of ['did-navigate', 'did-navigate-in-page']) {
-      webEl.addEventListener(ev, (e) => { if (e.url) urlEl.value = e.url; });
+      webEl.addEventListener(ev, (e) => {
+        if (!e.url) return;
+        urlEl.value = e.url;
+        const u = normalize(e.url);
+        if (u) localStorage.setItem(urlKey(workspaceId), u);
+      });
     }
     webEl.addEventListener('did-fail-load', (e) => {
       // -3 is ERR_ABORTED, which every cancelled/redirected load reports

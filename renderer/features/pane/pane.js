@@ -282,6 +282,19 @@ class Pane {
     btnFontUp.innerHTML = icon('<path d="M12 5v14M5 12h14"/>');
     btnFontUp.addEventListener('click', () => this.setFontSize(this.term.options.fontSize + 1));
 
+    /* /clear: wipes the agent's conversation context without restarting the
+     * process. Hidden on the harnesses that have no such command — the clean
+     * agent (`oc:`), opencode and pi; an `or:` model runs inside Claude Code
+     * and takes it like any other. */
+    this.btnClear = elt('button', 'pane-btn clear');
+    this.btnClear.dataset.tip = "Clear this agent's context (/clear)";
+    this.btnClear.innerHTML = icon('<path d="M20 20H8.5L3.6 15a1.4 1.4 0 0 1 0-2L12.8 3.8a1.4 1.4 0 0 1 2 0l5.2 5.2a1.4 1.4 0 0 1 0 2L11.5 20"/><path d="M6.5 10.5l7 7"/>');
+    if (/^(oc|opencode|pi):/.test(this.session.model || '')) this.btnClear.style.display = 'none';
+    this.btnClear.addEventListener('click', () => {
+      if (this.exited) return;
+      window.swarm.writeSession(this.session.id, '/clear\r');
+    });
+
     const btnMax = elt('button', 'pane-btn max');
     btnMax.dataset.tip = 'Maximize / restore (Ctrl+Shift+M)';
     btnMax.innerHTML = icon('<path d="M9 4H4v5"/><path d="M15 4h5v5"/><path d="M20 15v5h-5"/><path d="M4 15v5h5"/>');
@@ -314,7 +327,7 @@ class Pane {
     const actions = document.createElement('span');
     actions.className = 'pane-actions';
     actions.append(
-      btnMic, btnFontDown, btnFontUp,
+      this.btnClear, btnMic, btnFontDown, btnFontUp,
       btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
 
