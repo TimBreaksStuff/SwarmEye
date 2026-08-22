@@ -110,3 +110,19 @@
   border-top: 1px solid var(--border);
 }
 .preview-msg[hidden] { display: none; }
+
+/* the auto-reload toggle sits with the reload button it automates */
+#preview-auto-wrap {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text2);
+  cursor: pointer;
+  user-select: none;
+}
+#preview-auto-wrap:hover { color: var(--accent-text); }
+#preview-auto { width: 12px; height: 12px; margin: 0; accent-color: var(--accent); cursor: pointer; }

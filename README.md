@@ -12,13 +12,13 @@ No accounts, no backend, no telemetry. SwarmEye rides your existing Claude Code 
 
 ## Status
 
-**1.63.34.** Windows (WSL) and macOS. Claude Code, plus OpenRouter through SwarmEye's own clean agent or [opencode](https://opencode.ai) / [pi](https://pi.dev).
+**1.63.37.** Windows (WSL) and macOS. Claude Code, plus OpenRouter through SwarmEye's own clean agent or [opencode](https://opencode.ai) / [pi](https://pi.dev).
 
 Recently solid:
 
+- **The preview dock reloads itself** 1.5 seconds after an agent in that workspace finishes a turn — untick `auto` beside the reload button to stop it.
 - **Free-canvas layout** when auto-organize is off — each pane is its own rectangle, resized from any edge, remembered per workspace.
 - **OpenRouter harnesses start on Windows.** A missing `node` / `opencode` / `pi` is named in the pane instead of `[exited]`.
-- **Paste works** — `Ctrl+V`, right-click and Shift+Insert, bracketed so a multi-line paste is one block.
 
 ---
 
@@ -32,7 +32,7 @@ Recently solid:
 
 **Code.** Isolation gives every agent its own git worktree and branch. Review the full patch, commit, and `--no-ff` merge back. Scope an agent to an area (from `.swarmeye/areas.json`) or a folder — it can still read the repo, but Claude Code deny rules block edits outside, even in `auto`. The git chip shows branch, `git diff --stat`, checkout or create. `.swarmeye/notes.md` is the workspace notebook every new agent is told to read.
 
-**Around the swarm.** Swarm view maps every agent across every workspace, with live previews and a one-hour timeline. The preview dock is the workspace's localhost dev server. History reads any past conversation, resumes it, or exports text / HTML. Skills install from GitHub or show the ones agents wrote. Notifications (optionally spoken) fire when an agent finishes or needs you; approve/deny from the bell. Agents live in a dedicated tmux server, so quitting only detaches them. The app checks GitHub Releases and updates in one click.
+**Around the swarm.** Swarm view maps every agent across every workspace, with live previews and a one-hour timeline. The preview dock is the workspace's localhost dev server, reloading itself when an agent there finishes. History reads any past conversation, resumes it, or exports text / HTML. Skills install from GitHub or show the ones agents wrote. Notifications (optionally spoken) fire when an agent finishes or needs you; approve/deny from the bell. Agents live in a dedicated tmux server, so quitting only detaches them. The app checks GitHub Releases and updates in one click.
 
 The left rail shows the real 5-hour and weekly Claude limits, plus OpenRouter spend if you have a key. Each pane has a cost & context panel (fill, spend, cache hit rate, tokens per turn) from the transcript — no extra API calls.
 

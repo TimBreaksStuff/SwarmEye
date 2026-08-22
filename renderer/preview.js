@@ -11,15 +11,21 @@ const Preview = (() => {
   const msgEl = document.getElementById('preview-msg');
   const btnEl = document.getElementById('preview-btn');
   const resizerEl = document.getElementById('preview-resizer');
+  const autoEl = document.getElementById('preview-auto');
 
   const DEFAULT_URL = 'http://localhost:3000';
   const MIN_WIDTH = 320;
+  // a dev server rebuilds after the agent's last write — reloading on the Stop
+  // itself would show the page as it was before the change
+  const AUTO_DELAY = 1500;
+  const AUTO_KEY = 'swarmeye.previewAutoReload';
   const urlKey = (wsId) => 'swarmeye.previewUrl.' + (wsId || 'none');
 
   let workspaceId = null;
   let loaded = false; // the webview only loads a real page once the dock is opened
   let ready = false; // the guest is attached and can take a loadURL
   let resolving = false; // a probe/start is in flight — don't launch a second
+  let autoTimer = null; // the pending auto-reload, restarted by each agent that finishes
 
   /* Never through the src attribute: its own handler logs every rejected load
    * to the console, and a load superseded by the next address typed rejects as
@@ -114,11 +120,29 @@ const Preview = (() => {
     // same cancellation as closing the dock — the old workspace's poll must
     // not keep running (it also holds the `resolving` flag up)
     if (resolving && workspaceId) window.swarm.stopPreview(workspaceId);
+    clearTimeout(autoTimer); // a reload queued for the old workspace is not wanted here
+    autoTimer = null;
     workspaceId = id;
     const next = storedUrl();
     urlEl.value = next;
     if (!el.hidden) { loaded = false; autoStart(); }
     else loaded = false; // load it when the dock is next opened
+  }
+
+  /* app.js calls this on every agent that finishes a turn. Only the workspace
+   * on show counts, and only while the dock is open with the toggle ticked —
+   * the debounce collapses a swarm finishing together into one reload, and a
+   * dock still showing 'no dev server found' probes again, since the agent may
+   * be what just started one. */
+  function onAgentDone(wsId) {
+    if (el.hidden || !autoEl.checked || wsId !== workspaceId) return;
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(() => {
+      autoTimer = null;
+      if (el.hidden || !autoEl.checked) return; // closed or unticked while waiting
+      if (loaded) webEl.reload();
+      else autoStart();
+    }, AUTO_DELAY);
   }
 
   /* drag the left edge to resize; the width is one setting for all workspaces */
@@ -149,6 +173,11 @@ const Preview = (() => {
   function init({ getWorkspaceId }) {
     workspaceId = getWorkspaceId();
     urlEl.value = storedUrl();
+    autoEl.checked = localStorage.getItem(AUTO_KEY) !== '0'; // on unless turned off
+    autoEl.addEventListener('change', () => {
+      localStorage.setItem(AUTO_KEY, autoEl.checked ? '1' : '0');
+      if (!autoEl.checked) { clearTimeout(autoTimer); autoTimer = null; }
+    });
     wireResizer();
 
     btnEl.addEventListener('click', () => toggle(el.hidden));
@@ -186,7 +215,7 @@ const Preview = (() => {
     webEl.addEventListener('did-finish-load', () => setMessage(''));
   }
 
-  return { init, setWorkspace };
+  return { init, setWorkspace, onAgentDone };
 })();
 
 window.Preview = Preview;

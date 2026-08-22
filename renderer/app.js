@@ -974,6 +974,8 @@ const paneHandlers = {
   onStatusChange(pane, status) {
     recordTimeline(pane); // every state flip is a band edge on the swarm timeline
     if (status === 'done') {
+      // whatever it just built is on screen in the dock — refresh it
+      Preview.onAgentDone(pane.session.workspaceId);
       // fired on every Stop hook, watched or not — task completion must not
       // ride on the attention path, which flagAttention suppresses while the
       // user is looking at the pane (and skips when attention is already set)
