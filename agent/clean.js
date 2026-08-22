@@ -569,6 +569,19 @@ function loadSkill(dir) {
   return `\n\n## Skill: ${name}\n${raw}`;
 }
 
+/* The project's own CLAUDE.md, if the working directory has one. Claude Code
+ * reads this file by itself; a clean agent has no such convention, so it is
+ * loaded here — otherwise a workspace's house rules would apply to some of its
+ * agents and not others. Full text, capped like a skill: it rides every turn,
+ * which is the price of the model actually following it. */
+function loadProjectDoc() {
+  let raw;
+  try { raw = fs.readFileSync(path.join(cwd, 'CLAUDE.md'), 'utf8').trim(); } catch { return ''; }
+  if (!raw) return '';
+  if (raw.length > SKILL_MAX) raw = raw.slice(0, SKILL_MAX) + '\n…[truncated]';
+  return `\n\n## Project instructions (CLAUDE.md)\nThese are this repository's own rules. Follow them.\n\n${raw}`;
+}
+
 const messages = [{
   role: 'system',
   content: [
@@ -576,7 +589,7 @@ const messages = [{
     'Use the tools to inspect and change files and to run commands — read before you write, prefer tools over guessing.',
     'Keep answers concise. When the work is done, summarize what changed in a sentence or two.',
     args.system,
-  ].filter(Boolean).join(' ') + args.skills.map(loadSkill).join(''),
+  ].filter(Boolean).join(' ') + loadProjectDoc() + args.skills.map(loadSkill).join(''),
 }];
 
 if (args.cont) {

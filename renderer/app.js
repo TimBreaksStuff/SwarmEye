@@ -360,6 +360,9 @@ async function addWorkspace() {
   if (res.canceled) return;
   state.workspaces = res.workspaces;
   if (res.selectedWorkspaceId) state.selectedWorkspaceId = res.selectedWorkspaceId;
+  // the standard CLAUDE.md, if one is set and the folder had none of its own —
+  // worth saying out loud, since it wrote a file into the user's repo
+  if (res.template && res.template.copied) toast('CLAUDE.md added from your standard');
   syncGrid();
   syncChrome();
   // pop the new workspace's flyout so its colour can be picked straight away

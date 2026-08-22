@@ -168,6 +168,22 @@ function applySkipPermissions(on) {
   window.swarm.setSkipPermissions(on);
 }
 
+/* The standard CLAUDE.md (main/template.js): one file, copied into every
+ * workspace folder added from then on. Main owns the path, so the row is drawn
+ * from whatever main hands back — config:get at boot, the pick/clear result
+ * afterwards. The readout shows the file's name; the folder is in the title,
+ * because a full path does not fit the row. */
+const templatePath = document.getElementById('claude-template-path');
+const templateClear = document.getElementById('claude-template-clear');
+function showTemplate(st) {
+  const file = (st && st.path) || '';
+  const name = file.split(/[\\/]/).pop();
+  templatePath.textContent = file ? (st.missing ? name + ' (missing)' : name) : 'none';
+  templatePath.title = file || '';
+  templatePath.classList.toggle('ok', !!file && !st.missing);
+  templateClear.hidden = !file;
+}
+
 /* The ⌨ popover's three default pickers are one control three times: fill the
  * select from a Pane table, persist the choice locally, and mirror it into the
  * task board's matching per-task select. They differ only in the table, the
@@ -246,6 +262,7 @@ export function applyConfig(cfg) {
   // main, which already has it
   skipPermissionsToggle.checked = !!cfg.skipPermissions;
   Pane.setSkipPermissions(!!cfg.skipPermissions);
+  showTemplate(cfg.claudeTemplate);
 }
 
 /* Wires every control in the popover. Called from app.js at the point this
@@ -455,6 +472,16 @@ export function init(context) {
   document.getElementById('auto-limit-up').addEventListener('click', () => applied.autoUsageLimit(autoUsageLimit + 5));
 
   skipPermissionsToggle.addEventListener('change', () => applySkipPermissions(skipPermissionsToggle.checked));
+
+  document.getElementById('claude-template-pick').addEventListener('click', async () => {
+    const st = await window.swarm.pickTemplate();
+    showTemplate(st);
+    if (!st.canceled) ctx.toast('new workspaces get a copy of ' + st.path.split(/[\\/]/).pop());
+  });
+  templateClear.addEventListener('click', async () => {
+    showTemplate(await window.swarm.clearTemplate());
+    ctx.toast('no standard CLAUDE.md');
+  });
 
   /* ---- panes and grid ---- */
 

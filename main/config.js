@@ -35,6 +35,7 @@ const DEFAULTS = {
   openrouterKey: '', // never crosses IPC — see providers.js
   openrouterCatalog: null, // { fetchedAt, models: [{id,label,ctx,in,out,cr,cw}] }
   openrouterAlts: [], // up to 3 slugs `/model` offers alongside the launch model (providers.js)
+  claudeTemplate: '', // path to the standard CLAUDE.md copied into each new workspace (main/template.js)
 };
 
 let cache = null;

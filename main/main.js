@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Notification, crashRep
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
+const template = require('./template');
 const { PtyManager, NOTES_REL, MODELS, EFFORT_FLAGS, SESSION_ID_RE } = require('./sessions');
 const roles = require('./roles');
 const { UsageMonitor } = require('./usage');
@@ -269,6 +270,7 @@ function registerIpc() {
       archivedTasks: projectArchive(config.loadArchive()),
       autoUsageLimit: cfg.autoUsageLimit,
       skipPermissions: cfg.skipPermissions,
+      claudeTemplate: template.status(),
       workspaceColors: config.WORKSPACE_COLORS,
       // the OpenRouter catalog for the model pickers — the key itself never
       // crosses IPC (providers.js)
@@ -337,9 +339,14 @@ function registerIpc() {
     });
     if (res.canceled || !res.filePaths.length) return { canceled: true };
     const p = res.filePaths[0];
+    /* The standard CLAUDE.md, before anything else looks at the folder: it
+     * skips a folder that already has one, so running it on the re-added and
+     * already-registered paths too costs a stat and covers the case where the
+     * template was set after the workspace was first added. */
+    const templateResult = template.apply(p);
     const cfg = config.load();
     const existing = cfg.workspaces.find((w) => w.path === p);
-    if (existing) return { workspace: existing, workspaces: cfg.workspaces };
+    if (existing) return { workspace: existing, workspaces: cfg.workspaces, template: templateResult };
     /* Adding a folder that was removed earlier brings the old workspace back
      * rather than minting a second one for the same path: its id is what the
      * tasks, sessions and notes are filed under, so a new id would orphan all
@@ -351,7 +358,7 @@ function registerIpc() {
       cfg.selectedWorkspaceId = archived.id;
       config.save(cfg);
       if (git) git.tick();
-      return { workspace: archived, workspaces: cfg.workspaces, selectedWorkspaceId: cfg.selectedWorkspaceId };
+      return { workspace: archived, workspaces: cfg.workspaces, selectedWorkspaceId: cfg.selectedWorkspaceId, template: templateResult };
     }
     const ws = {
       id: 'ws_' + Math.random().toString(36).slice(2, 8),
@@ -364,7 +371,7 @@ function registerIpc() {
     if (!cfg.selectedWorkspaceId) cfg.selectedWorkspaceId = ws.id;
     config.save(cfg);
     if (git) git.tick(); // git chip for the new workspace without the poll delay
-    return { workspace: ws, workspaces: cfg.workspaces, selectedWorkspaceId: cfg.selectedWorkspaceId };
+    return { workspace: ws, workspaces: cfg.workspaces, selectedWorkspaceId: cfg.selectedWorkspaceId, template: templateResult };
   });
 
   // what the message box can attach to a prompt: a file from this workspace
@@ -664,6 +671,11 @@ function registerIpc() {
     config.patch({ skipPermissions });
     return { skipPermissions };
   });
+
+  // the standard CLAUDE.md (main/template.js): the Options row names the file,
+  // workspace:add copies it into each folder that has none of its own
+  ipcMain.handle('template:pick', () => template.pick(win));
+  ipcMain.handle('template:clear', () => template.clear());
 
   // task board: queued todos for agents, started now or auto-scheduled by
   // the renderer once an agent slot and usage headroom are both available

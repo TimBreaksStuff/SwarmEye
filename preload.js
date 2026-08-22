@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld('swarm', {
   stopPreview: (workspaceId) => ipcRenderer.invoke('preview:stop', { workspaceId }),
   setAutoUsageLimit: (n) => ipcRenderer.invoke('config:set-auto-usage-limit', n),
   setSkipPermissions: (on) => ipcRenderer.invoke('config:set-skip-permissions', on),
+  // the standard CLAUDE.md copied into every workspace folder as it is added;
+  // the current path arrives with config:get, these two change it
+  pickTemplate: () => ipcRenderer.invoke('template:pick'),
+  clearTemplate: () => ipcRenderer.invoke('template:clear'),
 
   createTask: (payload) => ipcRenderer.invoke('task:create', payload),
   updateTask: (id, patch) => ipcRenderer.invoke('task:update', { id, patch }),

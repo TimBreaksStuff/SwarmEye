@@ -272,6 +272,12 @@
 #stt-install-btn:disabled:hover,
 #tts-install-btn:disabled:hover,
 #update-action-btn:disabled:hover { color: var(--text2); }
+/* the standard-CLAUDE.md row: the readout shows the file's name (its folder
+ * is in the tooltip) and Choose is worded, so it escapes .opt-ctl button's
+ * 24x24 stepper box the same way #or-key-save does. */
+#claude-template-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#claude-template-pick { width: auto; height: auto; padding: 5px 10px; font-size: 11px; }
+
 .stt-status {
   font-family: var(--font-mono);
   font-size: 11.5px;

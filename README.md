@@ -103,6 +103,8 @@ macOS asks for microphone permission the first time you use dictation. The app i
 
 Click `+ Add workspace` in the left rail. An empty workspace shows a **launch card**: pick a swarm size (1–12), check **Provider · Model · Effort · Focus · Permissions** (pre-filled from ⚙ Options — Provider swaps Claude's tiers and the OpenRouter catalog, and adds **Harness** to launch the whole swarm on clean, opencode or pi), and `Launch N agents`. `+ Agent` still adds them one at a time, with the role picker.
 
+Name one markdown file under ⚙ Options → **Standard CLAUDE.md** and every folder you add from then on gets a copy of it as its `CLAUDE.md` — a folder that already has one keeps it. Claude Code reads that file by itself; OpenRouter agents are handed it in their system prompt.
+
 ---
 
 ## Voice dictation (optional)
