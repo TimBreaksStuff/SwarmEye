@@ -3,8 +3,7 @@
  * The chrome (top bar, rail, pane headers) already draws 24-box, 1.6-weight
  * `currentColor` strokes inline in index.html; the views built their buttons
  * out of emoji instead, which pick their own colour and baseline. Same markup,
- * kept here because board.js, skills.js, history.js and swarmview.js all need
- * the same handful. */
+ * kept here because board.js and skills.js both need the same handful. */
 const Icons = (() => {
   const svg = (body) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
     + 'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
@@ -22,16 +21,11 @@ const Icons = (() => {
     left: '<path d="M14.5 5.5 8 12l6.5 6.5"/>',
     right: '<path d="M9.5 5.5 16 12l-6.5 6.5"/>',
     chevron: '<path d="m6 9.5 6 6 6-6"/>',
-    panel: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17"/>',
-    timeline: '<path d="M4 6.5h11M4 12h16M4 17.5h8"/>',
-    cursor: '<path d="M6 4.2 18.5 11l-5.4 1.4L11 18 6 4.2Z"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M4.9 7.5l1.9 1.1M17.2 15.4l1.9 1.1M4.9 16.5l1.9-1.1M17.2 8.6l1.9-1.1"/>',
     view: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7.5 9h9M7.5 12.5h9M7.5 16h5"/>',
     pin: '<path d="M9 3.5h6M12 3.5V9M8 9h8l1.5 5h-11L8 9Z"/><path d="M12 14v6"/>',
-    note: '<path d="M6 3.5h9.5L19 7v12a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1-1.5Z"/><path d="M15 3.5V7h4"/><path d="M8.5 12h7M8.5 15.5h5"/>',
     branch: '<circle cx="7" cy="6" r="2.2"/><circle cx="7" cy="18" r="2.2"/><circle cx="17" cy="9" r="2.2"/><path d="M7 8.2v7.6"/><path d="M17 11.2v.6a3.2 3.2 0 0 1-3.2 3.2H9.2"/>',
     folder: '<path d="M20 19.5a1.8 1.8 0 0 0 1.8-1.8V8.8A1.8 1.8 0 0 0 20 7h-7.3a1.8 1.8 0 0 1-1.5-.8L10.3 5a1.8 1.8 0 0 0-1.5-.8H4A1.8 1.8 0 0 0 2.2 6v11.7a1.8 1.8 0 0 0 1.8 1.8Z"/>',
-    diff: '<rect x="3.5" y="5" width="7.5" height="14" rx="1.6"/><rect x="13" y="5" width="7.5" height="14" rx="1.6"/><path d="M5.5 9.5h3.5M5.5 12.5h3.5"/><path d="M15 11.5h3.5M15 14.5h3.5"/>',
   };
 
   const markup = (name) => svg(PATHS[name] || '');

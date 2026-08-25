@@ -69,6 +69,7 @@ const Launcher = {
   selects: {}, // Options key -> <select>
   scopes: null, // Scope option value -> { label, paths }
   goEl: null,
+  onLaunch: null,
   count: LAUNCH_DEFAULT_COUNT,
   free: 0,
   busy: false, // a launch run is in flight — the card stays locked until it ends
@@ -111,6 +112,9 @@ const Launcher = {
       btn.dataset.count = String(n);
       btn.appendChild(elt('span', 'count-tile__n', String(n)));
       btn.addEventListener('click', () => this.select(n));
+      // double-click is "this many, go" — the size the tile names, launched
+      // with the fields as they stand
+      btn.addEventListener('dblclick', () => { this.select(n); this.launch(); });
       btn.addEventListener('keydown', (e) => this.onTileKey(e, n));
       this.tiles.push({ n, btn });
       tiles.appendChild(btn);
@@ -138,15 +142,8 @@ const Launcher = {
     this.goEl = document.createElement('button');
     this.goEl.type = 'button';
     this.goEl.className = 'launcher-card__go';
-    this.goEl.addEventListener('click', async () => {
-      if (this.busy || this.goEl.disabled) return;
-      this.busy = true;
-      root.classList.add('busy');
-      try { await onLaunch(this.count, this.getSettings()); } finally {
-        this.busy = false;
-        root.classList.remove('busy');
-      }
-    });
+    this.onLaunch = onLaunch;
+    this.goEl.addEventListener('click', () => this.launch());
     foot.appendChild(this.goEl);
     card.appendChild(foot);
 
@@ -168,6 +165,19 @@ const Launcher = {
       this.select(tile.n);
       tile.btn.focus();
     });
+  },
+
+  /* the one way out of the card: the Go button and a double-clicked tile both
+   * come through here, so the busy lock and the disabled state are checked in
+   * one place. */
+  async launch() {
+    if (this.busy || this.goEl.disabled) return;
+    this.busy = true;
+    this.el.classList.add('busy');
+    try { await this.onLaunch(this.count, this.getSettings()); } finally {
+      this.busy = false;
+      this.el.classList.remove('busy');
+    }
   },
 
   // hidden by its own flag, or by an ancestor (a full view is up, or panes exist)

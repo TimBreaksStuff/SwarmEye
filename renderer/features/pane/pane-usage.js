@@ -51,8 +51,8 @@ Object.assign(Pane.prototype, {
       this.usageSparkEl.textContent = '';
       this.usageTurnsEl.textContent = '';
       this.usageShareEl.style.display = 'none';
-      this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : 'activity';
-      this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran — click for the full list';
+      this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : '';
+      this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran';
       return;
     }
 
@@ -116,10 +116,8 @@ Object.assign(Pane.prototype, {
       this.usageShareEl.style.display = 'none';
     }
 
-    // "activity" when nothing has run yet, so the way into the popover is
-    // there before the first tool call
-    this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : 'activity';
-    this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran — click for the full list';
+    this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : '';
+    this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran';
   },
 
   /* ---- model chip ---- */

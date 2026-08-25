@@ -38,7 +38,7 @@
     const tip = get();
     // data-tip-secondary opts an element into the split layout: the primary
     // label on the left, a vertical rule, then the secondary text on the right
-    // (used by the swarm-map slots to show the agent name and its last input).
+    // (used by the rail's agent rows to pair the name with its last input).
     const secondary = target.getAttribute('data-tip-secondary');
     tip.classList.toggle('split', !!secondary);
     if (secondary) {

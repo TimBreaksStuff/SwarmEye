@@ -27,7 +27,7 @@ const Palette = (() => {
    * Every character of the query must appear in order; beyond that the score
    * rewards what a person actually means when they type three letters —
    * matches at the start of a word ("tb" → "Task Board") and runs of adjacent
-   * characters ("swar" → "Swarm View") — and penalises how far it had to skip.
+   * characters ("tas" matches "Task Board") — and penalises how far it had to skip.
    * Returns -1 for no match, so 0 stays a legitimate (if poor) score. */
   function score(text, query) {
     if (!query) return 0;

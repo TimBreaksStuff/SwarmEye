@@ -61,14 +61,7 @@ Object.assign(Pane.prototype, {
     menu.className = 'branch-menu';
     const diffEl = elt('div', 'branch-diff', 'checking changes…');
     const listEl = elt('div', 'branch-list', 'fetching branches…');
-    // the stat above is a summary; this opens the patch itself, with commit
-    // and — for an isolated agent — merge back into the workspace (diff.js)
-    const reviewBtn = elt('button', 'branch-review', 'Review changes…');
-    reviewBtn.addEventListener('click', () => {
-      this.closeBranchMenu();
-      this.handlers.onReview(this);
-    });
-    menu.append(diffEl, reviewBtn, listEl);
+    menu.append(diffEl, listEl);
     // fixed-position (the pane clips overflow), anchored under the chip
     const r = this.gitEl.getBoundingClientRect();
     menu.style.left = `${Math.round(Math.min(r.left, window.innerWidth - 470))}px`;

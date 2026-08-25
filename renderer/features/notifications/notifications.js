@@ -68,13 +68,6 @@ export const notifHandlers = {
     }
     pane.focus();
   },
-  // the agent's own Claude conversation, in the same modal the History screen
-  // uses — the pane doesn't have to still exist for this to work
-  onTranscript(n) {
-    if (!n.transcriptId) { ctx.toast('no transcript recorded for this agent'); return; }
-    closeNotifPop();
-    History.openTranscript({ workspaceId: n.wsId, id: n.transcriptId, preview: `${n.agent} · ${n.ws}` });
-  },
   onApprove(paneId, always) {
     const pane = ctx.state.panes.get(paneId);
     if (!pane) { ctx.toast('this agent is gone'); return; }
@@ -125,14 +118,12 @@ export function pushNotif(pane, kind, text) {
   if (top && top.paneId === pane.session.id && top.kind === kind && top.text === text) {
     top.count = (top.count || 1) + 1;
     top.time = Date.now();
-    top.transcriptId = pane.transcriptId || top.transcriptId;
   } else {
     notifs.unshift({
       paneId: pane.session.id,
       agent: pane.session.agentName,
       ws: pane.session.workspaceName,
       wsId: pane.session.workspaceId,
-      transcriptId: pane.transcriptId || null,
       kind,
       text,
       cmd: pane.initialCommandText,

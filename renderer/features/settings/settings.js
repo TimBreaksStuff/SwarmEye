@@ -233,7 +233,6 @@ async function resetOptions() {
   await applied.autoUsageLimit(85);
   applySkipPermissions(false);
   applied.showInitialCommand(false);
-  applied.promptHistory(true);
   applied.usagePanel(false);
   applied.autoOrganize(true);
   applied.agentPadding(true);
@@ -408,7 +407,6 @@ export function init(context) {
       document.getElementById('board-main'),
       document.getElementById('board-archive'),
       document.getElementById('skills-main'),
-      document.getElementById('history-main'),
       kbdPop,
       kbdShortcutsPop,
     ],
@@ -497,10 +495,6 @@ export function init(context) {
    * one stops polling too, and stays hidden anyway while no key is saved. */
   applied.anthropicUsage = boolOption('anthropic-usage-toggle', 'anthropicUsage', true, (on) => Topbar.setUsageSection('anthropic', on));
   applied.openrouterUsage = boolOption('openrouter-usage-toggle', 'openrouterUsage', true, (on) => Topbar.setUsageSection('openrouter', on));
-
-  /* "Remember prompt history" — on by default; what the palette offers back
-   * (see prompts.js). Off only stops recording — nothing stored is lost. */
-  applied.promptHistory = boolOption('prompt-history-toggle', 'promptHistory', true, (on) => Prompts.setEnabled(on));
 
   /* "Show cost & context panel" — off by default; the panel eats two rows of
    * every pane's terminal, so opening it re-fits each one */

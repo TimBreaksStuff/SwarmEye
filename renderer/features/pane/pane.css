@@ -307,7 +307,6 @@
 .pane-usage-tools {
   flex: 1 1 auto;
   text-align: right;
-  cursor: pointer;
 }
 
 .pane-usage-spark {
@@ -442,7 +441,7 @@
 }
 
 /* split tooltip: primary label, a vertical rule, then secondary text — the
- * swarm-map slots use it to pair the agent name with its last input */
+ * rail's agent rows use it to pair the agent name with its last input */
 /* :not([hidden]) so this display rule can't outrank the UA `[hidden]{display:none}`
  * that hide() relies on — without it, an open split tooltip never dismisses */
 .app-tooltip.split:not([hidden]) {
@@ -1134,21 +1133,6 @@
   outline-offset: 1px;
 }
 
-/* the git chip's popover gains one action above the branch list */
-.branch-menu .branch-review {
-  background: none;
-  border: 1px solid var(--border2);
-  color: var(--accent-text);
-  font: inherit;
-  text-align: left;
-  padding: 5px 9px;
-  margin: 4px 2px 2px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.branch-menu .branch-review:hover { background: var(--pill-hover); border-color: var(--border-hover); }
-
 /* --- an agent that wants you: the pane frame, not a 10px dot --- */
 /* At eight panes a status dot is invisible in peripheral vision, which is the
    only vision spare while reading another pane. The frame takes the theme's own
@@ -1183,13 +1167,9 @@
 
 .pane-wait:hover { background: color-mix(in srgb, var(--amber) 16%, transparent); }
 
-/* the status line now opens the activity popover, so it has to look touchable */
-
-.pane-status:hover { color: var(--text); }
-
 /* --- subagents, and asking an agent to stop editing --- */
 /* a Task subagent is invisible in a terminal — its whole run is one line of its
-   parent's output. The count is the signal; the popover names them. */
+   parent's output. The count is the signal. */
 .pane-sub {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -1198,10 +1178,7 @@
   border-radius: 6px;
   padding: 2px 7px;
   white-space: nowrap;
-  cursor: pointer;
 }
-
-.pane-sub:hover { background: color-mix(in srgb, var(--tag) 12%, transparent); }
 
 /* the menu row that opens all this is an action, not another agent to start */
 .branch-item-quiet { color: var(--muted); }
@@ -1222,7 +1199,3 @@
   padding: 6px 10px 3px;
 }
 
-/* the tool trail is the way into the activity popover, so it reads as a
-   target — the header status chip is the same idea one row up */
-
-.pane-usage-tools:hover { color: var(--text); }

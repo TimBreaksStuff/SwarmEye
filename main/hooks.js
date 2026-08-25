@@ -28,10 +28,10 @@ const { IS_WIN, exec, shQuote, toShellPath } = require('./platform');
  * read is incremental — only the bytes appended since the previous turn — so
  * the per-turn cost of all of this is one small read. */
 
-/* PostToolUse is here for the pane's activity list only: it is what gives a
- * finished call a duration and a pass/fail, which PreToolUse alone cannot. It
- * costs one more hook write per tool call and says nothing about working /
- * waiting — the renderer treats it as "still working", like PreToolUse. */
+/* PostToolUse is here to close a call PreToolUse opened: it is what tells the
+ * pane a Task subagent has finished, which PreToolUse alone cannot. It costs
+ * one more hook write per tool call and says nothing about working / waiting
+ * — the renderer treats it as "still working", like PreToolUse. */
 const HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SessionStart'];
 
 /* Every agent writes into the same hook-state dir and names its own file, so
@@ -65,9 +65,9 @@ const TRANSCRIPT_NAME_RE = /^[A-Za-z0-9_-]{8,64}(\.\d{1,4})?\.jsonl$/;
  * (see agent/clean.js, agent/opencode-plugin.js, agent/pi-extension.ts). */
 const HARNESS_TRANSCRIPT_DIRS = ['clean-transcripts', 'opencode-transcripts', 'pi-transcripts'];
 
-/* What a tool call is *about*, for the pane's status line and its activity
- * list: the path for anything that names one, the command for Bash, the URL for
- * a fetch. Display only. */
+/* What a tool call is *about*, for the pane's status line: the path for
+ * anything that names one, the command for Bash, the URL for a fetch.
+ * Display only. */
 const TARGET_FIELDS = ['file_path', 'notebook_path', 'path', 'pattern', 'command', 'url', 'description'];
 
 function toolTarget(payload) {
@@ -82,8 +82,8 @@ function toolTarget(payload) {
 
 /* Whether a finished call failed. There is no one agreed error field across
  * tools, so this reads the three shapes Claude Code actually emits and treats
- * anything else as a pass — an activity row that wrongly reads red is worse
- * than one that misses a failure the terminal shows anyway. */
+ * anything else as a pass — a status that wrongly reads red is worse than
+ * one that misses a failure the terminal shows anyway. */
 function toolFailed(payload) {
   const res = payload.tool_response;
   if (!res || typeof res !== 'object') return false;
@@ -235,10 +235,6 @@ class HookMonitor {
     this.tokens = new Map(); // sessionId -> the token its launch was given (see claudeCmd)
     this.models = new Map(); // sessionId -> last known model id (from the transcript)
     this.usage = new Map(); // sessionId -> accumulated transcript usage (see usageState)
-    // sessionId -> the conversation it is writing right now. Set from every
-    // hook event, so it is known from SessionStart onwards rather than only
-    // once a turn has ended (which is when `usage` first gets a path).
-    this.transcripts = new Map();
     this.settleTimers = new Map(); // sessionId -> its pending summary re-reads (see settleSummary)
     this.watcher = null;
     this.sweepTimer = null;
@@ -454,18 +450,12 @@ class HookMonitor {
         this.refreshFromTranscript(sessionId, tpath);
         this.settleSummary(sessionId, tpath);
       }
-      // which Claude conversation this agent is writing — the History screen
-      // takes the same id, so a notification can open the full transcript, and
-      // history:delete can refuse to unlink it
-      const transcript = tpath ? path.posix.basename(tpath, '.jsonl') : null;
-      if (transcript) this.transcripts.set(sessionId, transcript);
       const isTool = event === 'PreToolUse' || event === 'PostToolUse';
       this.onEvent(sessionId, {
         event,
         tool: typeof payload.tool_name === 'string' ? payload.tool_name.slice(0, 40) : null,
         message: typeof payload.message === 'string' ? payload.message.slice(0, 200) : null,
         model: this.models.get(sessionId) || null,
-        transcript,
         // what the call is on, and — once it has finished — whether it worked
         target: isTool ? toolTarget(payload) : null,
         failed: event === 'PostToolUse' ? toolFailed(payload) : false,
@@ -641,7 +631,6 @@ class HookMonitor {
       if (live.has(id)) continue;
       this.usage.delete(id);
       this.models.delete(id);
-      this.transcripts.delete(id);
       dropped = true;
     }
     if (dropped) this.persistUsage();
@@ -654,13 +643,6 @@ class HookMonitor {
       staleTokens = true;
     }
     if (staleTokens) this.persistTokens();
-  }
-
-  /* The conversation each of these sessions is writing right now. history:delete
-   * asks before removing transcripts, so a running agent never loses the file
-   * it is appending to. */
-  transcriptIds(sessionIds) {
-    return sessionIds.map((id) => this.transcripts.get(id)).filter(Boolean);
   }
 
   /* Read whatever the transcript gained since the last turn, and fold it into
@@ -797,7 +779,6 @@ class HookMonitor {
     this.persistTokens();
     this.models.delete(sessionId);
     this.usage.delete(sessionId);
-    this.transcripts.delete(sessionId); // otherwise one entry per killed session for the app's lifetime
     this.persistUsage();
     if (!token) return;
     const file = `${sessionId}-${token}.json`;

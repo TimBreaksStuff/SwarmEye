@@ -53,26 +53,12 @@ const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SPARK_CHARS = '▁▂▃▄▅▆▇█';
 const TOOL_TRAIL_MAX = 3;
 
-/* ---- what this agent has actually been doing ----
- *
- * One row per tool call for the activity popover, opened by PreToolUse and
- * closed by the matching PostToolUse (which is where the duration and the
- * pass/fail come from). Both this and the touched-file sets are bounded and
- * renderer-only: main already sends every event the pane needs, so keeping a
- * second copy of it over there would buy nothing.
- *
- * The hook state file holds one event at a time, so a call whose PreToolUse was
- * overwritten before the watcher read it never appears — the list is what was
- * seen, not a guaranteed-complete log, and the popover says so. */
-const ACTIVITY_MAX = 60;
-const TOUCHED_MAX = 300;
-
 /* Claude Code's own Task subagents. They are invisible in a terminal — the
  * parent's pane is where all of their output lands — so the `Task` calls the
  * hook stream already reports are kept in their own short list, which is what
- * the header chip counts and the activity popover names. Their own tool calls
- * never reach us: a subagent runs in its own context and fires no hooks of its
- * own, so "what it is doing" is not answerable, only "it is still running". */
+ * the header chip counts. Their own tool calls never reach us: a subagent runs
+ * in its own context and fires no hooks of its own, so "what it is doing" is
+ * not answerable, only "it is still running". */
 const SUBAGENTS_MAX = 20;
 
 /* Calls started but not yet reported back. Parallel tool use is normal, a lost
@@ -91,8 +77,6 @@ const READ_ONLY_LIFT = 'You can edit files again — the read-only request is li
 
 /* Tools that change a file, and the ones that only look at one — these two
  * only split a list in a popover. */
-const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-const FILE_READ_TOOLS = new Set(['Read', 'NotebookRead']);
 
 /* How long the agent has been blocked, in the coarsest unit that is still true:
  * the question this answers is "40 seconds or 40 minutes", never the seconds. */

@@ -18,9 +18,6 @@
   <link rel="stylesheet" href="features/message/message.css" />
   <link rel="stylesheet" href="features/board/board.css" />
   <link rel="stylesheet" href="features/skills/skills.css" />
-  <link rel="stylesheet" href="features/swarmview/swarmview.css" />
-  <link rel="stylesheet" href="features/timeline/timeline.css" />
-  <link rel="stylesheet" href="features/history/history.css" />
   <link rel="stylesheet" href="styles/chrome-clean.css" />
   <!-- these two took BOTH halves — app.css's and chrome-clean's — so they are
        self-contained and belong after it rather than before -->
@@ -130,6 +127,9 @@
         <span class="rail-tile-glyph">+</span><span class="rail-tile-name">Add workspace</span>
       </button>
 
+      <div class="leftbar-spacer"></div>
+
+      <div id="rail-foot">
       <div class="ws-head nav-head"><span>Views</span></div>
 
       <button id="board-btn" class="rail-tile" aria-label="Task board (Ctrl+Shift+B)">
@@ -137,30 +137,11 @@
         <span class="rail-tile-name">Task Board</span>
       </button>
 
-      <div class="leftbar-spacer"></div>
-
-      <div id="swarm-map" aria-label="Swarm overview — agent status">
-        <div class="swarm-map-head">
-          <div class="swarm-map-title">Swarm</div>
-          <div class="swarm-map-footer" id="swarm-map-footer"></div>
-        </div>
-        <div class="swarm-map-grid" id="swarm-map-grid"></div>
-      </div>
-
-      <button id="swarm-view-btn" class="rail-tile" aria-label="Swarm View — live map of every agent (Ctrl+Shift+S)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2.6"/><circle cx="12" cy="12" r="8.5" stroke-dasharray="2.4 2.8"/><circle cx="12" cy="3.5" r="1.6" fill="currentColor" stroke="none"/><circle cx="19.4" cy="16.2" r="1.6" fill="currentColor" stroke="none"/><circle cx="4.6" cy="16.2" r="1.6" fill="currentColor" stroke="none"/></svg>
-        <span class="rail-tile-name">Swarm View</span>
-      </button>
-
-      <button id="history-btn" class="rail-tile" aria-label="History — past conversations, resumable in a new pane">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V10H9"/><path d="M12 7.8V12l3 1.8"/></svg>
-        <span class="rail-tile-name">History</span>
-      </button>
-
       <button id="skills-btn" class="rail-tile" aria-label="Skills — install and manage agent skills">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5c0-1 .8-1.5 2-1.5h5v15H6c-1.2 0-2-.5-2-1.5V5.5Z"/><path d="M20 5.5c0-1-.8-1.5-2-1.5h-5v15h5c1.2 0 2-.5 2-1.5V5.5Z"/></svg>
         <span class="rail-tile-name">Skills</span>
       </button>
+      </div>
     </div>
     </aside>
 
@@ -313,53 +294,6 @@
       </div>
     </div>
 
-    <div id="history-view" hidden>
-      <div class="board-box">
-        <div class="board-head">
-          <div class="kbd-title">History</div>
-          <div class="board-head-actions">
-            <select id="history-ws" data-tip="Which workspace's past conversations to list"></select>
-            <button id="history-refresh-btn" class="pill" data-tip="Re-read the transcript folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20.5 4v4.5H16"/></svg><span>Refresh</span></button>
-            <button id="history-archive-btn" class="pill" data-tip="Conversations older than the 15 most recent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="4.5" rx="1.2"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M10 13h4"/></svg><span>Archive</span></button>
-            <button id="history-close-btn" class="pill" data-tip="Close history (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
-          </div>
-        </div>
-        <div id="history-main">
-          <div id="history-list-head" class="board-archive-head">
-            <span class="board-archive-title"><span id="history-list-title">Recent </span><span id="history-list-count" class="board-col-n"></span></span>
-            <button id="history-delete-all" class="board-archive-delall"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.4 1.4 0 0 0 1.4 1.3h6.4a1.4 1.4 0 0 0 1.4-1.3l.9-12.5"/><path d="M10.4 10v6.5M13.6 10v6.5"/></svg><span>Delete all</span></button>
-          </div>
-          <div class="skills-filters">
-            <input id="history-search" type="search" placeholder="filter past conversations…" spellcheck="false" />
-            <select id="history-provider" data-tip="Which provider ran the conversation — OpenRouter ones carry a vendor/model slug">
-              <option value="">all providers</option>
-              <option value="anthropic">anthropic</option>
-              <option value="openrouter">openrouter</option>
-            </select>
-          </div>
-          <div id="history-empty" class="skills-empty" hidden></div>
-          <div id="history-list"></div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- outside #history-view on purpose: the notification centre opens the
-         same modal for a running agent, with the History screen closed -->
-    <div id="hist-modal" hidden>
-      <div id="hist-modal-box">
-        <div id="hist-modal-head">
-          <div id="hist-modal-title" class="kbd-title">Conversation</div>
-          <div class="board-head-actions">
-            <button id="hist-modal-download" class="pill" data-tip="Save this conversation as a text file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v11"/><path d="m7.8 10.6 4.2 4.2 4.2-4.2"/><path d="M4.5 17v2a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg><span>Download</span></button>
-            <button id="hist-modal-close" class="pill" data-tip="Close (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
-          </div>
-        </div>
-        <div id="hist-modal-meta"></div>
-        <div id="hist-modal-body"></div>
-      </div>
-    </div>
-
     <!-- the coordinator: a multi-part request, then the subtasks it split into,
          reviewed before any of them becomes a task -->
     <div id="coord-modal" hidden>
@@ -380,67 +314,6 @@
           <button id="coord-create" class="pill" hidden>Create tasks</button>
         </div>
       </div>
-    </div>
-
-    <div id="swarm-view" hidden>
-      <div class="board-box">
-        <div class="board-head">
-          <div class="kbd-title">Swarm View</div>
-          <div class="board-head-actions">
-            <span id="sv-counts" class="sv-counts"></span>
-            <span class="sv-seg">
-              <span class="sv-font-tag">map</span>
-              <button id="sv-map-font-minus" class="pill sv-font-btn" data-tip="Smaller labels on the map">−</button>
-              <button id="sv-map-font-plus" class="pill sv-font-btn" data-tip="Bigger labels on the map">+</button>
-            </span>
-            <span class="sv-seg">
-              <button id="sv-font-minus" class="pill sv-font-btn" data-tip="Smaller text in the dock and panels">−</button>
-              <button id="sv-font-plus" class="pill sv-font-btn" data-tip="Bigger text in the dock and panels">+</button>
-            </span>
-            <span id="sv-layout" class="sv-seg" data-tip="How the map arranges agents">
-              <button class="pill" data-layout="clusters">clusters</button>
-              <button class="pill" data-layout="ring">ring</button>
-            </span>
-            <button id="sv-preview-btn" class="pill" data-tip="Show a live terminal preview of every running agent above the activity list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17"/></svg><span>Previews</span></button>
-            <button id="sv-click-btn" class="pill" data-tip="Whether a single click on an agent selects it here or jumps straight to its pane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4.2 18.5 11l-5.4 1.4L11 18 6 4.2Z"/></svg><span>Click</span></button>
-            <button id="sv-timeline-btn" class="pill" data-tip="Show the last hour as a ribbon under the map — one lane per agent, coloured by what it was doing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11M4 12h16M4 17.5h8"/></svg><span>Timeline</span></button>
-            <button id="swarm-view-close-btn" class="pill" data-tip="Close swarm view (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
-          </div>
-        </div>
-        <div id="sv-body">
-          <div id="sv-canvas">
-            <div id="sv-scene">
-              <svg id="sv-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
-              <div id="sv-hubs"></div>
-              <div id="sv-nodes"></div>
-            </div>
-            <button id="sv-zoom" data-tip="Reset zoom to 100%" hidden>100%</button>
-            <div id="sv-empty" class="skills-empty" hidden>no agents running — right-click the map to start one</div>
-            <div id="sv-legend">
-              <span class="sv-legend-item sv-legend-busy">busy</span>
-              <span class="sv-legend-item sv-legend-waiting">waiting</span>
-              <span class="sv-legend-item sv-legend-done">done</span>
-              <span class="sv-legend-item sv-legend-idle">idle</span>
-              <span class="sv-legend-item sv-legend-exited">exited</span>
-              <span class="sv-legend-note">ring = status · fill = workspace</span>
-              <span class="sv-legend-note sv-legend-hint">scroll = zoom · drag = pan · right-click: an agent for its actions, the map for a new one</span>
-            </div>
-          </div>
-          <div id="sv-resizer" data-tip="Drag to resize the dock"></div>
-          <aside id="sv-dock">
-            <div id="sv-terms" hidden></div>
-            <div id="sv-agents">
-              <div class="sv-panel-head">
-                <span class="sv-panel-title">Agents</span>
-                <span id="sv-agents-meta" class="sv-panel-meta"></span>
-              </div>
-              <div id="sv-agents-list"></div>
-            </div>
-          </aside>
-        </div>
-        <div id="sv-timeline" hidden></div>
-      </div>
-      <div id="sv-menu" hidden></div>
     </div>
 
     <aside id="notif-panel" hidden>
@@ -498,19 +371,6 @@
     <input id="palette-input" placeholder="jump to an agent, workspace, task, skill, view…" spellcheck="false" autocomplete="off" />
     <div id="palette-list"></div>
     <div id="palette-empty" class="palette-empty" hidden>nothing matches</div>
-  </div>
-
-  <div id="notes-pop" hidden>
-    <div class="notes-head">
-      <div id="notes-title" class="kbd-title">Notes</div>
-      <button id="notes-close" class="pill" data-tip="Close (Esc) — unsaved text is saved first">Close</button>
-    </div>
-    <textarea id="notes-text" rows="14" spellcheck="false"
-      placeholder="What should the next agent in this workspace already know?&#10;&#10;Conventions, gotchas, where things live, decisions that aren't in the code."></textarea>
-    <div class="notes-foot">
-      <span id="notes-hint" class="notes-hint"></span>
-      <button id="notes-save" class="pill pill-primary" data-tip="Write .swarmeye/notes.md (Ctrl+Enter)">Save</button>
-    </div>
   </div>
 
   <div id="notif-pop" hidden></div>
@@ -634,11 +494,6 @@
     <div class="kbd-row kbd-opt"><span>Show last command in pane header</span>
       <span class="opt-ctl">
         <input type="checkbox" id="show-initial-cmd-toggle" data-tip="Shows a second header row under every pane's title with the most recently submitted command — a task's launch prompt until you type a new line, which then takes over.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Remember prompt history</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="prompt-history-toggle" data-tip="Remembers the lines you submit to agents, per workspace, and offers the last 50 in the command palette (Ctrl+K). Choosing one types it into the focused agent without submitting. Off stops recording; what is already stored stays until you clear it from the palette.">
       </span>
     </div>
     <div class="kbd-row kbd-opt"><span>Show cost &amp; context panel</span>
@@ -784,7 +639,6 @@
     <div class="kbd-row"><span>Search across all agents</span><kbd>Ctrl+Shift+G</kbd></div>
     <div class="kbd-row"><span>Message agents (@name / @all)</span><kbd>Ctrl+Shift+E</kbd></div>
     <div class="kbd-row"><span>Task board</span><kbd>Ctrl+Shift+B</kbd></div>
-    <div class="kbd-row"><span>Swarm view</span><kbd>Ctrl+Shift+S</kbd></div>
     <div class="kbd-row"><span>Font bigger / smaller / reset</span><kbd>Ctrl++ · Ctrl+− · Ctrl+0</kbd></div>
     <div class="kbd-row"><span>Type a literal tab in terminal</span><kbd data-keep-ctrl>Ctrl+I</kbd></div>
     <div class="kbd-row"><span>Close search / this panel</span><kbd>Esc</kbd></div>
@@ -814,21 +668,15 @@
   <script src="grid.js"></script>
   <script src="scope.js"></script>
   <script src="launcher.js"></script>
+  <script src="features/rail/wsagents.js"></script>
   <script src="topbar.js"></script>
   <script src="railgrip.js"></script>
+  <script src="features/rail/railfoot.js"></script>
   <script src="board.js"></script>
   <script src="skills.js"></script>
-  <script src="history.js"></script>
   <script src="coordinator.js"></script>
-  <script src="swarmview.js"></script>
-  <script src="timeline.js"></script>
   <script src="message.js"></script>
-  <script src="notes.js"></script>
-  <script src="diff.js"></script>
-  <script src="activity.js"></script>
-  <script src="roles.js"></script>
   <script src="palette.js"></script>
-  <script src="prompts.js"></script>
   <script src="preview.js"></script>
   <script src="sounds.js"></script>
   <script src="openrouter.js"></script>

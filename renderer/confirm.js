@@ -11,9 +11,9 @@
  * One action is armed app-wide at a time: arming a second disarms the first,
  * so a forgotten armed ✕ on another screen can't fire from a stray click.
  * The armed button and its expiry timer are tracked with the key so that
- * disarming always clears the look as well — one element can stand for two
- * keys (History's 🗑 serves both its sections), and a stale timeout must not
- * strip `.armed` from a button that is armed for something else. */
+ * disarming always clears the look as well — one element can stand for more
+ * than one key, and a stale timeout must not strip `.armed` from a button
+ * that is armed for something else. */
 const Confirm = (() => {
   const ARM_MS = 3000;
   let armed = { key: null, until: 0, btn: null, timer: null };

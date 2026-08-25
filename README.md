@@ -12,29 +12,29 @@ No accounts, no backend, no telemetry. SwarmEye rides your existing Claude Code 
 
 ## Status
 
-**1.63.37.** Windows (WSL) and macOS. Claude Code, plus OpenRouter through SwarmEye's own clean agent or [opencode](https://opencode.ai) / [pi](https://pi.dev).
+**1.63.44.** Windows (WSL) and macOS. Claude Code, plus OpenRouter through SwarmEye's own clean agent or [opencode](https://opencode.ai) / [pi](https://pi.dev).
 
 Recently solid:
 
+- **The rail's workspaces fold open into their agents** — an activity arc per row, a one-line summary of what each agent was asked to do, click to jump to its pane. Right-click a workspace for its menu.
+- **A smaller surface.** History, the Swarm View, the swarm map, the Activity popover, workspace notes, prompt history, the roles editor and the review popover are gone. Reviewing, committing and merging an agent's worktree happens in that agent's own terminal.
 - **The preview dock reloads itself** 1.5 seconds after an agent in that workspace finishes a turn — untick `auto` beside the reload button to stop it.
-- **Free-canvas layout** when auto-organize is off — each pane is its own rectangle, resized from any edge, remembered per workspace.
-- **OpenRouter harnesses start on Windows.** A missing `node` / `opencode` / `pi` is named in the pane instead of `[exited]`.
 
 ---
 
 ## What it does
 
-**Agents.** As many panes as you want, auto-arranged or placed by hand. Launch as Builder, Reviewer, Scout or Planner — a short prompt plus the model that job is worth — or add your own roles. `Ctrl+M` copies the agent you're in (same model, CLI, effort, role, permissions). Live state comes from Claude Code's hooks: working (tool and file), waiting on you, or done. A blocked pane glows and shows how long it has waited; `Ctrl+.` jumps to whoever has waited longest. Click the status for every tool call. A `▸ n` chip counts Task subagents. Pick `plan` mid-run to stop edits. An Opus pane on a long read-only streak offers `→ Haiku`.
+**Agents.** As many panes as you want, auto-arranged or placed by hand. Launch as Builder, Reviewer, Scout or Planner — a short prompt plus the model that job is worth. `Ctrl+M` copies the agent you're in (same model, CLI, effort, role, permissions). Live state comes from Claude Code's hooks: working (tool and file), waiting on you, or done. A blocked pane glows and shows how long it has waited; `Ctrl+.` jumps to whoever has waited longest. Click the status for every tool call. A `▸ n` chip counts Task subagents. Pick `plan` mid-run to stop edits. An Opus pane on a long read-only streak offers `→ Haiku`.
 
 **Work.** Each folder is a colour-coded tile; the selected one is where new agents start. The coordinator splits a request into role-assigned tasks you can edit before anything runs. The orchestrator is one lead that plans and a crew of cheaper workers sharing one pane slot. The task board queues work with model, effort, priority and schedule, and chains follow-ups (`build → review → fix`); three failed starts leaves the task pending with `▶` to retry. `Ctrl+Shift+E` messages one agent, several, or `@all`, with `@` files and pasted screenshots. `Ctrl+K` is the command palette.
 
 **Models.** Every Claude tier in every picker — Sonnet, Opus, Haiku, Fable, `opusplan`, `opus[1m]` / `sonnet[1m]` — each labelled so a subscription tier isn't mistaken for OpenRouter. Paste one openrouter.ai key and every picker grows the catalog (Kimi, Qwen, GLM, GPT, Grok, …). Those agents run through your key, with catalog pricing in the cost panel and today's spend / remaining credits in the rail. Each one is a **clean agent** (SwarmEye's own CLI) unless you hand the same model to opencode or pi. The empty-workspace launch card can start a whole swarm on any of the three.
 
-**Code.** Isolation gives every agent its own git worktree and branch. Review the full patch, commit, and `--no-ff` merge back. Scope an agent to an area (from `.swarmeye/areas.json`) or a folder — it can still read the repo, but Claude Code deny rules block edits outside, even in `auto`. The git chip shows branch, `git diff --stat`, checkout or create. `.swarmeye/notes.md` is the workspace notebook every new agent is told to read.
+**Code.** Isolation gives every agent its own git worktree and branch. Scope an agent to an area (from `.swarmeye/areas.json`) or a folder — it can still read the repo, but Claude Code deny rules block edits outside, even in `auto`. The git chip shows branch, `git diff --stat`, checkout or create.
 
-**Around the swarm.** Swarm view maps every agent across every workspace, with live previews and a one-hour timeline. The preview dock is the workspace's localhost dev server, reloading itself when an agent there finishes. History reads any past conversation, resumes it, or exports text / HTML. Skills install from GitHub or show the ones agents wrote. Notifications (optionally spoken) fire when an agent finishes or needs you; approve/deny from the bell. Agents live in a dedicated tmux server, so quitting only detaches them. The app checks GitHub Releases and updates in one click.
+**Around the swarm.** The preview dock is the workspace's localhost dev server, reloading itself when an agent there finishes. Skills install from GitHub or show the ones agents wrote. Notifications (optionally spoken) fire when an agent finishes or needs you; approve/deny from the bell. Agents live in a dedicated tmux server, so quitting only detaches them. The app checks GitHub Releases and updates in one click.
 
-The left rail shows the real 5-hour and weekly Claude limits, plus OpenRouter spend if you have a key. Each pane has a cost & context panel (fill, spend, cache hit rate, tokens per turn) from the transcript — no extra API calls.
+The left rail shows the real 5-hour and weekly Claude limits, plus OpenRouter spend if you have a key. Each workspace there folds open into the agents running inside it — a spinning arc while one is working, the amber pulse when it wants you, and a one-line summary of its task; click a row to jump to that pane. Drag the rail's right border to switch between the icon rail and the wide one; drag the grip line above **Views** down to fold Task Board / Skills into a single icon bar, and up to unfold them. Each pane has a cost & context panel (fill, spend, cache hit rate, tokens per turn) from the transcript — no extra API calls.
 
 ---
 

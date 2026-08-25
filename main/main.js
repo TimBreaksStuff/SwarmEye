@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('./config');
 const template = require('./template');
-const { PtyManager, NOTES_REL, MODELS, EFFORT_FLAGS, SESSION_ID_RE } = require('./sessions');
+const { PtyManager, MODELS, EFFORT_FLAGS } = require('./sessions');
 const roles = require('./roles');
 const { UsageMonitor } = require('./usage');
 const { HookMonitor } = require('./hooks');
@@ -12,8 +12,6 @@ const worktree = require('./worktree');
 const agentScope = require('./scope');
 const attach = require('./attach');
 const { HealthMonitor } = require('./health');
-const { listSessions: listHistory, readSession: readHistory, deleteSessions: deleteHistory,
-  validId: validHistoryId, localSessionId } = require('./history');
 const { IS_WIN } = require('./platform');
 const { UpdateChecker } = require('./update');
 const { SpeechBridge } = require('./speech');
@@ -349,8 +347,8 @@ function registerIpc() {
     if (existing) return { workspace: existing, workspaces: cfg.workspaces, template: templateResult };
     /* Adding a folder that was removed earlier brings the old workspace back
      * rather than minting a second one for the same path: its id is what the
-     * tasks, sessions and notes are filed under, so a new id would orphan all
-     * of them and leave the archived entry behind forever. */
+     * tasks and sessions are filed under, so a new id would orphan all of
+     * them and leave the archived entry behind forever. */
     const archived = (cfg.archivedWorkspaces || []).find((w) => w.path === p);
     if (archived) {
       cfg.archivedWorkspaces = cfg.archivedWorkspaces.filter((w) => w.id !== archived.id);
@@ -418,44 +416,6 @@ function registerIpc() {
     return { workspaces: cfg.workspaces };
   });
 
-  /* The workspace notebook (.swarmeye/notes.md). The path is resolved here
-   * from the workspace id and always sits under that workspace's own folder —
-   * the renderer never names a file, so there is nothing to escape out of.
-   * Plain fs, not the shell: the workspace path is a host path on both
-   * platforms (it is what node-pty chdirs into), unlike the transcripts. */
-  const NOTES_MAX = 20000; // the agent pays to read this file — keep it a page, not a book
-
-  function workspaceNotesFile(workspaceId) {
-    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
-    return ws ? path.join(ws.path, NOTES_REL) : null;
-  }
-
-  ipcMain.handle('notes:read', (e, { workspaceId }) => {
-    const file = workspaceNotesFile(workspaceId);
-    if (!file) return { ok: false, reason: 'no-workspace' };
-    try {
-      return { ok: true, text: fs.readFileSync(file, 'utf8') };
-    } catch {
-      return { ok: true, text: '' }; // not written yet is not a failure
-    }
-  });
-
-  ipcMain.handle('notes:write', (e, { workspaceId, text }) => {
-    const file = workspaceNotesFile(workspaceId);
-    if (!file) return { ok: false, reason: 'no-workspace' };
-    try {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      // tmp+rename like every other persisted file — a crash mid-write must
-      // not truncate the shared notebook agents are told to read
-      fs.writeFileSync(file + '.tmp', String(text || '').slice(0, NOTES_MAX), 'utf8');
-      fs.renameSync(file + '.tmp', file);
-      return { ok: true };
-    } catch (err) {
-      debugLog('[notes:write] FAIL ' + err.message);
-      return { ok: false, reason: err.message };
-    }
-  });
-
   // the preview dock asks where its dev server is; main probes, then starts one
   ipcMain.handle('preview:resolve', (e, { workspaceId, preferred }) => {
     const ws = config.load().workspaces.find((w) => w.id === workspaceId);
@@ -508,31 +468,10 @@ function registerIpc() {
 
   /* ---- isolated agents: a worktree each, and the way back ---- */
 
-  /* Every git call below addresses either a workspace or one agent's worktree,
-   * and resolves it here from an id — like notes:read, the renderer never names
-   * a path, so there is nothing to escape out of. The shape returned is the one
-   * git.js and worktree.js take: { id, path }. */
-  function repoTarget({ workspaceId, sessionId, worktreeName }) {
-    const cfg = config.load();
-    if (sessionId) {
-      const meta = (cfg.sessions || {})[sessionId];
-      return meta && meta.cwd ? { id: meta.id, path: meta.cwd } : null;
-    }
-    const ws = cfg.workspaces.find((w) => w.id === workspaceId);
-    if (!ws) return null;
-    // a worktree whose agent is gone is still reviewable, and is named rather
-    // than pointed at — the path is built here and only if it is really there
-    if (worktreeName) {
-      const wt = restartWorktree(ws, { name: worktreeName });
-      return wt ? { id: ws.id + ':' + wt.name, path: wt.path } : null;
-    }
-    return ws;
-  }
-
   /* The worktree a restarting agent goes back into, rebuilt from its name.
-   * Anything that no longer exists on disk (removed from the review popover
-   * while the pane sat exited) falls back to the workspace itself rather than
-   * failing the restart. */
+   * Anything that no longer exists on disk (removed by hand while the pane sat
+   * exited) falls back to the workspace itself rather than failing the
+   * restart. */
   function restartWorktree(ws, prev) {
     const name = String((prev && prev.name) || '');
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) return null;
@@ -540,19 +479,6 @@ function registerIpc() {
     if (!fs.existsSync(p)) return null;
     const branch = String((prev && prev.branch) || '');
     return { name, path: p, branch: /^[A-Za-z0-9][\w./-]*$/.test(branch) ? branch : 'swarmeye/' + name };
-  }
-
-  /* Resuming a harness conversation from the History screen: what the launch
-   * needs to carry one on, or {} when this is not one (a plain Claude resume
-   * rides `claude --resume` instead, and an id whose conversation the harness
-   * can no longer name simply starts fresh — the same rule ↻ follows). */
-  function harnessResume(model, historyId) {
-    const id = localSessionId(historyId);
-    if (!id) return {};
-    if (providers.cleanSlugOf(model)) return { continueFrom: id };
-    if (!providers.isForeign(model)) return {};
-    const resumeId = providers.foreignResumeId(hooks.stateDir, providers.foreignHarness(model), id);
-    return resumeId ? { continueFrom: id, resumeId } : {};
   }
 
   // whether agents started in this workspace get a worktree of their own.
@@ -564,48 +490,6 @@ function registerIpc() {
     if (ws) ws.isolate = !!isolate;
     config.save(cfg);
     return { workspaces: cfg.workspaces };
-  });
-
-  ipcMain.handle('worktree:list', async (e, workspaceId) => {
-    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
-    if (!ws) return null;
-    const entries = await worktree.list(ws);
-    if (!entries) return null;
-    // which of them still have an agent in them — the rest are the leftovers
-    // the popover offers to remove
-    const live = new Set(Object.values(config.load().sessions || {})
-      .filter((m) => m.worktree)
-      .map((m) => m.worktree.name));
-    return entries.map((w) => ({ ...w, live: live.has(w.name) }));
-  });
-
-  ipcMain.handle('worktree:remove', async (e, { workspaceId, name }) => {
-    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
-    if (!ws) return { ok: false, error: 'unknown workspace' };
-    const res = await worktree.remove(ws, String(name || ''));
-    if (res.ok && git) git.tick();
-    return res;
-  });
-
-  ipcMain.handle('git:patch', (e, target) => {
-    const t = repoTarget(target || {});
-    return t ? worktree.patch(t) : null;
-  });
-
-  ipcMain.handle('git:commit', async (e, { workspaceId, sessionId, message }) => {
-    const t = repoTarget({ workspaceId, sessionId });
-    if (!t) return { ok: false, error: 'unknown target' };
-    const res = await worktree.commit(t, message);
-    if (res.ok && git) git.tick();
-    return res;
-  });
-
-  ipcMain.handle('git:merge', async (e, { workspaceId, branch }) => {
-    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
-    if (!ws) return { ok: false, error: 'unknown workspace' };
-    const res = await worktree.merge(ws, String(branch || ''));
-    if (git) git.tick(); // the workspace chip moved either way (merged, or aborted back)
-    return res;
   });
 
   ipcMain.handle('workspace:reorder', (e, ids) => {
@@ -848,49 +732,10 @@ function registerIpc() {
     };
   });
 
-  // past conversations for one workspace, for the History screen
-  ipcMain.handle('history:list', (e, workspaceId) => {
-    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
-    return ws ? listHistory(ws) : null;
-  });
-
-  // one whole past conversation, for the History screen's transcript modal.
-  // The id lands in a shell command line (or a path, for a harness's own
-  // transcript) — re-validated here against both shapes history.js hands out.
-  ipcMain.handle('history:read', (e, { workspaceId, id }) => {
-    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
-    if (!ws || !validHistoryId(id)) return null;
-    return readHistory(ws, id);
-  });
-
-  /* the History screen's 🗑 Delete All: the conversations it listed, by id.
-   * Any transcript a running agent is still writing is kept back — unlinking
-   * one freezes that pane's cost panel, breaks its ☰ Transcript link, and
-   * leaves a later restart-with-resume `--continue`ing somebody else's thread,
-   * none of which the click asked for. The renderer is told how many it kept. */
-  ipcMain.handle('history:delete', async (e, { workspaceId, ids }) => {
-    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
-    if (!ws || !Array.isArray(ids)) return { ok: false, deleted: 0, kept: 0 };
-    const live = new Set(hooks.transcriptIds(ptys.sessionIds()));
-    const wanted = ids.filter((id) => typeof id === 'string');
-    // a harness row's id carries its harness; what the running agent reports
-    // is the bare transcript name, so the prefix comes off before the compare
-    const doomed = wanted.filter((id) => !live.has(id.replace(/^(clean|opencode|pi):/, '')));
-    const deleted = await deleteHistory(ws, doomed);
-    return { ok: deleted === doomed.length, deleted, kept: wanted.length - doomed.length };
-  });
-
-  // role presets for the + Agent picker and the coordinator. The prompt rides
-  // along now that the roles are editable (main/roles.js) — the editor has to
-  // show what it is editing — but the launch still reads main's own copy, so a
-  // renderer that sent a doctored prompt back would only be editing the table.
-  ipcMain.handle('roles:list', () => roles.list().map((r) => ({ ...r })));
-
-  // the whole table, not a patch: a role missing from what the editor sends is
-  // a role the user deleted. Everything is re-validated in roles.save — a role
-  // prompt is the one field whose text reaches a shell command line.
-  ipcMain.handle('roles:save', (e, list) => roles.save(list).map((r) => ({ ...r })));
-
+  // role presets for the + Agent picker, the coordinator and the orchestrator.
+  // The prompt itself stays in main: it is only ever appended at launch, and
+  // the renderer has nothing to do with it.
+  ipcMain.handle('roles:list', () => roles.list().map(({ key, label, model }) => ({ key, label, model })));
   /* A scope is a permission boundary, so everything about it fails loudly: a
    * path that is no longer there, or a harness with no permission layer to
    * deny with (clean/opencode/pi answer to no settings file), refuses the
@@ -921,7 +766,7 @@ function registerIpc() {
     return { scope: { label, paths } };
   }
 
-  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, resumeId, role, effort, continueFrom, scope }) => {
+  ipcMain.handle('session:create', async (e, { workspaceId, cols, rows, model, role, effort, scope }) => {
     await ptysReady;
     const cfg = config.load();
     const ws = cfg.workspaces.find((w) => w.id === workspaceId);
@@ -956,7 +801,6 @@ function registerIpc() {
       const session = ptys.spawn(ws, cols || 80, rows || 24, {
         model,
         role: roles.has(role) ? role : undefined,
-        resume: SESSION_ID_RE.test(String(resumeId || '')) ? resumeId : undefined,
         effort: EFFORT_FLAGS.includes(String(effort || '')) ? effort : undefined,
         agentName: wt ? wt.agentName : undefined,
         worktree: wt || undefined,
@@ -965,12 +809,6 @@ function registerIpc() {
         // because the skills manager lives in main, not in the pty layer. All
         // three bare harnesses take them; each builder has its own way in.
         orSkills: providers.cleanSlugOf(model) || providers.isForeign(model) ? skills.orSkillDirs(ws.id) : undefined,
-        // resuming a clean/opencode/pi conversation from the History screen.
-        // Those harnesses keep their own transcripts, so there is no
-        // `claude --resume` to give: the launch is handed the conversation to
-        // carry on, and — for the two that name their own sessions — the id
-        // only their CLI can reopen, read back from beside that transcript.
-        ...harnessResume(model, continueFrom),
       });
       if (wt && git) git.tick(); // the new pane's chip shows its own branch at once
       debugLog('[session:create] ok ' + session.id + ' "' + session.agentName + '" in ' + session.cwd);
@@ -1020,7 +858,6 @@ function registerIpc() {
         workspaceId: ws.id,
         workspaceName: ws.name,
         cwd: wt ? wt.path : ws.path,
-        workspacePath: ws.path,
         worktree: wt ? { name: wt.name, branch: wt.branch } : undefined,
         agentName: String(payload.agentName || '').slice(0, 40).trim() || 'agent',
         cols: payload.cols,
@@ -1077,10 +914,7 @@ function registerIpc() {
   });
 
   // save a pane's scrollback; the renderer sends the text, we pick the file
-  // `ext` is html for the History screen's page export, txt for everything
-  // else; the renderer builds the document either way, so this only picks the
-  // dialog's filter and default name
-  ipcMain.handle('session:export', async (e, { name, text, ext }) => {
+  ipcMain.handle('session:export', async (e, { name, text }) => {
     const safe = String(name || 'agent').replace(/[^A-Za-z0-9 _.-]/g, '_').slice(0, 40).trim() || 'agent';
     const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
     const html = ext === 'html';

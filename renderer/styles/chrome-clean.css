@@ -91,21 +91,17 @@
 }
 
 /* ============================== VIEWS ==============================
- * Task Board, Skills, History and Swarm View were built before the chrome
- * went flat: capsule mono-caps buttons, translucent blurred cards, an accent
- * glow on anything selected and a mono uppercase page title in accent. All
- * four share .board-head / .kbd-title / .pill, so one section retunes them
- * into the language the top bar, the rail and the panes now speak.
- * The swarm map itself (nodes, pulses, links, timeline) is data, not chrome —
- * its colour and motion carry meaning, so it is left alone. */
+ * The Task Board and Skills were built before the chrome went flat: capsule
+ * mono-caps buttons, translucent blurred cards, an accent glow on anything
+ * selected and a mono uppercase page title in accent. Both share
+ * .board-head / .kbd-title / .pill, so one section retunes them into the
+ * language the top bar, the rail and the panes now speak. */
 
 /* padding, and the flat background the hex wash is not part of: the four views
  * sit above body::before (z-index 1), so left transparent they show the grid
  * through every gap between their cards. They read as documents, not chassis. */
 #board,
-#skills-view,
-#history-view,
-#swarm-view {
+#skills-view{
   padding: 16px 20px;
   background: var(--bg);
 }
@@ -113,7 +109,6 @@
  * The mono uppercase treatment is kept for the small heads *inside* a view,
  * where it matches WORKSPACES and VIEWS in the rail. */
 .board-head .kbd-title,
-#hist-modal-head .kbd-title,
 #coord-modal-head .kbd-title {
   font-family: var(--font-ui);
   font-size: 15px;
@@ -157,12 +152,8 @@
 .pill-primary:hover { filter: brightness(1.08); }
 /* a toggle that is on reads as the top bar's accent chip, not as a second
  * primary button — there is only ever one of those */
-.sv-seg .pill.active,
-#board-archive-btn.pill.active,
-#history-archive-btn.pill.active,
-#sv-preview-btn.pill.active,
-#sv-timeline-btn.pill.active,
-#sv-click-btn.pill.active {
+
+#board-archive-btn.pill.active{
   color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border2));
@@ -170,14 +161,9 @@
 }
 /* − and + are different widths in the UI face, so an auto-width pair rendered
  * two unequal cells. One fixed cell, glyph centred in it. */
-.sv-font-btn { width: 30px; padding: 0; justify-content: center; }
-
 /* --- icons instead of emoji: one 14px box, one stroke weight --- */
 #board button > svg,
 #skills-view button > svg,
-#history-view button > svg,
-#swarm-view button > svg,
-#hist-modal button > svg,
 #coord-modal button > svg,
 #session-view button > svg,
 #notif-panel button > svg,
@@ -201,8 +187,6 @@
 .skill-remove-btn,
 .skill-repo-remove-btn,
 .board-archive-delall,
-.sv-yes,
-.sv-no,
 #board-form-category-manage,
 #session-view-export,
 #session-view-close {
@@ -220,7 +204,6 @@
 #board-form,
 #skills-form,
 #board-stats,
-#hist-modal-box,
 #coord-modal-box,
 #session-view-box {
   background: var(--surface);
@@ -231,7 +214,7 @@
 #skills-form,
 #board-stats,
 .skills-stat-card { border-radius: 10px; border-color: var(--border2); }
-#hist-modal-box,
+
 #coord-modal-box,
 #session-view-box { border-radius: 10px; }
 #board-new-btn:hover,
@@ -243,7 +226,6 @@
 /* --- section heads inside a view: the rail's WORKSPACES treatment --- */
 .board-stats-title,
 .board-archive-title,
-.sv-panel-title,
 .skills-stat-label {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -252,8 +234,6 @@
   text-transform: uppercase;
   color: var(--muted);
 }
-.sv-panel-title { font-size: calc(10px * var(--sv-fs)); }
-
 /* --- cards and rows: one row language --- */
 .board-card,
 .skill-row,
@@ -306,9 +286,7 @@
 .hist-resume,
 .skill-update-btn,
 .skill-repo-remove-btn,
-.board-archive-delall,
-.sv-yes,
-.sv-no {
+.board-archive-delall{
   height: 24px;
   padding: 0 9px;
   font-family: var(--font-ui);
@@ -319,9 +297,7 @@
   border-radius: 6px;
 }
 .board-archive-delall,
-.skill-repo-remove-btn,
-.sv-yes,
-.sv-no { color: var(--text2); border-color: var(--border2); background: transparent; }
+.skill-repo-remove-btn{ color: var(--text2); border-color: var(--border2); background: transparent; }
 .board-card-start,
 .hist-resume {
   color: var(--accent-text);
@@ -340,7 +316,6 @@
 .skill-repo-remove-btn:hover,
 .board-del:hover,
 .arch-del:hover,
-.sv-no:hover,
 .board-archive-delall:hover {
   color: var(--err);
   border-color: color-mix(in srgb, var(--err) 40%, var(--border2));
@@ -349,14 +324,11 @@
 
 /* --- inputs: one field shape --- */
 #skills-search,
-#history-search,
 #board-archive-search,
 #skills-form-url,
 .board-filters select,
 .board-archive-filters select,
-#board-category-filter,
-#history-ws,
-#history-provider {
+#board-category-filter{
   font-family: var(--font-ui);
   font-size: 12px;
   height: 30px;
@@ -365,9 +337,7 @@
   background: transparent;
   color: var(--text);
 }
-#history-search { flex: 1; }
 #skills-search:focus,
-#history-search:focus,
 #board-archive-search:focus,
 #skills-form-url:focus { border-color: var(--accent); outline: none; }
 
@@ -387,9 +357,6 @@
 .skill-remove-btn:focus-visible,
 .skill-repo-remove-btn:focus-visible,
 .board-archive-delall:focus-visible,
-.sv-yes:focus-visible,
-.sv-no:focus-visible,
-.sv-count:focus-visible,
 .board-form-actions button:focus-visible,
 #board-form-category-manage:focus-visible {
   outline: 2px solid var(--accent);
@@ -638,8 +605,8 @@
 /* ---- flat popovers, the stragglers ----
  * chrome-clean is "no glass or blur", and backdrop-filter is also a real
  * per-frame GPU cost: while any of these floats over streaming terminals the
- * compositor re-blurs its backdrop on every frame the panes repaint. Same
- * opaque-surface treatment #notes-pop already got. */
+ * compositor re-blurs its backdrop on every frame the panes repaint. They all
+ * take the same opaque-surface treatment. */
 .gs-box,
 #msg-pop,
 .branch-menu,
@@ -650,180 +617,6 @@
   backdrop-filter: none;
 }
 
-/* The review popover. Sized like a workbench rather than a menu — a patch is
-   the widest thing the app shows — and floating over whatever view is up. */
-#diff-pop {
-  position: fixed;
-  z-index: 60;
-  top: 50%;
-  left: 50%;
-  width: min(1100px, 94vw);
-  height: min(760px, 86vh);
-  min-width: 520px;
-  min-height: 360px;
-  max-width: 96vw;
-  max-height: calc(100vh - 120px); /* dragged to the top, still clear of the top bar */
-  overflow: hidden; /* `resize` does nothing while overflow is visible */
-  resize: both;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-}
-#diff-pop[hidden] { display: none; }
-.diff-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.diff-title { flex: 1; }
-.diff-branch {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--accent-text);
-  border: 1px solid var(--border2);
-  border-radius: 6px;
-  padding: 3px 8px;
-}
-.diff-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  gap: 12px;
-}
-.diff-side {
-  width: 240px;
-  flex: none;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.diff-side-head {
-  font-family: var(--font-ui);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted2);
-  margin-top: 6px;
-}
-/* buttons are inline by default, so the list has to say it is a column */
-.diff-files,
-.diff-worktrees {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.diff-file {
-  background: none;
-  border: none;
-  border-radius: 6px;
-  color: var(--text2);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-align: left;
-  padding: 4px 8px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: rtl; /* a long path is worth reading from its filename end */
-}
-.diff-file:hover { background: var(--hover); color: var(--text); }
-.diff-file.current { background: var(--hover); color: var(--accent-text); }
-.diff-file.untracked { color: var(--muted); font-style: italic; }
-.diff-wt {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 4px 2px 8px;
-  border-radius: 6px;
-}
-.diff-wt.current { background: var(--hover); }
-.diff-wt-name {
-  flex: 1;
-  background: none;
-  border: none;
-  color: var(--text2);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-align: left;
-  padding: 2px 0;
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.diff-wt-name:hover { color: var(--accent-text); }
-.diff-wt-meta {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted2);
-}
-.diff-wt-x {
-  background: none;
-  border: none;
-  color: var(--muted2);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 2px 4px;
-  border-radius: 5px;
-}
-.diff-wt-x:hover { color: var(--err); background: var(--hover); }
-.diff-wt-x.armed { color: var(--err); border: 1px solid var(--err); }
-.diff-patch {
-  flex: 1;
-  min-width: 0;
-  overflow: auto;
-  background: var(--bg);
-  border: 1px solid var(--border2);
-  border-radius: 8px;
-  padding: 8px 0;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-.diff-line {
-  white-space: pre;
-  padding: 0 12px;
-  color: var(--text2);
-}
-.diff-line.del { color: var(--diff-del); background: var(--diff-del-bg); }
-.diff-line.hunk { color: var(--diff-hunk); }
-.diff-line.meta { color: var(--muted2); }
-.diff-empty {
-  padding: 10px 12px;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--muted);
-}
-.diff-foot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-right: 14px; /* clear of the resize grip in the corner */
-}
-.diff-note {
-  flex: 1;
-  font-family: var(--font-ui);
-  font-size: 11px;
-  color: var(--muted2);
-}
-.diff-note.warn { color: var(--amber); }
-.diff-msg {
-  width: 320px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border2);
-  border-radius: 8px;
-  padding: 7px 10px;
-}
-.diff-msg:focus-visible { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
 :root[data-theme-overlay="on"]:is([data-theme="light"], [data-theme="blue"], [data-theme="neoblue"], [data-theme="purple"], [data-theme="teal"], [data-theme="rose"], [data-theme="violet"], [data-theme="sky"], [data-theme="indigo"], [data-theme="fuchsia"], [data-theme="emerald"], [data-theme="amber"], [data-theme="slate"]) .ws-tint {
   --ws-ink: oklch(from var(--ws) 0.47 c h);
   /* the map's links carry their agent's status as an alpha ramp (0.1 dead to
@@ -838,273 +631,16 @@
   --ws-ring: 75%;
   --ws-ring2: 45%;
 }
-.sv-hub.ws-tint {
-  color: var(--ws-ink);
-  background: radial-gradient(circle, color-mix(in srgb, currentColor var(--ws-disc), transparent), transparent 70%);
-  border-color: color-mix(in srgb, currentColor var(--ws-edge), transparent);
-}
-.sv-hub.ws-tint .sv-hub-ring { border-color: color-mix(in srgb, currentColor var(--ws-ring), transparent); }
-.sv-hub.ws-tint .sv-hub-ring2 { border-color: color-mix(in srgb, currentColor var(--ws-ring2), transparent); }
-.sv-node.ws-tint { --sv-ws: var(--ws-ink); }
-.sv-row-dot.ws-tint,
-.sv-term-dot.ws-tint,
+
 .ws-color-dot.ws-tint,
 .ws-swatch.ws-tint { background: var(--ws-ink); }
-.swarm-map-slot.ws-tint { border-color: var(--ws-ink); }
-
-/* --- the activity popover --- */
-/* Size is the user's: drag the corner. Position is set in JS rather than by a
-   centring transform, because a box centred that way grows in both directions
-   under the resize handle and the cursor slides off it. */
-#activity-pop {
-  position: fixed;
-  z-index: 60;
-  top: 50%;
-  left: 50%;
-  width: min(720px, 92vw);
-  height: min(620px, 84vh);
-  min-width: 380px;
-  min-height: 240px;
-  max-width: 96vw;
-  max-height: calc(100vh - 120px); /* dragged to the top, still clear of the top bar */
-  overflow: hidden; /* `resize` does nothing while overflow is visible */
-  resize: both;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-}
-#activity-pop[hidden] { display: none; }
-.activity-head { display: flex; align-items: center; gap: 10px; }
-.activity-title { flex: 1; }
-.activity-count {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text2);
-}
-.activity-calls {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.activity-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 4px 10px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  border-bottom: 1px solid var(--border);
-}
-.activity-row:last-child { border-bottom: 0; }
-.activity-tool { flex: 0 0 96px; color: var(--text); }
-.activity-target {
-  flex: 1;
-  min-width: 0;
-  color: var(--text2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.activity-ms { flex: 0 0 auto; color: var(--muted); }
-/* a failed call is the one row worth finding in a list of sixty */
-.activity-row.failed { background: var(--diff-del-bg); }
-.activity-row.failed .activity-tool { color: var(--diff-del); }
-/* still running: the accent, the same signal the busy equalizer carries */
-.activity-row.live .activity-tool { color: var(--accent-text); }
-.activity-files {
-  /* shrink to the lists rather than reserving a third of the popover: two
-     three-line columns under a full-height call list is mostly empty box */
-  flex: 0 1 auto;
-  max-height: 34%;
-  min-height: 0;
-  display: flex;
-  gap: 10px;
-}
-.activity-col {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-}
-.activity-col-head {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 4px;
-}
-.activity-file {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.activity-empty {
-  font-family: var(--font-ui);
-  font-size: 11px;
-  color: var(--muted);
-  padding: 6px 10px;
-}
-.activity-note {
-  font-family: var(--font-ui);
-  font-size: 11px;
-  color: var(--muted);
-  padding-right: 14px; /* clear of the resize grip in the corner */
-}
-/* a call the turn ended on: never ran, so it is neither a pass nor a failure */
-.activity-row.cancelled .activity-tool,
-.activity-row.cancelled .activity-target { color: var(--muted); }
-
-.activity-subs {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px 4px;
-}
-.activity-subs[hidden] { display: none; }
 
 /* --- the role editor --- */
-#roles-pop {
-  position: fixed;
-  z-index: 60;
-  top: 50%;
-  left: 50%;
-  width: min(680px, 92vw);
-  height: min(660px, 86vh);
-  min-width: 420px;
-  min-height: 320px;
-  max-width: 96vw;
-  max-height: calc(100vh - 120px); /* dragged to the top, still clear of the top bar */
-  overflow: hidden; /* `resize` does nothing while overflow is visible */
-  resize: both;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-}
-#roles-pop[hidden] { display: none; }
-.roles-head { display: flex; align-items: center; gap: 10px; }
-.roles-head .kbd-title { flex: 1; }
-.roles-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.roles-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.roles-card-top { display: flex; align-items: center; gap: 8px; }
-.roles-label {
-  flex: 1;
-  min-width: 0;
-  height: 26px;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border2);
-  border-radius: 6px;
-  padding: 0 8px;
-}
-.roles-model {
-  height: 26px;
-  font-family: var(--font-ui);
-  font-size: 11px;
-  color: var(--text2);
-  background: var(--bg);
-  border: 1px solid var(--border2);
-  border-radius: 6px;
-}
-.roles-del {
-  width: 26px;
-  height: 26px;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--border2);
-  border-radius: 6px;
-  cursor: pointer;
-}
-.roles-del:hover { color: var(--diff-del); border-color: color-mix(in srgb, var(--diff-del) 45%, var(--border2)); }
-.roles-del.armed { color: var(--bg); background: var(--diff-del); border-color: var(--diff-del); }
-.roles-prompt {
-  width: 100%;
-  resize: vertical;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border2);
-  border-radius: 6px;
-  padding: 6px 8px;
-}
-.roles-label:focus-visible,
-.roles-prompt:focus-visible,
-.roles-model:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.roles-warn {
-  font-family: var(--font-ui);
-  font-size: 11px;
-  color: var(--amber);
-  min-height: 14px;
-}
-.roles-foot { display: flex; align-items: center; gap: 10px; padding-right: 14px; } /* clear of the resize grip */
-.roles-note {
-  flex: 1;
-  font-family: var(--font-ui);
-  font-size: 11px;
-  color: var(--muted);
-}
-.roles-empty {
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--muted);
-  padding: 12px;
-}
+/* clear of the resize grip */
 /* the rows under a label are indented past it, so the label reads as the head
  * of its group rather than another row */
 .agent-kind-menu .branch-item { padding-left: 20px; }
 .msg-mention.sel { background: var(--hover); color: var(--accent-text); }
-
-/* the History row's second export, beside the ⤓ */
-.hist-html {
-  width: auto;
-  padding: 0 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-}
 
 /* ---- OpenRouter key row (Options → Setup) ----
  * The one text input in the options panel; .opt-ctl button's 24x24 stepper

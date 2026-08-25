@@ -14,8 +14,8 @@
  * unchanged. The only new mechanism is the plan file, which main/orchestrator.js
  * watches and consumes — see its header for why a file and not a socket.
  *
- * A popover built here, like roles.js: index.html gains one stylesheet link
- * and nothing else. */
+ * A popover built here rather than in index.html, which gains one stylesheet
+ * link and nothing else. */
 
 import {
   createTask,
@@ -51,7 +51,7 @@ let roles = [];   // [{key, label}] — the role menu the lead may pick from
  * still running, `queue` the reports waiting for it to finish its turn. The
  * durable half (workspace, worker model, worker ids) is mirrored into
  * localStorage so a renderer reload doesn't orphan a running swarm — a
- * renderer-only convenience that costs no IPC, the same call prompts.js makes. */
+ * renderer-only convenience that costs no IPC. */
 const leads = new Map(); // leadSessionId -> { workspaceId, workerModel, taskId, workers:Set, crew:[], shown, queue:[], flushing }
 
 function save() {
@@ -431,7 +431,7 @@ export function onWorkerGaveUp(task) {
  * on completion is usually killed before that read lands — so the last thing
  * it printed stands in. Claude Code marks its own text with ●/⏺ and wraps the
  * rest of the block in two-space continuations, which is the same shape the
- * swarm view's transcript colouring keys on. A bare harness prints no marker
+ * transcript colouring keys on. A bare harness prints no marker
  * and simply has no fallback. */
 function lastSaid(sessionLog) {
   const lines = String(sessionLog || '').split('\n');
@@ -496,8 +496,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* A lead and everything it queued share a single cell. The other members are
  * running the whole time — they are simply not mounted, exactly as the panes of
  * an unselected workspace aren't — and a select in the header of whichever one
- * is showing swaps between them. Nothing else changes: the swarm map, the swarm
- * view, the agent cap and the board still see every worker.
+ * is showing swaps between them. Nothing else changes: the agent cap and the
+ * board still see every worker.
  *
  * A queued task only has a pane once the scheduler actually starts it, so the
  * pane is looked up from the board — but only once: app.js clears paneId again

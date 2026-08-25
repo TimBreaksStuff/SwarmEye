@@ -2,8 +2,8 @@
  * opencode pane a full SwarmEye citizen.
  *
  * It translates opencode's own events into the two artifacts main/hooks.js
- * already watches: the hook-state file (busy / waiting / done + the activity
- * list) and a Claude-format transcript JSONL (cost, context, model chip and
+ * already watches: the hook-state file (busy / waiting / done + the call in
+ * flight) and a Claude-format transcript JSONL (cost, context, model chip and
  * the closing summary). Nothing in hooks.js changes — see opencode-pi-plan.md.
  *
  * Loaded per launch via OPENCODE_CONFIG pointing at a config file whose
@@ -81,9 +81,8 @@ function appendTranscript(info, text) {
 }
 
 /* The other half of the transcript: what you asked. Nothing in the pipeline
- * reads user turns — hooks.js only ever counts assistant ones — but the
- * History screen previews a conversation by its opening request and paints
- * both sides, so a transcript of answers alone would list as a blank row. */
+ * reads user turns — hooks.js only ever counts assistant ones — but a
+ * transcript of answers alone would read as half a conversation. */
 function appendUserTurn(text) {
   if (!transcriptPath || !text) return;
   const entry = {
@@ -96,8 +95,8 @@ function appendUserTurn(text) {
 }
 
 /* hooks.js reads a tool call's target from Claude's own field names; opencode
- * spells the file tools' argument `filePath`, which would leave the activity
- * row blank. One alias, added alongside the real args rather than replacing
+ * spells the file tools' argument `filePath`, which would leave the status
+ * line blank. One alias, added alongside the real args rather than replacing
  * them. */
 function toolInput(args) {
   const a = args && typeof args === "object" ? args : {};
@@ -196,8 +195,8 @@ export const SwarmEye = async () => {
           });
           break;
         case "permission.replied": {
-          // a denied call never reaches tool.execute.after, so its activity row
-          // would stay open for the life of the pane
+          // a denied call never reaches tool.execute.after, so it would stay
+          // open for the life of the pane
           const callID = asked.get(p.requestID);
           asked.delete(p.requestID);
           if ((p.reply === "reject" || p.reply === "deny") && callID && openCalls.has(callID)) {

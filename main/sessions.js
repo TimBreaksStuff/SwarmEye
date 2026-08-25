@@ -60,7 +60,6 @@ const TMUX = `tmux -f ${TMUX_CONF} -L ${socketName()}`;
  * live here. */
 const MODELS = ['sonnet', 'opus', 'haiku', 'fable', 'opusplan', 'opus[1m]', 'sonnet[1m]'];
 const EFFORT_FLAGS = ['low', 'medium', 'high', 'xhigh', 'max'];
-const SESSION_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 
 /* Wheel-scroll. Mouse reporting is on, but the only mouse tmux ever sees is
  * the wheel: pane.js still swallows xterm's own mouse-reporting requests, so
@@ -159,59 +158,12 @@ function claudeProjectDirName(cwd) {
   return (toShellPath(real) || real).replace(/[^A-Za-z0-9]/g, '-');
 }
 
-/* Role presets live in main/roles.js now — seeded from four built-ins and
- * editable, so this file looks one up rather than owning the table. The same
- * quoting rule still applies and is enforced there: no quotes, $, backticks or
- * backslashes, because the prompt is interpolated into the command line that
- * _launch wraps in single quotes for tmux. */
+/* Role presets live in main/roles.js — a fixed table this file looks one up
+ * in rather than owning. The quoting rule still applies and is stated there:
+ * no quotes, $, backticks or backslashes, because the prompt is interpolated
+ * into the command line that _launch wraps in single quotes for tmux. */
 const roles = require('./roles');
 const scope = require('./scope');
-
-/* A workspace can keep a `.swarmeye/notes.md` — what one agent learned about
- * this repo, so the next one starts with it instead of rediscovering it.
- *
- * It reaches the agent as a *pointer*, not as content. Inlining the file would
- * put every line of it in every agent's context and bill for it on every turn
- * whether the notes were relevant or not; a pointer costs ~20 tokens once and
- * lets the agent open the file when the work actually calls for it.
- *
- * Same quoting rules as the role prompts above: no quotes, $, backticks or
- * backslashes, since this lands in the same single-quoted tmux command. */
-const NOTES_REL = path.join('.swarmeye', 'notes.md');
-const NOTES_POSIX = '.swarmeye/notes.md'; // what the prompt says, on both platforms
-
-/* Anything with a quote, $, backtick or backslash in it would break the
- * single-quoted tmux command this ends up inside — a workspace path is user
- * data, so it is checked rather than trusted, and the pointer is dropped
- * instead of risking the launch. */
-const NOTES_SAFE_RE = /^[^"'$`\\]+$/;
-
-function notesPrompt(where) {
-  if (typeof where !== 'string' || !NOTES_SAFE_RE.test(where)) return '';
-  return `This workspace keeps shared notes at ${where}. `
-    + 'Read that file before making assumptions about this repo, and append anything '
-    + 'a later agent working here would want to know.';
-}
-
-/* An empty notes file is not worth a pointer — the agent would open it, find
- * nothing, and the tokens would be spent for no reason. */
-function hasNotes(wsPath) {
-  try {
-    return fs.statSync(path.join(wsPath, NOTES_REL)).size > 0;
-  } catch {
-    return false;
-  }
-}
-
-/* Where to point an agent running in `cwd` at the workspace notebook. An
- * isolated agent runs in a worktree (main/worktree.js), where
- * `.swarmeye/notes.md` is a *different* file — absent, or an old committed
- * copy — so it gets the workspace's own by shell path instead of the relative
- * name. Null (an untranslatable Windows path) drops the pointer. */
-function notesTarget(wsPath, cwd) {
-  if (!hasNotes(wsPath)) return null;
-  return cwd === wsPath ? NOTES_POSIX : toShellPath(path.join(wsPath, NOTES_REL));
-}
 
 /* The Edit deny rules that keep an agent inside one folder of its own working
  * directory (main/scope.js). A scope that cannot be turned into rules — the
@@ -260,7 +212,7 @@ function cannotLaunch(harness) {
  * every agent started afterward. `--model` only affects this one process.
  * Already whitelisted server-side (main.js task:create) — re-checked here
  * since it lands directly in a shell command line. */
-function claudeBase({ model, resume, role, notes, effort, orSkills, continueFrom, resumeId } = {}) {
+function claudeBase({ model, role, effort, orSkills, continueFrom, resumeId } = {}) {
   let cmd = config.load().skipPermissions ? 'claude --allow-dangerously-skip-permissions' : 'claude';
   const preset = roles.get(role);
   // the role's model is a default, not an override — an explicit pick (the
@@ -268,16 +220,14 @@ function claudeBase({ model, resume, role, notes, effort, orSkills, continueFrom
   const effectiveModel = model || (preset && preset.model);
   // an 'oc:<slug>' value replaces claude entirely: the clean agent
   // (agent/clean.js, see clean-agent-plan.md) talks straight to OpenRouter.
-  // Role prompt + notes pointer ride its --system flag; skipPermissions maps
-  // to --yolo (there is no permission footer to steer); `resume` carries
-  // claude conversation ids and means nothing here (restart appends
+  // The role prompt rides its --system flag; skipPermissions maps
+  // to --yolo (there is no permission footer to steer; restart appends
   // --continue itself). A null command (key gone since the create-time
   // check, unsafe script path) becomes a visible one-line failure in the
   // pane rather than a silent fall-through to a Claude launch nobody picked.
   const cleanSlug = providers.cleanSlugOf(effectiveModel);
   if (cleanSlug) {
-    const appendedClean = [preset && preset.prompt, notes && notesPrompt(notes)].filter(Boolean).join(' ');
-    return providers.cleanCmd(cleanSlug, { system: appendedClean, yolo: !!config.load().skipPermissions, skills: orSkills })
+    return providers.cleanCmd(cleanSlug, { system: (preset && preset.prompt) || '', yolo: !!config.load().skipPermissions, skills: orSkills })
       || cannotLaunch('clean');
   }
   // 'opencode:' / 'pi:' replace claude with a third-party CLI carrying our own
@@ -285,7 +235,7 @@ function claudeBase({ model, resume, role, notes, effort, orSkills, continueFrom
   // null command is a visible one-line message in the pane, never a silent
   // fall-through to a Claude launch nobody picked. opencode has no
   // system-prompt flag, so a role preset only supplies its model there; pi
-  // takes the role prompt and notes pointer, and gates nothing by design.
+  // takes the role prompt, and gates nothing by design.
   // Both take the OR-startup skills, each by its own route (providers.js).
   // on a restart, continueFrom keeps the pane's own transcript (so the cost
   // tally carries on) and resumeId is the harness's own conversation id — both
@@ -297,8 +247,7 @@ function claudeBase({ model, resume, role, notes, effort, orSkills, continueFrom
   }
   const piSlug = providers.piSlugOf(effectiveModel);
   if (piSlug) {
-    const appendedPi = [preset && preset.prompt, notes && notesPrompt(notes)].filter(Boolean).join(' ');
-    return providers.piCmd(piSlug, { system: appendedPi, continueFrom, resumeId, skills: orSkills })
+    return providers.piCmd(piSlug, { system: (preset && preset.prompt) || '', continueFrom, resumeId, skills: orSkills })
       || cannotLaunch('pi');
   }
   // an 'or:<slug>' value launches through OpenRouter: the model rides an env
@@ -329,17 +278,9 @@ function claudeBase({ model, resume, role, notes, effort, orSkills, continueFrom
   if (!orSlug && effort && EFFORT_FLAGS.includes(effort)) cmd += ' --effort ' + effort;
   // roles are a launch flag rather than a typed first message: --append-system-prompt
   // costs no turn and cannot collide with the task board's own prompt injection.
-  // The texts below are ours and contain no shell metacharacters — that is what
+  // The texts are ours and contain no shell metacharacters — that is what
   // makes them safe inside the single-quoted tmux command (see _launch).
-  // one --append-system-prompt carrying both, not two flags: the role and the
-  // notes pointer are the same kind of appended text, and claude takes the
-  // last such flag rather than concatenating them
-  const appended = [preset && preset.prompt, notes && notesPrompt(notes)].filter(Boolean).join(' ');
-  if (appended) cmd += ` --append-system-prompt "${appended}"`;
-  // a conversation id picked from the History screen. Claude Code names its
-  // transcripts after the session uuid, so the id is what --resume takes;
-  // re-validated here since it lands in a shell command line.
-  if (resume && SESSION_ID_RE.test(resume)) cmd += ' --resume ' + resume;
+  if (preset && preset.prompt) cmd += ` --append-system-prompt "${preset.prompt}"`;
   return cmd;
 }
 
@@ -560,12 +501,7 @@ class PtyManager {
       // a foreign harness (opencode/pi) keeps the hook env but not the
       // --settings flag it would refuse to start with. Resolved the way
       // claudeBase resolves it: an explicit pick, else the role's default.
-      // The clean agent's own resume is a flag after its command rather than
-      // part of it, the one restart() appends too — this is the History
-      // screen resuming one of its conversations in a brand new pane.
-      this.decorateCmd(id, claudeBase({ ...opts, notes: notesTarget(workspace.path, cwd) })
-        + (providers.cleanSlugOf(opts.model || (roles.get(opts.role) || {}).model)
-          ? providers.cleanContinueArg(opts.continueFrom) : ''),
+      this.decorateCmd(id, claudeBase(opts),
       { settings: !providers.isForeign(opts.model || (roles.get(opts.role) || {}).model), denyEdit }));
   }
 
@@ -581,7 +517,7 @@ class PtyManager {
   /* Respawn an exited agent in the same folder under the same name.
    * resume=true continues the last conversation in that directory —
    * silently downgraded to a fresh session when there is none. */
-  async restart({ workspaceId, workspaceName, agentName, cwd, workspacePath, worktree, cols, rows, resume, role, model, continueFrom, resumeId, orSkills, replaceId, scope: scopeRel }) {
+  async restart({ workspaceId, workspaceName, agentName, cwd, worktree, cols, rows, resume, role, model, continueFrom, resumeId, orSkills, replaceId, scope: scopeRel }) {
     if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
     // rebuilt against the tree as it is now, and before the kill below: a
     // scope whose folder went away must refuse the restart while the old
@@ -633,7 +569,7 @@ class PtyManager {
     // prompt has to be re-appended, it is not part of the resumed conversation
     if (roles.has(role)) meta.role = role;
     // and it comes back in the same worktree: cwd already points there, this
-    // is what keeps the chip, the review popover and the next restart on it
+    // is what keeps the chip and the next restart on it
     if (worktree) meta.worktree = worktree;
     // and inside the same folder it was scoped to
     if (scopeRel) meta.scope = scopeRel;
@@ -643,10 +579,9 @@ class PtyManager {
     // default — i.e. exactly what a plain restart did before.
     const launchModel = model || (roles.get(role) || {}).model;
     if (launchModel) meta.model = launchModel;
-    const notes = notesTarget(workspacePath || cwd, cwd);
     // a foreign harness's resume is built into its command (env + its own
     // --session), not appended after it, so claudeBase takes the two ids
-    const base = claudeBase({ role, model, notes, orSkills,
+    const base = claudeBase({ role, model, orSkills,
       continueFrom: resumed && foreign ? continueFrom : undefined,
       resumeId: resumed && foreign ? resumeId : undefined });
     const cmd = this.decorateCmd(id, !resumed || foreign ? base
@@ -719,14 +654,23 @@ class PtyManager {
     // drawn. Escaping leaves the expansion to the shell that has the value.
     const keyVar = cmd ? providers.keyEnv(meta.model) : null;
     const keyRef = IS_WIN ? '\\$' : '$';
+    // SwarmEye may itself have been launched from a Claude Code session, and
+    // that parent stamps CLAUDE_CODE_CHILD_SESSION on everything below it. An
+    // agent claude reading that marker calls itself a nested child and stops
+    // writing its transcript — so the pane loses its history and every panel
+    // that reads ~/.claude/projects goes blank. The marker is stripped from
+    // the pty's environment below; tmux, which takes a new session's
+    // environment from the server rather than from this client, gets the
+    // documented override on the socket instead.
+    const PERSIST = 'CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1';
     const attach = `exec ${TMUX} attach-session -t '=${meta.tmuxName}'`;
     const script = this.tmuxOk
       ? (cmd
         ? (keyVar
           ? `env -u ${keyVar.name} ${TMUX} start-server 2>/dev/null; `
             + `${TMUX} new-session -Ad -s ${meta.tmuxName} -x ${cols} -y ${rows}`
-            + ` -e ${keyVar.name}="${keyRef}${keyVar.name}" '${cmd}'; ${attach}`
-          : `exec ${TMUX} new-session -A -s ${meta.tmuxName} -x ${cols} -y ${rows} '${cmd}'`)
+            + ` -e ${PERSIST} -e ${keyVar.name}="${keyRef}${keyVar.name}" '${cmd}'; ${attach}`
+          : `exec ${TMUX} new-session -A -s ${meta.tmuxName} -x ${cols} -y ${rows} -e ${PERSIST} '${cmd}'`)
         : attach)
       : `exec ${cmd || 'claude'}`;
     // Windows reaches the agent through WSL, which takes the working
@@ -738,13 +682,16 @@ class PtyManager {
     // Windows an `env` prefix inside WSL, since nothing crosses the wsl.exe
     // boundary by inheritance. `env` execs bash in place, so the argv the
     // pane's own `ps` can see never holds the value either.
+    const { CLAUDE_CODE_CHILD_SESSION: _inherited, ...parentEnv } = process.env;
+    const env = { ...parentEnv, CLAUDE_CODE_FORCE_SESSION_PERSISTENCE: '1' };
     const [file, args, extra] = IS_WIN
       ? ['wsl.exe', ['--cd', meta.cwd, '--',
-        ...(keyVar ? ['env', `${keyVar.name}=${keyVar.value}`] : []),
+        'env', '-u', 'CLAUDE_CODE_CHILD_SESSION', PERSIST,
+        ...(keyVar ? [`${keyVar.name}=${keyVar.value}`] : []),
         'bash', '-lc', script], { useConpty: true }]
       : [SHELL, ['-lc', script], {
         cwd: meta.cwd,
-        env: keyVar ? { ...process.env, [keyVar.name]: keyVar.value } : process.env,
+        env: keyVar ? { ...env, [keyVar.name]: keyVar.value } : env,
       }];
 
     const proc = pty.spawn(file, args, {
@@ -884,12 +831,6 @@ class PtyManager {
   runningCount() {
     return this.sessions.size;
   }
-
-  // the agents alive right now, for callers that need to leave what they are
-  // using alone (history:delete keeps their transcripts)
-  sessionIds() {
-    return [...this.sessions.keys()];
-  }
 }
 
-module.exports = { PtyManager, claudeProjectDirName, NOTES_REL, TMUX, MODELS, EFFORT_FLAGS, SESSION_ID_RE };
+module.exports = { PtyManager, claudeProjectDirName, TMUX, MODELS, EFFORT_FLAGS };

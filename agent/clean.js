@@ -147,9 +147,8 @@ function appendTranscript(respId, respModel, text, toolCalls, usage) {
 }
 
 /* The other half of the transcript: what you asked. Nothing in the pipeline
- * reads user turns — hooks.js only ever counts assistant ones — but the
- * History screen previews a conversation by its opening request and paints
- * both sides, so a transcript of answers alone would list as a blank row. */
+ * reads user turns — hooks.js only ever counts assistant ones — but a
+ * transcript of answers alone would read as half a conversation. */
 function appendUserTurn(text) {
   const entry = {
     type: 'user',
@@ -173,7 +172,7 @@ function persistMessages() {
 /* OpenAI function-calling schemas. bash covers grep/glob/ls; the file tools
  * exist because models are measurably better with dedicated read/edit than
  * with sed/heredocs. Hook tool_name values are the Claude spellings so the
- * pane's activity list renders them like any other agent's. */
+ * pane's status line names them like any other agent's. */
 const TOOLS = [
   { type: 'function', function: { name: 'bash', description: 'Run a shell command in the working directory. Returns stdout and stderr.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
   { type: 'function', function: { name: 'read_file', description: 'Read a file. Optionally a line range.', parameters: { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'integer', description: '1-based first line' }, limit: { type: 'integer', description: 'max lines' } }, required: ['path'] } } },

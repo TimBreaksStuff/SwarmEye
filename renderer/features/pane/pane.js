@@ -1,9 +1,9 @@
 /* Pane: one terminal card (DOM + xterm + addons). Exposes window.Pane.
  *
- * Still a classic script, deliberately: seven other classic scripts read
- * Pane's statics (app.js constructs it; board.js, launcher.js, coordinator.js,
- * openrouter.js and roles.js read MODES/MODELS/EFFORTS; swarmview.js reads
- * status and fmtDuration), and a classic script cannot import from a module.
+ * Still a classic script, deliberately: other classic scripts read Pane's
+ * statics (app.js constructs it; board.js, launcher.js, coordinator.js and
+ * openrouter.js read MODES/MODELS/EFFORTS), and a classic script cannot
+ * import from a module.
  *
  * What is left here is the class shell: the constructor that builds the header
  * DOM, the buffer scans, the terminal lifecycle, and the statics. Three method
@@ -34,11 +34,11 @@ class Pane {
     this.hookAlive = false; // true once Claude Code hook events flow — they replace the output-timing heuristics
     this.awaitingPrompt = false; // true while the agent is blocked on the user (Notification hook, cleared on the next turn)
     this.promptAnswerable = false; // true while a numbered yes/no menu is actually on screen — with awaitingPrompt, gates the ✓/✕ quick-respond buttons
-    this.statusText = ''; // what the hooks say the agent is doing right now ('vibing...' / the permission message / 'done'), mirrored for the swarm view
+    this.statusText = ''; // what the hooks say the agent is doing right now ('vibing...' / the permission message / 'done')
     this.lastInputAt = 0; // last keystroke/mouse report — its echo must not read as agent activity
     this.idleTimer = null;
     this.bufferTextCache = null; // memoized getBufferText result
-    this.writeSeq = 0; // bumped on every buffer change, so consumers (swarm view tails) can memoize reads
+    this.writeSeq = 0; // bumped on every buffer change, so consumers can memoize reads
     this.screenEl = null; // .xterm-screen and its rect, memoized for the wheel path (cellAt)
     this.screenRect = null;
 
@@ -48,12 +48,7 @@ class Pane {
     // populated before this agent's next turn ever runs.
     this.usage = session.usage || null;
     this.toolTrail = [];
-    // the activity popover's source: every call seen this session, plus which
-    // files were read and which were written (see the ACTIVITY_MAX note above)
-    this.activity = [];
     this.openCalls = []; // calls started and not yet reported back — tools run in parallel
-    this.reads = new Map(); // path -> times read
-    this.writes = new Map(); // path -> times written
     this.subagents = []; // Task calls: {desc, t, ms, done}
     this.planAsked = false; // plan mode was picked but could not be set, so it was asked for in words instead
     this.turnStartedAt = 0; // when the agent started working, 0 while it isn't
@@ -111,7 +106,6 @@ class Pane {
     this.modelLabel = (session.model && prettyModelName(this.orSlug || session.model)) || '';
     this.modelTip = this.viaClean ? `Model this agent runs — ${this.harness} agent, straight to OpenRouter`
       : viaOr ? 'Model this agent runs, via OpenRouter' : 'Claude model for this agent';
-    this.transcriptId = null; // Claude conversation id, from the hook payload
 
     this.gitEl = elt('span', 'pane-git');
     this.gitEl.style.display = 'none';
@@ -171,11 +165,10 @@ class Pane {
     this.modeAskedShown = false;
 
     // live agent state from Claude Code hooks (tool name + what it is on,
-    // waiting, done) — click it for the full list of calls behind it
+    // waiting, done)
     this.statusEl = elt('span', 'pane-status');
     this.statusEl.style.display = 'none';
-    this.statusEl.dataset.tip = 'What this agent has been doing — click for the full list';
-    this.statusEl.addEventListener('click', () => Activity.open(this));
+    this.statusEl.dataset.tip = 'What this agent is doing';
 
     // how long the agent has been blocked on the user. A 40-second wait and a
     // 40-minute one are the same pane otherwise, and only one of them is worth
@@ -188,7 +181,6 @@ class Pane {
     // run is one line of the parent's output
     this.subEl = elt('span', 'pane-sub');
     this.subEl.style.display = 'none';
-    this.subEl.addEventListener('click', () => Activity.open(this));
 
     // equalizer-style busy indicator, shown only while the agent is working
     this.busyEl = elt('span', 'pane-busy');
@@ -409,10 +401,8 @@ class Pane {
     this.usageTimeEl = document.createElement('span');
     this.usageShareEl = document.createElement('span');
     // the tool trail, under the model in the panel's own bottom right — the
-    // one place that says what the agent is doing right now, so it is also the
-    // way into the full list rather than a second header chip
+    // one place that says what the agent is doing right now
     this.usageToolsEl = elt('span', 'pane-usage-tools');
-    this.usageToolsEl.addEventListener('click', () => Activity.open(this));
     const usageSub = elt('div', 'pane-usage-row pane-usage-sub');
     usageSub.append(this.usageSparkEl, this.usageTurnsEl, this.usageTimeEl, this.usageShareEl, this.usageToolsEl);
     this.usageEl.append(usageTop, usageSub);
@@ -1131,7 +1121,7 @@ class Pane {
   }
 
   /* detached = the attach client died but the agent lives on in tmux
-   * (WSL hiccup, manual detach) — the swarm view's Reattach brings it back */
+   * (WSL hiccup, manual detach) — the rail's Reattach all brings it back */
   markExited(exitCode, detached) {
     this.exited = true;
     this.detached = !!detached;
@@ -1230,7 +1220,6 @@ class Pane {
     clearTimeout(this.modeTimer);
     clearInterval(this.usageTimer);
     livePanes.delete(this);
-    Activity.closeFor(this); // a popover must not outlive the pane it describes
     this.observer.disconnect();
     // the webgl addon's dispose can throw (upstream bug) — detach it first
     // and never let any teardown error keep the pane element on screen
@@ -1313,6 +1302,6 @@ Pane.setUsageWindow = (win) => {
 Pane.MODES = MODES;
 Pane.MODELS = MODELS;
 Pane.EFFORTS = EFFORTS;
-Pane.fmtDuration = fmtDuration; // shared with the swarm view's age labels — one formatter, not two copies
+Pane.fmtDuration = fmtDuration;
 
 window.Pane = Pane;

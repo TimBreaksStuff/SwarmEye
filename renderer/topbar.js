@@ -1,4 +1,4 @@
-/* Icon rail + top bar rendering: workspace tiles (drag to reorder, hover
+/* Icon rail + top bar rendering: workspace tiles (drag to reorder, right-click
  * flyout for rename/remove), the top bar's active-workspace context, usage
  * mini bars. Exposes window.Topbar. */
 
@@ -17,38 +17,39 @@ const Topbar = (() => {
   // it drives the flyout swatches
   let WS_COLORS = [];
 
-  /* the 57px rail only shows initials — hovering a tile opens a flyout with
-   * the full name (double-click to rename) and the ✕ remove button */
+  /* the 57px rail only shows initials — right-clicking a tile opens a flyout
+   * with the full name (double-click to rename) and the ✕ remove button */
   const flyout = document.createElement('div');
   flyout.id = 'rail-flyout';
   flyout.hidden = true;
   document.body.appendChild(flyout);
   let flyoutWsId = null;
-  let flyoutHideTimer = null;
   // context from the last renderWorkspaces, so a colour pick or a programmatic
   // flyout-open (openWorkspaceFlyout, used after "add workspace") can rebuild it
   let railCtx = { workspaces: [], counts: {}, handlers: null };
   const tileById = new Map();
   // what the rail last drew — see the guard in renderWorkspaces
   let railSig = null;
-  flyout.addEventListener('mouseenter', () => clearTimeout(flyoutHideTimer));
-  flyout.addEventListener('mouseleave', scheduleHideFlyout);
 
   function hideFlyout() {
-    clearTimeout(flyoutHideTimer);
     flyout.hidden = true;
     flyoutWsId = null;
   }
 
-  function scheduleHideFlyout() {
-    clearTimeout(flyoutHideTimer);
-    flyoutHideTimer = setTimeout(() => {
-      if (!flyout.querySelector('[contenteditable]')) hideFlyout();
-    }, 250);
-  }
+  /* the flyout is a context menu now, so it closes the way one does: a click
+   * anywhere outside it, Escape, or a right-click on another tile (which
+   * re-opens it there). A rename in progress owns the flyout and closes on its
+   * own commit, so leave it alone. */
+  document.addEventListener('mousedown', (e) => {
+    if (flyout.hidden || flyout.contains(e.target)) return;
+    if (flyout.querySelector('[contenteditable]')) return;
+    hideFlyout();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !flyout.hidden && !flyout.querySelector('[contenteditable]')) hideFlyout();
+  });
 
   function showFlyout(tile, ws, info, handlers) {
-    clearTimeout(flyoutHideTimer);
     if (flyout.querySelector('[contenteditable]')) return; // an active rename owns the flyout
     flyoutWsId = ws.id;
     flyout.innerHTML = '';
@@ -64,7 +65,7 @@ const Topbar = (() => {
     sub.textContent = `${info.n} agent${info.n === 1 ? '' : 's'} · ${ws.path}`;
 
     // a row of swatches to set this workspace's identity colour — the pick
-    // repaints the rail tile dot and the swarm-map slot borders via onSetColor
+    // repaints the rail tile dot via onSetColor
     const colors = document.createElement('div');
     colors.className = 'rail-flyout-colors';
     WS_COLORS.forEach((c) => {
@@ -92,17 +93,6 @@ const Topbar = (() => {
       handlers.onSetPinned(ws.id, !ws.pinned);
     });
 
-    // the workspace notebook — what agents started here are told to read
-    const notes = document.createElement('button');
-    notes.className = 'rail-flyout-notes';
-    Icons.set(notes, 'note');
-    notes.dataset.tip = 'Workspace notes — every agent started here is pointed at them';
-    notes.addEventListener('click', (e) => {
-      e.stopPropagation(); // the popover's own outside-click handler would shut it again
-      hideFlyout();
-      handlers.onOpenNotes(ws);
-    });
-
     // agents started here work in a git worktree of their own instead of
     // sharing this checkout (main/worktree.js) — a workspace setting, so board
     // tasks and + Agent pick it up without either of them asking
@@ -117,24 +107,13 @@ const Topbar = (() => {
       handlers.onSetIsolate(ws.id, !ws.isolate);
     });
 
-    // review what the agents changed: the full diff, commit, merge back
-    const review = document.createElement('button');
-    review.className = 'rail-flyout-review';
-    Icons.set(review, 'diff');
-    review.dataset.tip = 'Review changes — diff, commit and merge agent worktrees';
-    review.addEventListener('click', (e) => {
-      e.stopPropagation();
-      hideFlyout();
-      handlers.onReview(ws);
-    });
-
     const x = document.createElement('button');
     x.className = 'rail-flyout-x';
     x.textContent = '✕';
     x.dataset.tip = 'Remove workspace';
     x.addEventListener('click', () => handlers.onRemove(ws.id, x)); // the button, so removal can arm on it (Confirm)
 
-    flyout.append(infoEl, review, isolate, notes, pin, x);
+    flyout.append(infoEl, isolate, pin, x);
     flyout.hidden = false;
     const r = tile.getBoundingClientRect();
     flyout.style.left = Math.round(r.right + 10) + 'px';
@@ -160,10 +139,21 @@ const Topbar = (() => {
       const c = counts[w.id] || { n: 0, attn: false };
       return [w.id, w.name, w.color, !!w.pinned, c.n, !!c.attn];
     })]);
-    if (sig === railSig) return;
-    railSig = sig;
+    if (sig !== railSig) {
+      railSig = sig;
+      buildRail(workspaces, selectedId, counts, handlers);
+    }
+    // the nested agent rows move on every status flip, so they are reconciled
+    // on every beat — outside the signature guard above (features/rail/wsagents)
+    workspaces.forEach((ws) => {
+      WsAgents.sync(ws.id, (counts[ws.id] || {}).panes || [], handlers.onOpenAgent);
+    });
+  }
+
+  function buildRail(workspaces, selectedId, counts, handlers) {
     renderContext(workspaces.find((w) => w.id === selectedId));
     tileById.clear();
+    WsAgents.reset();
     workspacesEl.innerHTML = '';
     workspaces.forEach((ws) => {
       const info = counts[ws.id] || { n: 0, attn: false };
@@ -244,9 +234,15 @@ const Topbar = (() => {
       tile.appendChild(badge);
 
       tile.addEventListener('click', () => handlers.onSelect(ws.id));
-      tile.addEventListener('mouseenter', () => showFlyout(tile, ws, info, handlers));
-      tile.addEventListener('mouseleave', scheduleHideFlyout);
+      // right-click a workspace for its menu (rename, colour, isolate,
+      // pin, remove) — hovering must stay quiet, the rail folds agents open
+      tile.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showFlyout(tile, ws, info, handlers);
+      });
       workspacesEl.appendChild(tile);
+      // the fold-out list of this workspace's agents, filled by WsAgents.sync
+      workspacesEl.appendChild(WsAgents.attach(tile, ws.id));
     });
   }
 
@@ -367,10 +363,7 @@ const Topbar = (() => {
     return wrap;
   }
 
-  /* the two per-notification actions: jump to the pane, or read the whole
-   * conversation in the History modal. The transcript id comes from the hook
-   * payload, so a pane whose hooks never reported one (an old reattached
-   * session) gets a disabled button rather than a missing one. */
+  /* the one per-notification action: jump to the pane it came from. */
   function notifActionButtons(n, handlers) {
     const wrap = elt('div', 'notif-acts');
 
@@ -381,18 +374,7 @@ const Topbar = (() => {
       handlers.onOpen(n.paneId);
     });
 
-    const script = elt('button', 'notif-act');
-    script.textContent = '☰ Transcript';
-    script.disabled = !n.transcriptId;
-    script.dataset.tip = n.transcriptId
-      ? 'Read the whole conversation'
-      : 'No transcript recorded for this agent';
-    script.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handlers.onTranscript(n);
-    });
-
-    wrap.append(go, script);
+    wrap.append(go);
     return wrap;
   }
 
@@ -598,93 +580,8 @@ const Topbar = (() => {
     }
   }
 
-  /* swarm map: one slot per agent-capacity slot, across all workspaces —
-   * lime = working, amber pulsing = needs attention, gray = idle, dark = free.
-   * Exited panes free their slot (mirrors liveAgentCount() in app.js), and if
-   * live agents ever exceed maxAgents (cap lowered mid-session) every agent
-   * still gets a slot rather than being silently hidden. */
-  const swarmMapGrid = document.getElementById('swarm-map-grid');
-  const swarmMapFooter = document.getElementById('swarm-map-footer');
-  // latest onOpen, read by the per-slot click handlers installed at creation
-  let swarmMapOnOpen = null;
-
-  function renderSwarmMap(panes, totalSlots, onOpen, wsColor = {}) {
-    const live = panes.filter((p) => !p.exited);
-    const busyCount = live.filter((p) => p.status === 'working').length;
-    const attnCount = live.filter((p) => p.status === 'attention').length;
-    const idleCount = live.filter((p) => p.status === 'idle').length;
-    const slotCount = Math.max(totalSlots, live.length);
-
-    // one row while the slots fit the rail's width at a readable size, two rows
-    // past that — a fixed column count sized them to whatever was left over
-    const MAX_COLS = 12; // 12 × ~14px + gaps ≈ the 208px the expanded rail gives the strip
-    const cols = slotCount <= MAX_COLS ? Math.max(slotCount, 1) : Math.min(Math.ceil(slotCount / 2), MAX_COLS);
-    if (swarmMapGrid.style.getPropertyValue('--swarm-cols') !== String(cols)) {
-      swarmMapGrid.style.setProperty('--swarm-cols', cols);
-    }
-
-    // Reconcile slots in place rather than rebuilding from scratch: this runs on
-    // every state update, and wiping innerHTML would destroy the slot node the
-    // cursor is resting on — Chromium fires no mouseout for a removed node, so
-    // its hover tooltip would orphan and never hide. Reusing nodes keeps the
-    // hovered slot alive (and its tooltip fresh) across re-renders.
-    // This runs on every chrome beat — write only on change (a same-value
-    // textContent/dataset write still replaces the text node / fires attribute
-    // bookkeeping), and the click handler is installed once per slot rather
-    // than a fresh closure per beat.
-    swarmMapOnOpen = onOpen;
-    while (swarmMapGrid.children.length > slotCount) swarmMapGrid.lastChild.remove();
-    while (swarmMapGrid.children.length < slotCount) {
-      const span = document.createElement('span');
-      span.addEventListener('click', () => {
-        if (span.dataset.sid && swarmMapOnOpen) swarmMapOnOpen(span.dataset.sid);
-      });
-      swarmMapGrid.appendChild(span);
-    }
-    for (let i = 0; i < slotCount; i++) {
-      const pane = live[i];
-      const cls = !pane ? ''
-        : pane.status === 'working' ? 'busy'
-        : pane.status === 'attention' ? 'attn'
-        : 'idle';
-      const slot = swarmMapGrid.children[i];
-      // the slot's border carries its workspace's identity colour
-      const bc = pane ? (wsColor[pane.session.workspaceId] || '') : '';
-      const className = 'swarm-map-slot' + (cls ? ' ' + cls : '') + (pane ? ' clickable' : '') + (bc ? ' ws-tint' : '');
-      // last input the agent received — its most recently submitted command,
-      // shown after a vertical rule in the hover tooltip (see tooltip.js)
-      const cmd = (pane && pane.initialCommandText) || '';
-      // one signature per slot: nothing below is written unless something moved
-      const sig = pane ? `${className}|${pane.session.id}|${pane.session.agentName}|${cmd}|${bc}` : className;
-      if (slot.dataset.sig === sig) continue;
-      slot.dataset.sig = sig;
-      slot.className = className;
-      slot.style.setProperty('--ws', bc);
-      if (pane) {
-        slot.dataset.sid = pane.session.id;
-        slot.dataset.tip = pane.session.agentName;
-        if (cmd) slot.dataset.tipSecondary = cmd;
-        else delete slot.dataset.tipSecondary;
-      } else {
-        delete slot.dataset.sid;
-        delete slot.dataset.tip;
-        delete slot.dataset.tipSecondary;
-      }
-    }
-
-    // free slots are already legible as the dark ones, so the head counts only
-    // what is actually running — plus the cap, which used to live in the top
-    // bar's own counter beside the same numbers
-    const parts = [`${live.length}/${totalSlots}`];
-    if (busyCount) parts.push(`${busyCount} busy`);
-    if (attnCount) parts.push(`${attnCount} waiting`);
-    if (idleCount) parts.push(`${idleCount} idle`);
-    const foot = parts.join(' · ');
-    if (swarmMapFooter.textContent !== foot) swarmMapFooter.textContent = foot;
-  }
-
-  // the count itself reads in the rail (per-workspace badges + the swarm head);
-  // all the top bar still needs from it is whether the cap is reached
+  // the count itself reads in the rail (per-workspace badges); all the top bar
+  // still needs from it is whether the cap is reached
   function updateAgentCap(total, max) {
     const capped = total >= max;
     if (addAgentBtn.disabled !== capped) addAgentBtn.disabled = capped;
@@ -841,7 +738,7 @@ const Topbar = (() => {
 
   const setWorkspaceColors = (colors) => { WS_COLORS = colors || []; };
 
-  return { renderWorkspaces, renderNotifications, renderNotifPanel, updateAgentCap, renderUsage, setUsageSection, renderSwarmMap, openWorkspaceFlyout, setWorkspaceColors, fmtIn, fmtClock };
+  return { renderWorkspaces, renderNotifications, renderNotifPanel, updateAgentCap, renderUsage, setUsageSection, openWorkspaceFlyout, setWorkspaceColors, fmtIn, fmtClock };
 })();
 
 window.Topbar = Topbar;

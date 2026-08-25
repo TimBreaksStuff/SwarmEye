@@ -190,8 +190,8 @@ function envPrefix(slug) {
  * missing or any token would break the single-quoted tmux command the whole
  * string lands inside — the caller treats that as "cannot launch".
  *
- * `system` carries the role prompt + notes pointer (their charset is
- * enforced quote-free by roles.js/sessions.js, and re-checked here). The
+ * `system` carries the role prompt (its charset is enforced quote-free by
+ * roles.js/sessions.js, and re-checked here). The
  * script path is the one machine-derived token: packaged builds must run it
  * out of app.asar.unpacked — shell node cannot read inside the asar — hence
  * the substitution, a no-op in dev where the path has no app.asar segment. */
@@ -375,8 +375,7 @@ function opencodeCmd(slug, { yolo, continueFrom, resumeId, skills } = {}) {
   const cfg = writeOpencodeConfig(plugin, yolo, skills);
   if (!cfg) return null;
   // skills go in through that config's `instructions`; there is still no
-  // system-prompt *flag* here, so role prompts and the notes pointer do not
-  // reach an opencode agent
+  // system-prompt *flag* here, so role prompts do not reach an opencode agent
   // OPENROUTER_API_KEY comes in over the tmux socket instead (keyEnv)
   return `env OPENCODE_CONFIG="${cfg}" ${continueEnv(continueFrom)}`
     + `opencode --model openrouter/${slug}${yolo ? ' --auto' : ''}`
@@ -386,8 +385,8 @@ function opencodeCmd(slug, { yolo, continueFrom, resumeId, skills } = {}) {
 /* The launch command for a pi agent. pi gates nothing behind a confirmation
  * by design — there is no flag that adds one — so a pi pane is always in auto
  * mode whatever skipPermissions says, and the UI labels it. Unlike opencode
- * it does take a system prompt, so the role preset and notes pointer ride
- * along (same quote-free charset the clean agent enforces). */
+ * it does take a system prompt, so the role preset rides along (same
+ * quote-free charset the clean agent enforces). */
 function piCmd(slug, { system, continueFrom, resumeId, skills } = {}) {
   const key = config.load().openrouterKey || '';
   if (!KEY_RE.test(key) || !SLUG_RE.test(slug)) return null;

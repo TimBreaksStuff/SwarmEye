@@ -16,8 +16,6 @@ contextBridge.exposeInMainWorld('swarm', {
   addWorkspaceCategory: (id, name) => ipcRenderer.invoke('workspace:add-category', { id, name }),
   removeWorkspaceCategory: (id, name) => ipcRenderer.invoke('workspace:remove-category', { id, name }),
   // the workspace notebook — main resolves the file from the id
-  readNotes: (workspaceId) => ipcRenderer.invoke('notes:read', { workspaceId }),
-  writeNotes: (workspaceId, text) => ipcRenderer.invoke('notes:write', { workspaceId, text }),
   resolvePreview: (workspaceId, preferred) => ipcRenderer.invoke('preview:resolve', { workspaceId, preferred }),
   stopPreview: (workspaceId) => ipcRenderer.invoke('preview:stop', { workspaceId }),
   setAutoUsageLimit: (n) => ipcRenderer.invoke('config:set-auto-usage-limit', n),
@@ -40,25 +38,19 @@ contextBridge.exposeInMainWorld('swarm', {
   unwatchPlan: (sessionId) => ipcRenderer.invoke('orchestrator:unwatch', { sessionId }),
 
   listSessions: () => ipcRenderer.invoke('session:list'),
-  // continueFrom resumes a clean/opencode/pi conversation from the History
-  // screen: those harnesses own their transcripts, so there is no resumeId
   // scope: a folder inside the workspace this agent may edit, and nothing else
-  createSession: (workspaceId, cols, rows, model, resumeId, role, effort, continueFrom, scope) =>
-    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, resumeId, role, effort, continueFrom, scope }),
+  createSession: (workspaceId, cols, rows, model, role, effort, scope) =>
+    ipcRenderer.invoke('session:create', { workspaceId, cols, rows, model, role, effort, scope }),
   listWorkspaceFiles: (id) => ipcRenderer.invoke('workspace:files', id),
   // the areas a workspace's .swarmeye/areas.json carves it into, for scoping
   listAreas: (id) => ipcRenderer.invoke('areas:read', id),
   attachImage: (dataUrl) => ipcRenderer.invoke('attach:image', dataUrl),
   listRoles: () => ipcRenderer.invoke('roles:list'),
-  saveRoles: (roles) => ipcRenderer.invoke('roles:save', roles),
-  listHistory: (workspaceId) => ipcRenderer.invoke('history:list', workspaceId),
-  readHistory: (workspaceId, id) => ipcRenderer.invoke('history:read', { workspaceId, id }),
-  deleteHistory: (workspaceId, ids) => ipcRenderer.invoke('history:delete', { workspaceId, ids }),
   restartSession: (payload) => ipcRenderer.invoke('session:restart', payload),
   reattachSession: (id, cols, rows) => ipcRenderer.invoke('session:reattach', { id, cols, rows }),
   renameSession: (id, name) => ipcRenderer.invoke('session:rename', { id, name }),
   setLastCommand: (id, cmd) => ipcRenderer.invoke('session:set-last-command', { id, cmd }),
-  exportSession: (name, text, ext) => ipcRenderer.invoke('session:export', { name, text, ext }),
+  exportSession: (name, text) => ipcRenderer.invoke('session:export', { name, text }),
   writeSession: (id, data) => ipcRenderer.send('session:write', { id, data }),
   resizeSession: (id, cols, rows) => ipcRenderer.send('session:resize', { id, cols, rows }),
   killSession: (id) => ipcRenderer.invoke('session:kill', { id }),
@@ -74,14 +66,8 @@ contextBridge.exposeInMainWorld('swarm', {
   gitDiff: (workspaceId) => ipcRenderer.invoke('git:diff', workspaceId),
   checkoutBranch: (workspaceId, branch, create) => ipcRenderer.invoke('git:checkout', { workspaceId, branch, create }),
 
-  // isolated agents: a worktree each (main/worktree.js). Every call names a
-  // workspace or a session, never a path — main resolves the repo itself
+  // isolated agents: a worktree each (main/worktree.js)
   setWorkspaceIsolate: (id, isolate) => ipcRenderer.invoke('workspace:set-isolate', { id, isolate }),
-  listWorktrees: (workspaceId) => ipcRenderer.invoke('worktree:list', workspaceId),
-  removeWorktree: (workspaceId, name) => ipcRenderer.invoke('worktree:remove', { workspaceId, name }),
-  gitPatch: (target) => ipcRenderer.invoke('git:patch', target),
-  gitCommit: (target, message) => ipcRenderer.invoke('git:commit', { ...target, message }),
-  gitMerge: (workspaceId, branch) => ipcRenderer.invoke('git:merge', { workspaceId, branch }),
 
   listSkills: () => ipcRenderer.invoke('skills:list'),
   installSkill: (repoUrl) => ipcRenderer.invoke('skills:install', repoUrl),

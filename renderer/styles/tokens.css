@@ -47,14 +47,6 @@
   --pill-hover: rgba(214, 255, 75, 0.08);
   --entry-dot: #58a6ff;
 
-  /* the review popover's patch: a line's colour carries its sign, so both
-   * ramps are picked against --bg rather than one being tinted from the other */
-  --diff-add: #a3e635;
-  --diff-add-bg: rgba(163, 230, 53, 0.09);
-  --diff-del: #ff7a7a;
-  --diff-del-bg: rgba(255, 90, 90, 0.09);
-  --diff-hunk: #58a6ff;
-
   --font-ui: 'Space Grotesk', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
@@ -101,13 +93,6 @@
   --term-bg: #ffffff;
   --pill-hover: rgba(71, 109, 10, 0.1);
   --entry-dot: #2563eb;
-
-  /* patch text is text: each of these clears 4.5:1 against --bg */
-  --diff-add: #3f6212;
-  --diff-add-bg: rgba(71, 109, 10, 0.12);
-  --diff-del: #b91c1c;
-  --diff-del-bg: rgba(185, 28, 28, 0.1);
-  --diff-hunk: #1d4ed8;
 }
 
 /* Twelve more light themes — the same white page and neutral ramp as "light",
@@ -153,12 +138,6 @@
   --err: #c62828;
   --term-bg: #ffffff;
   --entry-dot: #2563eb;
-
-  --diff-add: #3f6212;
-  --diff-add-bg: rgba(71, 109, 10, 0.12);
-  --diff-del: #b91c1c;
-  --diff-del-bg: rgba(185, 28, 28, 0.1);
-  --diff-hunk: #1d4ed8;
 }
 
 :root[data-theme="blue"] {

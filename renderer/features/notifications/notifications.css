@@ -169,7 +169,7 @@
 
 /* per-notification actions: jump to the agent / read its transcript. Wraps
  * rather than pushing the row wide — a narrow notification panel would
- * otherwise grow a horizontal scrollbar (same fix as the history rows). */
+ * otherwise grow a horizontal scrollbar. */
 .notif-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .notif-act {
   font-family: var(--font-ui);

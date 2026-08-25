@@ -156,7 +156,7 @@ Object.assign(Pane.prototype, {
     if (answerable === this.promptAnswerable) return;
     this.promptAnswerable = answerable;
     this.syncPromptButtons();
-    // the bell and the swarm view carry their own copy of these buttons
+    // the bell carries its own copy of these buttons
     this.handlers.onStatusChange(this, 'prompt');
   },
 
@@ -174,9 +174,10 @@ Object.assign(Pane.prototype, {
     return true;
   },
 
-  /* One row for a call that has just started. The file sets are only fed by the
-   * tools that genuinely name a file — a Grep pattern or a Bash command is not
-   * a path, and putting either in a "files read" list would make the list lie. */
+  /* A call that has just started. Only Task calls leave anything behind — a
+   * subagent's whole run is one line of the parent's output otherwise — but
+   * every call is tracked while it is open, so the matching PostToolUse has
+   * something to close. */
   noteCall(tool, target) {
     const entry = { tool, target: target || '', t: Date.now(), ms: 0, failed: false, done: false };
     // a Task call *is* a subagent starting — the only trace one ever leaves
@@ -186,15 +187,9 @@ Object.assign(Pane.prototype, {
       if (this.subagents.length > SUBAGENTS_MAX) this.subagents.shift();
       this.syncSubagents();
     }
-    this.activity.push(entry);
-    if (this.activity.length > ACTIVITY_MAX) this.activity.shift();
     this.openCalls.push(entry);
     // a swarm of never-closed calls would grow forever; the oldest is retired
     if (this.openCalls.length > OPEN_CALLS_MAX) this.retire(this.openCalls.shift());
-    const set = WRITE_TOOLS.has(tool) ? this.writes : FILE_READ_TOOLS.has(tool) ? this.reads : null;
-    if (!set || !target) return;
-    set.set(target, (set.get(target) || 0) + 1);
-    if (set.size > TOUCHED_MAX) set.delete(set.keys().next().value);
   },
 
   /* Close the call a PostToolUse belongs to. Matched on tool *and* target
@@ -219,8 +214,7 @@ Object.assign(Pane.prototype, {
 
   /* A call that never reported back: the turn ended on it. A denied permission
    * prompt emits no PostToolUse and — as the driven app showed — no Stop
-   * either, so this runs on the next turn's UserPromptSubmit as well. A row
-   * that says "running" for the rest of the session is worse than no row. */
+   * either, so this runs on the next turn's UserPromptSubmit as well. */
   retire(entry) {
     if (!entry || entry.done) return;
     entry.done = true;
@@ -238,11 +232,8 @@ Object.assign(Pane.prototype, {
     this.syncSubagents();
   },
 
-  applyHookEvent({ event, tool, message, model, usage, transcript, target, failed }) {
+  applyHookEvent({ event, tool, message, model, usage, target, failed }) {
     if (this.exited) return;
-    // /clear and --resume both move the agent onto another transcript file,
-    // so the newest one the hooks reported wins
-    if (transcript) this.transcriptId = transcript;
     // per-turn totals from the transcript — a bookkeeping event, not a state
     // change, so it returns before any of the working/waiting handling below
     if (event === 'UsageUpdate') {
@@ -277,7 +268,6 @@ Object.assign(Pane.prototype, {
       // and a turn with no tool calls never gets a status at all
       this.setStatusText('vibing...');
       this.retireOpenCalls(); // a new turn retires whatever the last one left open
-      Activity.sync(this);
     } else if (event === 'PreToolUse') {
       this.working = true;
       this.awaitingPrompt = false;
@@ -290,17 +280,14 @@ Object.assign(Pane.prototype, {
         this.syncRightsize();
         this.noteCall(tool, target);
       }
-      // one word for every tool — which tool and what it was on are both in
-      // the activity popover, which the cost panel's tool trail opens
+      // one word for every tool; which tool it is reads in the status line
       this.setStatusText('vibing...');
-      Activity.sync(this);
     } else if (event === 'PostToolUse') {
       // between two calls is still mid-turn — the agent is working, not idle
       this.working = true;
       this.awaitingPrompt = false;
       this.noteTurnStart();
       this.closeCall(tool, target, failed);
-      Activity.sync(this);
     } else if (event === 'Notification') {
       // claude is blocked on the user (permission prompt / waiting for input)
       this.working = false;
@@ -323,7 +310,6 @@ Object.assign(Pane.prototype, {
       // calls still open when the turn ends never ran — a denied permission
       // prompt or an interrupt, both of which skip PostToolUse entirely
       this.retireOpenCalls();
-      Activity.sync(this);
       this.flagAttention();
       // completion must reach app.js even when flagAttention suppresses its
       // event (pane focused and watched, or attention already flagged) — a

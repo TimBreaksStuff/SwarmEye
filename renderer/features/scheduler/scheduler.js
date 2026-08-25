@@ -345,7 +345,7 @@ export async function startTask(task, { notify = false } = {}) {
     // typed `/effort` now saves as the user's CLI default and bleeds into
     // every later agent. 'default' falls back to the Options default effort.
     const effortArg = effortFlagValue(task.effort);
-    const res = await window.swarm.createSession(task.workspaceId, 100, 30, modelArg, undefined, task.role || undefined, effortArg);
+    const res = await window.swarm.createSession(task.workspaceId, 100, 30, modelArg, task.role || undefined, effortArg);
     if (!res.ok) {
       if (notify) {
         ctx.toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached — task left pending` : 'could not start task: ' + res.reason);

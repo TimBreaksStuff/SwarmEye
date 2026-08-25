@@ -22,8 +22,8 @@ window.OpenRouterUI = {
     // invisible until the app restarted.
     // every catalog pick is a *clean* agent ('oc:', agent/clean.js — no
     // Claude Code harness). The CC-wrapped 'or:' spelling still launches
-    // (History resume, already-persisted sessions and tasks) but is no
-    // longer offered anywhere.
+    // (already-persisted sessions and tasks) but is no longer offered
+    // anywhere.
     for (let i = Pane.MODELS.length - 1; i >= 0; i--) {
       if (Pane.MODELS[i][0].startsWith('oc:')) Pane.MODELS.splice(i, 1);
     }

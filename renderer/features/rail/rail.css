@@ -1,4 +1,4 @@
-/* ---- rail: top bar, icon rail, the usage bars and gauges, and the swarm map above Archived ----
+/* ---- rail: top bar, icon rail, the usage bars and gauges ----
  *
  * Cut out of styles/app.css. Linked in app.css's own order and BEFORE
  * chrome-clean.css, which exists to override these rules — a per-area sheet
@@ -182,7 +182,7 @@
   animation: attn-pulse 1.1s ease-in-out infinite;
 }
 /* workspace identity colour: a dot in the bottom-left corner (mirrors the
- * top-right .ws-attn); the same colour rings the agent's swarm-map slot */
+ * top-right .ws-attn) */
 .rail-tile .ws-color-dot {
   position: absolute;
   bottom: -3px;
@@ -279,7 +279,128 @@
 .rail-tile.drop-before { box-shadow: 0 -3px 0 0 var(--accent); }
 .rail-tile.drop-after { box-shadow: 0 3px 0 0 var(--accent); }
 
-/* hover flyout: full workspace name + rename (dblclick) + remove (✕) */
+/* ---------- fold-out agent rows (features/rail/wsagents.js) ----------
+ * Only the expanded rail has room for a name, so the caret and the list are
+ * hidden in the 57px icon rail; the hover-expanded overlay gets both. */
+.ws-caret,
+.ws-agents { display: none; }
+
+#leftbar.expanded .ws-caret,
+#leftbar.hover-expanded .ws-caret {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-left: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+}
+.ws-caret svg { width: 13px; height: 13px; }
+.ws-caret:hover { opacity: 1; }
+.ws-caret.shut { transform: rotate(-90deg); }
+/* a workspace with no agents has nothing to fold open — the caret goes, but
+ * its slot stays so every workspace name keeps the same left edge */
+.ws-caret.empty { visibility: hidden; pointer-events: none; }
+
+#leftbar.expanded .ws-agents,
+#leftbar.hover-expanded .ws-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 2px 16px;
+  margin-top: -2px;
+}
+.ws-agents.collapsed,
+.ws-agents[hidden] { display: none !important; }
+
+.ws-agent {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 100px;
+  background: none;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.ws-agent:hover {
+  background: var(--glass);
+  color: var(--accent-text);
+}
+.ws-agent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-agent-ind { flex: none; }
+.ws-agent-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text2);
+}
+/* idle: a quiet filled dot. attention: the amber pulse the tile badge uses.
+ * exited: hollow, so a finished agent reads as spent rather than resting. */
+.ws-agent-idle .ws-agent-dot {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.ws-agent-attn .ws-agent-dot {
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+  animation: attn-pulse 1.1s ease-in-out infinite;
+}
+.ws-agent-attn { color: var(--amber); }
+.ws-agent-exited {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.ws-agent-exited .ws-agent-dot {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--border3);
+}
+
+/* Arc activity spinner — the working indicator, from the design export.
+ * Knobs: --sw-arc-size / -weight / -color / -track / -speed. */
+.sw-arc-spinner {
+  display: inline-block;
+  width: var(--sw-arc-size, 9px);
+  height: var(--sw-arc-size, 9px);
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: var(--sw-arc-weight, 1.5px) solid var(--sw-arc-track, color-mix(in srgb, var(--accent) 18%, transparent));
+  border-top-color: var(--sw-arc-color, var(--accent));
+  animation: sw-arc var(--sw-arc-speed, 0.8s) linear infinite;
+}
+@keyframes sw-arc { to { transform: rotate(360deg); } }
+/* the pane header's soft bloom, at row scale */
+.ws-agent-working .sw-arc-spinner {
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 45%, transparent));
+}
+.ws-agent-working { color: var(--accent-text); }
+/* reduced motion slows the arc rather than stopping it — the row still has to
+ * read as active */
+@media (prefers-reduced-motion: reduce) {
+  .sw-arc-spinner { animation-duration: 2.4s; }
+}
+
+/* right-click flyout: full workspace name + rename (dblclick) + remove (✕) */
 #rail-flyout {
   position: fixed;
   z-index: 24;
@@ -552,113 +673,6 @@
   margin-top: 6px;
 }
 
-/* ---------- swarm map (per-agent status grid, above Archived) ---------- */
-
-#swarm-map {
-  width: 100%;
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  cursor: default;
-}
-/* title + counts share one row; both hide with the collapsed rail, so the
- * wrapper goes with them rather than leaving an empty flex child behind */
-.swarm-map-head {
-  display: none;
-}
-#leftbar.expanded .swarm-map-head,
-#leftbar.hover-expanded .swarm-map-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  /* #swarm-map centres its children — the head has to span to push the counts right */;
-  flex-wrap: wrap;
-  row-gap: 3px;
-}
-.swarm-map-title {
-  display: none;
-  align-self: flex-start;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text2);
-}
-#leftbar.expanded .swarm-map-title,
-#leftbar.hover-expanded .swarm-map-title {
-  display: block;
-}
-.swarm-map-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 12px);
-  gap: 4px;
-}
-#leftbar.expanded .swarm-map-grid,
-#leftbar.hover-expanded .swarm-map-grid {
-  grid-template-columns: repeat(var(--swarm-cols, 10), 1fr);
-  width: 100%;
-  gap: 3px;
-  margin-top: 6px;
-}
-.swarm-map-slot {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  background: var(--border3);
-  /* a transparent border by default; a live slot gets its workspace colour set
-   * inline (box-sizing: border-box keeps the 12px footprint) */
-  border: 2px solid transparent;
-}
-.swarm-map-slot.clickable {
-  cursor: pointer;
-}
-.swarm-map-slot.clickable:hover {
-  outline: 1px solid var(--text2);
-  outline-offset: 1px;
-}
-#leftbar.expanded .swarm-map-slot,
-#leftbar.hover-expanded .swarm-map-slot {
-  width: auto;
-  height: 16px;
-}
-.swarm-map-slot.busy {
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
-}
-.swarm-map-slot.attn {
-  background: var(--amber);
-  box-shadow: 0 0 8px rgba(245, 181, 68, 0.5);
-  animation: swarm-map-pulse 1.4s ease-in-out infinite;
-}
-.swarm-map-slot.idle { background: var(--muted2); }
-.swarm-map-footer {
-  display: none;
-  align-self: flex-start;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--text2);
-  letter-spacing: 0.05em;
-}
-#leftbar.expanded .swarm-map-footer,
-#leftbar.hover-expanded .swarm-map-footer {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  text-align: left;
-  flex: 0 0 auto;
-  max-width: 100%;
-  line-height: 1.35;
-}
-@keyframes swarm-map-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.38; }
-}
 .gauge-sub {
   font-family: var(--font-mono);
   font-size: 9px;
@@ -827,7 +841,7 @@
   border-color: var(--border);
 }
 
-/* --- order: usage → workspaces → swarm → destinations (bottom) --- */
+/* --- order: usage → workspaces → destinations (bottom) --- */
 
 /* the section head replaces the hairline that used to split usage off */
 
@@ -868,40 +882,18 @@
 #leftbar.expanded .leftbar-spacer,
 #leftbar.hover-expanded .leftbar-spacer { order: 5; flex: 1 1 auto; }
 
-#leftbar.expanded #swarm-map,
-#leftbar.hover-expanded #swarm-map {
-  order: 6;
-  /* auto, not the 100% app.css sets: with 100% the side margins were added on
-   * top of the full rail width, so the strip hung ~24px past the rail's edge
-   * and its right-hand counts were cut off by it */
-  width: auto;
-  margin: 0 12px 10px;
-  padding: 10px 0 0;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-}
-
-/* the four destinations get the same head the workspace list has, so the rail
- * reads as two named groups rather than one named list and four loose rows */
+/* the two destinations get the same head the workspace list has, so the rail
+ * reads as two named groups rather than one named list and two loose rows */
 #leftbar.expanded .nav-head,
 #leftbar.hover-expanded .nav-head { order: 7; margin-top: 4px; }
 
 #leftbar.expanded #board-btn,       #leftbar.hover-expanded #board-btn       { order: 8; }
 
-#leftbar.expanded #swarm-view-btn,  #leftbar.hover-expanded #swarm-view-btn  { order: 9; }
-
-#leftbar.expanded #history-btn,     #leftbar.hover-expanded #history-btn     { order: 10; }
-
-#leftbar.expanded #skills-btn,      #leftbar.hover-expanded #skills-btn      { order: 11; }
+#leftbar.expanded #skills-btn,      #leftbar.hover-expanded #skills-btn      { order: 9; }
 
 #leftbar.expanded #board-btn,
-#leftbar.expanded #swarm-view-btn,
-#leftbar.expanded #history-btn,
 #leftbar.expanded #skills-btn,
 #leftbar.hover-expanded #board-btn,
-#leftbar.hover-expanded #swarm-view-btn,
-#leftbar.hover-expanded #history-btn,
 #leftbar.hover-expanded #skills-btn { margin: 0 10px 2px; }
 
 #leftbar.expanded #skills-btn,
@@ -1204,35 +1196,6 @@
   text-align: center;
 }
 
-/* --- swarm overview: one strip, no card --- */
-/* same head treatment as WORKSPACES and VIEWS — three groups, one style */
-.swarm-map-title,
-#leftbar.expanded .swarm-map-title,
-#leftbar.hover-expanded .swarm-map-title {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .14em;
-  color: var(--muted);
-  text-align: left;
-}
-
-/* --swarm-cols is set per render from the slot count, so the slots fill one
- * row while they fit and wrap onto a second instead of being cut off */
-
-#leftbar.expanded .swarm-map-slot,
-#leftbar.hover-expanded .swarm-map-slot {
-  width: auto;
-  height: 14px;
-  border: none;
-  border-radius: 3px;
-  box-shadow: none;
-}
-
-/* the counts sit beside the title while they fit and drop onto their own full
- * width line when they don't — beside it they were being ellipsised from
- * "2 idle" the moment a "1 waiting" joined them */
-
 /* --- collapsed rail: the same flat language as the expanded rows --- */
 /* app.css styles the 56px rail as glass buttons — rounded squares with a
  * border, a glow on hover and a mono uppercase glyph. That is a second design
@@ -1323,9 +1286,8 @@
   box-shadow: none;
 }
 
-/* no glow on the usage bars or the swarm slots either — same reason */
+/* no glow on the usage bars either — same reason */
 #leftbar:not(.expanded):not(.hover-expanded) .u-fill,
-#leftbar:not(.expanded):not(.hover-expanded) .swarm-map-slot { box-shadow: none; }
 
 /* keyboard focus was invisible on every tile in both states */
 .rail-tile:focus-visible {
@@ -1333,100 +1295,17 @@
   outline-offset: 2px;
 }
 
-/* ---------- workspace notebook ---------- */
-/* A floating box rather than an inset:0 overlay: the popover closes on an
-   outside click, and a full-screen backdrop would contain every click there
-   is. Opaque surface, 12px radius, one border — the language #coord-modal-box
-   and the four views settled on, not msg-pop's older glass. */
-/* One grip, on the box: the textarea used to carry its own, which left two of
-   them stacked in the same corner once the box itself could be dragged. */
-#notes-pop {
-  position: fixed;
-  z-index: 60;
-  top: 50%;
-  left: 50%;
-  width: min(620px, 90vw);
-  height: min(460px, 80vh);
-  min-width: 380px;
-  min-height: 260px;
-  max-width: 96vw;
-  max-height: calc(100vh - 120px); /* dragged to the top, still clear of the top bar */
-  overflow: hidden; /* `resize` does nothing while overflow is visible */
-  resize: both;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-}
-
-#notes-pop[hidden] { display: none; }
-
-.notes-head,
-.notes-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.notes-foot { padding-right: 14px; }
-
- /* clear of the resize grip in the corner */
-#notes-text {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border2);
-  border-radius: 8px;
-  padding: 10px 12px;
-  resize: none; /* the box has the grip now */
-  flex: 1;
-  min-height: 0;
-}
-
-#notes-text:focus-visible { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
-
-.notes-hint {
-  font-family: var(--font-ui);
-  font-size: 11px;
-  color: var(--muted2);
-}
-
-.notes-hint.warn { color: var(--amber); }
-
-/* the flyout's third button, sized like the 📌 and ✕ beside it */
-.rail-flyout-notes {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 4px;
-  border-radius: 6px;
-  opacity: 0.75;
-}
-
-.rail-flyout-notes:hover { opacity: 1; background: var(--hover); }
-
-/* the flyout's pin/notes buttons and the rail's pinned marker are stroke SVGs
- * from icons.js now, not emoji — the one icon set, sized like its neighbours */
-.rail-flyout-pin svg,
-.rail-flyout-notes svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
+/* the flyout's pin button and the rail's pinned marker are stroke SVGs from
+ * icons.js now, not emoji — the one icon set, sized like its neighbours */
+.rail-flyout-pin svg{ width: 13px; height: 13px; display: block; margin: 0 auto; }
 
 .rail-tile .ws-pin svg { width: 9px; height: 9px; display: block; }
 
-/* ---- isolated agents: the flyout toggle and the review popover ---- */
+/* ---- isolated agents: the flyout toggle ---- */
 
-/* two more flyout buttons beside notes/pin/✕, same size and the same "on"
+/* one more flyout button beside pin/✕, same size and the same "on"
    treatment the pin already uses for a persisted workspace flag */
-.rail-flyout-isolate,
-.rail-flyout-review {
+.rail-flyout-isolate {
   background: none;
   border: none;
   cursor: pointer;
@@ -1437,22 +1316,17 @@
   opacity: 0.55;
 }
 
-.rail-flyout-isolate:hover,
-.rail-flyout-review:hover { opacity: 1; background: var(--hover); }
+.rail-flyout-isolate:hover { opacity: 1; background: var(--hover); }
 
 .rail-flyout-isolate.on { opacity: 1; color: var(--accent-text); }
 
-.rail-flyout-isolate svg,
-.rail-flyout-review svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
-
-.diff-line.add { color: var(--diff-add); background: var(--diff-add-bg); }
+.rail-flyout-isolate svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
 
 /* --- workspace identity colours on a light chassis ---
  * `WORKSPACE_COLORS` in main/config.js was picked against the dark page, and
- * that is where it works: on Light the swarm map's `#d6ff4b` node, links, hub
- * disc and hub label are drawn on `#eef0f3` and none of them are visible. The
- * hue *is* the identity, so the hue and chroma are kept and only the lightness
- * is pinned dark enough to read.
+ * that is where it works: on Light a `#d6ff4b` tile dot or swatch is drawn on
+ * `#eef0f3` and is not visible at all. The hue *is* the identity, so the hue
+ * and chroma are kept and only the lightness is pinned dark enough to read.
  *
  * Every element painted in a workspace's colour carries the raw value as `--ws`
  * and paints with `var(--ws-ink)`. Keyed off the chassis rather than the theme
@@ -1496,6 +1370,84 @@
 .rail-grip:hover::after,
 #leftbar.rail-dragging .rail-grip::after { opacity: 0.55; }
 
+/* The hover preview widens only #leftbar-surface — #leftbar itself, and with
+ * it the grip, stay at 57px — so the grip's line lands a third of the way into
+ * the open rail and paints top to bottom across the workspace names. It shows
+ * up mid-drag: the rail snaps small the moment the pointer crosses 145px,
+ * while the pointer itself is still out over the surface, which re-opens the
+ * preview under a grip that is still drawing its drag line. The 7px strip
+ * stays where it is (touching it is what drops the preview — see
+ * railgrip.js); only the line it paints goes. */
+#leftbar.hover-expanded .rail-grip::after { opacity: 0; }
+
 /* the 0.16s width animation lags the pointer mid-drag */
 #leftbar.rail-dragging,
 #leftbar.rail-dragging #leftbar-surface { transition: none; }
+
+/* --- foot group: the "Views" head + its four destinations, collapsible ---
+ * #rail-foot is display:contents while open, so every existing order/margin
+ * rule above still addresses the four buttons directly and the two rail
+ * layouts are unchanged. It only becomes a real box once collapsed, where it
+ * has to lay its buttons out as one row.
+ * The wrapper sits after .leftbar-spacer in the DOM (the collapsed row must
+ * not swallow it), so the small rail restores its own order below. */
+#rail-foot { display: contents; }
+
+#leftbar:not(.expanded):not(.hover-expanded) .leftbar-spacer { order: 1; }
+#leftbar:not(.expanded):not(.hover-expanded) #skills-btn { order: 3; }
+
+/* the grip strip: drag its line down to fold the group away, up to bring it
+ * back. Only the expanded rail can be folded — the 57px rail is already icons
+ * and has no width for a bottom row. */
+.rail-foot-grip { display: none; }
+#leftbar.expanded .rail-foot-grip {
+  display: block;
+  position: relative;
+  order: 7;
+  flex: none;
+  width: auto;
+  height: 11px;
+  margin: 0 12px;
+  cursor: ns-resize;
+}
+.rail-foot-grip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 2px;
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+  background: var(--border3);
+  transition: background 0.12s ease, width 0.12s ease;
+}
+.rail-foot-grip:hover::after,
+#leftbar.foot-dragging .rail-foot-grip::after {
+  background: var(--accent);
+  width: 44px;
+}
+
+#leftbar.expanded.foot-collapsed #rail-foot {
+  display: flex;
+  order: 8;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 2px 12px 12px;
+}
+#leftbar.expanded.foot-collapsed .nav-head { display: none; }
+#leftbar.expanded.foot-collapsed #rail-foot .rail-tile {
+  width: 38px;
+  height: 38px;
+  margin: 0;
+  padding: 0;
+  border-radius: 10px;
+  justify-content: center;
+}
+#leftbar.expanded.foot-collapsed #rail-foot .rail-tile-name { display: none; }
+
+/* the fold is a layout change, not a resize — kill the width animation only */
+#leftbar.foot-dragging,
+#leftbar.foot-dragging #leftbar-surface { transition: none; }
