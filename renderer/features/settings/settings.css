@@ -177,6 +177,15 @@
 }
 .opt-ctl button:hover { color: var(--accent-text); }
 
+/* "Native Apple style" Restart — a word, not a 24x24 stepper chip: the shared
+ * .opt-ctl button width clipped it, so it drew under the switch beside it. */
+#native-style-restart {
+  width: auto;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 /* steppers — the − value + trio fuses into one chip; the buttons inside go
  * transparent. :has picks out exactly the button+span+button pattern. */
 #kbd-pop .opt-ctl:has(> button + span + button) {
