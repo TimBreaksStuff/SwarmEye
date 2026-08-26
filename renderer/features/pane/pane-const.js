@@ -75,9 +75,6 @@ const READ_ONLY_ASK =
   + 'and do not run any command that changes files. Read and report only, until I say otherwise.';
 const READ_ONLY_LIFT = 'You can edit files again — the read-only request is lifted.';
 
-/* Tools that change a file, and the ones that only look at one — these two
- * only split a list in a popover. */
-
 /* How long the agent has been blocked, in the coarsest unit that is still true:
  * the question this answers is "40 seconds or 40 minutes", never the seconds. */
 function fmtWait(ms) {

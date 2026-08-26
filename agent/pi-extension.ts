@@ -4,7 +4,7 @@
  * Same job as agent/opencode-plugin.js: translate the harness's own events
  * into the hook-state file and Claude-format transcript main/hooks.js already
  * watches, so status, cost, context and the closing summary work unchanged.
- * See opencode-pi-plan.md.
+ * See ./README.md.
  *
  * Loaded per launch with `pi -e <this file>`; the SWARMEYE_* env vars come
  * from hooks.claudeCmd. `.ts` because that is pi's documented extension

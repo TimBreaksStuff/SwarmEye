@@ -67,71 +67,27 @@ const DARK_RAMP = {
   ...ANSI_RAMP,
 };
 
+/* The twelve accent variants of `light`: same page, same ramp, and only the
+ * cursor and the selection follow the accent — so that pair is the whole
+ * entry. [name, cursor, selection-rgb]; the selection is that hue at 0.25. */
+const LIGHT_ACCENTS = [
+  ['blue', '#1e40af', '29, 78, 216'],
+  ['neoblue', '#0043c7', '0, 87, 255'],
+  ['purple', '#5b21b6', '109, 40, 217'],
+  ['teal', '#115e59', '15, 118, 110'],
+  ['rose', '#9f1239', '190, 18, 60'],
+  ['violet', '#6d28d9', '124, 58, 237'],
+  ['sky', '#075985', '3, 105, 161'],
+  ['indigo', '#3730a3', '67, 56, 202'],
+  ['fuchsia', '#86198f', '162, 28, 175'],
+  ['emerald', '#065f46', '4, 120, 87'],
+  ['amber', '#7a4700', '154, 91, 0'],
+  ['slate', '#334155', '71, 85, 105'],
+];
+
 const XTERM_THEMES = {
   dark: DARK_RAMP,
   light: LIGHT_RAMP,
-  /* the twelve accent variants of `light` — same page, same ramp, only the
-   * cursor and selection follow the accent */
-  blue: {
-    ...LIGHT_RAMP,
-    cursor: '#1e40af',
-    selectionBackground: 'rgba(29, 78, 216, 0.25)',
-  },
-  neoblue: {
-    ...LIGHT_RAMP,
-    cursor: '#0043c7',
-    selectionBackground: 'rgba(0, 87, 255, 0.25)',
-  },
-  purple: {
-    ...LIGHT_RAMP,
-    cursor: '#5b21b6',
-    selectionBackground: 'rgba(109, 40, 217, 0.25)',
-  },
-  teal: {
-    ...LIGHT_RAMP,
-    cursor: '#115e59',
-    selectionBackground: 'rgba(15, 118, 110, 0.25)',
-  },
-  rose: {
-    ...LIGHT_RAMP,
-    cursor: '#9f1239',
-    selectionBackground: 'rgba(190, 18, 60, 0.25)',
-  },
-  violet: {
-    ...LIGHT_RAMP,
-    cursor: '#6d28d9',
-    selectionBackground: 'rgba(124, 58, 237, 0.25)',
-  },
-  sky: {
-    ...LIGHT_RAMP,
-    cursor: '#075985',
-    selectionBackground: 'rgba(3, 105, 161, 0.25)',
-  },
-  indigo: {
-    ...LIGHT_RAMP,
-    cursor: '#3730a3',
-    selectionBackground: 'rgba(67, 56, 202, 0.25)',
-  },
-  fuchsia: {
-    ...LIGHT_RAMP,
-    cursor: '#86198f',
-    selectionBackground: 'rgba(162, 28, 175, 0.25)',
-  },
-  emerald: {
-    ...LIGHT_RAMP,
-    cursor: '#065f46',
-    selectionBackground: 'rgba(4, 120, 87, 0.25)',
-  },
-  amber: {
-    ...LIGHT_RAMP,
-    cursor: '#7a4700',
-    selectionBackground: 'rgba(154, 91, 0, 0.25)',
-  },
-  slate: {
-    ...LIGHT_RAMP,
-    cursor: '#334155',
-    selectionBackground: 'rgba(71, 85, 105, 0.25)',
-  },
   orange: {
     background: '#0f0c09',
     foreground: '#ede9e3',
@@ -148,6 +104,9 @@ const XTERM_THEMES = {
     brightYellow: '#ffc879',
   },
 };
+for (const [name, cursor, rgb] of LIGHT_ACCENTS) {
+  XTERM_THEMES[name] = { ...LIGHT_RAMP, cursor, selectionBackground: `rgba(${rgb}, 0.25)` };
+}
 /* The terminal paints its own opaque background rather than letting a pane
  * tint show through (it used to be transparent, back when the panes were
  * glass; chrome-clean.css has filled .pane-term with a flat var(--term-bg)
@@ -199,6 +158,14 @@ const MIN_CONTRAST = 4.5;
 
 let activeXtermTheme = paneTheme(XTERM_THEMES.dark);
 let activeMinContrast = 1;
+
+// Terminal font. JetBrains Mono is the app's own; the macOS "Native Apple
+// style" option (settings.js) swaps in the system mono so agent panes match
+// Terminal.app rather than the rest of the chrome. A variable, not a literal
+// in the term options, because the option flips it at runtime.
+const DEFAULT_MONO_FONT = "'JetBrains Mono', monospace";
+const NATIVE_MONO_FONT = "ui-monospace, 'SF Mono', Menlo, 'JetBrains Mono', monospace";
+let activeMonoFont = DEFAULT_MONO_FONT;
 
 const DEFAULT_FONT_SIZE = 13;
 // last font size the user picked (MOD+/- or the pane buttons) — persists

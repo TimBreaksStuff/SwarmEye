@@ -1,0 +1,1018 @@
+/* Task board: queue todos for agents (pick a workspace, start now or let
+ * the scheduler auto-start it), see manual/scheduled/active/completed at a glance.
+ * Scheduling and task lifecycle live in app.js — this module only owns
+ * rendering and the creation form. Exposes window.Board. */
+
+const Board = (() => {
+  const { armOrFire, restoreArmed } = Confirm; // click-twice-to-confirm ✕ buttons
+  const newBtn = document.getElementById('board-new-btn');
+  const formEl = document.getElementById('board-form');
+  const textEl = document.getElementById('board-form-text');
+  const wsSel = document.getElementById('board-form-ws');
+  const categorySel = document.getElementById('board-form-category');
+  const categoryManageBtn = document.getElementById('board-form-category-manage');
+  const micBtn = document.getElementById('board-form-mic');
+  const categoryPopEl = document.getElementById('board-category-pop');
+  const categoryPopTitleEl = document.getElementById('board-category-pop-title');
+  const categoryPopListEl = document.getElementById('board-category-pop-list');
+  const categoryPopInputEl = document.getElementById('board-category-pop-input');
+  const categoryPopAddBtn = document.getElementById('board-category-pop-add');
+  const categoryFilterEl = document.getElementById('board-category-filter');
+  const chainEl = document.getElementById('board-form-chain');
+  const startModeSel = document.getElementById('board-form-startmode');
+  const modelSel = document.getElementById('board-form-model');
+  const harnessSel = document.getElementById('board-form-harness');
+  const effortSel = document.getElementById('board-form-effort');
+  const focusToggle = document.getElementById('board-form-focus');
+  const closeOnEndToggle = document.getElementById('board-form-closeonend');
+  const prioritySel = document.getElementById('board-form-priority');
+  const repeatSel = document.getElementById('board-form-repeat');
+  const autoHint = document.getElementById('board-form-auto-hint');
+  const cancelBtn = document.getElementById('board-form-cancel');
+  const submitBtn = document.getElementById('board-form-submit');
+  const modeRadios = [...document.querySelectorAll('input[name="board-mode"]')];
+
+  const statsEl = document.getElementById('board-stats');
+  const statTodayEl = document.getElementById('board-stats-today');
+  const statWeekEl = document.getElementById('board-stats-week');
+  const statMonthEl = document.getElementById('board-stats-month');
+  const statYearEl = document.getElementById('board-stats-year');
+  const statQuipEl = document.getElementById('board-stats-quip');
+
+  const cols = {
+    manual: document.getElementById('board-col-manual'),
+    pending: document.getElementById('board-col-pending'),
+    active: document.getElementById('board-col-active'),
+    completed: document.getElementById('board-col-completed'),
+  };
+  const counts = {
+    manual: document.getElementById('board-count-manual'),
+    pending: document.getElementById('board-count-pending'),
+    active: document.getElementById('board-count-active'),
+    completed: document.getElementById('board-count-completed'),
+  };
+  const EMPTY_TEXT = {
+    manual: 'no manual tasks',
+    pending: 'no tasks queued',
+    active: 'nothing running',
+    completed: 'nothing finished yet',
+  };
+
+  const sessionViewEl = document.getElementById('session-view');
+  const sessionViewTitleEl = document.getElementById('session-view-title');
+  const sessionViewBodyEl = document.getElementById('session-view-body');
+  const sessionViewExportBtn = document.getElementById('session-view-export');
+  const sessionViewCloseBtn = document.getElementById('session-view-close');
+  let sessionViewTask = null;
+  let sessionViewHandlers = null;
+
+  const archiveBtn = document.getElementById('board-archive-btn');
+  const boardMainEl = document.getElementById('board-main');
+  const archiveViewEl = document.getElementById('board-archive');
+  const archiveListEl = document.getElementById('board-archive-list');
+  const archiveCountEl = document.getElementById('board-archive-count');
+  const archiveDeleteAllBtn = document.getElementById('board-archive-delete-all');
+  const archiveSearchEl = document.getElementById('board-archive-search');
+  const archivePriorityFilterEl = document.getElementById('board-archive-priority-filter');
+  const archiveCategoryFilterEl = document.getElementById('board-archive-category-filter');
+  let archiveShown = false;
+  let lastArchivedTasks = [];
+  let formWasOpenBeforeArchive = false;
+
+  let autoUsageLimit = 85;
+  let lastHandlers = null;
+  // presets for a new task's own pickers, mirrored from the ⌨ Options panel
+  const defaults = {
+    defaultStartMode: 'default',
+    defaultModel: 'default',
+    defaultEffort: 'default',
+    defaultFocus: false,
+  };
+  let lastTasks = [];
+  let lastWorkspaces = [];
+
+  // built once from Pane.MODES — the same source of truth as the per-pane
+  // mode dropdown, so a mode never means something different in two places.
+  // Pane.MODES labels its 'default' value "manual" (fine on its own, next to
+  // no other "manual" concept) — but this select sits directly under the
+  // board-mode scheduling radios, which have their own unrelated "manual"
+  // option (stay off the scheduler until moved to Scheduled). Relabeled here
+  // only, so the two stop reading as the same choice.
+  startModeSel.dataset.tip = 'Claude’s starting permission mode for the agent — unrelated to the scheduling mode above';
+  for (const [value, label] of Pane.MODES) startModeSel.add(new Option(value === 'default' ? 'default' : label, value));
+
+  for (const [value, label] of Pane.MODELS) modelSel.add(new Option(label, value));
+
+  for (const [value, label] of Pane.EFFORTS) effortSel.add(new Option(label, value));
+
+  // startMode's own "manual" label (from Pane.MODES) reads as the same word
+  // as the scheduling-mode badge right next to it — relabeled to "default"
+  // here too, matching the picker above, so a card can't badge itself
+  // "manual · manual" for two unrelated reasons.
+  function modeLabel(startMode) {
+    if (startMode === 'default' || !startMode) return 'default';
+    const found = Pane.MODES.find(([v]) => v === startMode);
+    return found ? found[1] : 'default';
+  }
+
+  // repeat intervals, shared with app.js (which queues the next run) so the
+  // labels on the card and the maths behind them can't drift apart
+  const REPEAT_MS = { hourly: 3600e3, daily: 864e5, weekly: 6048e5 };
+  const REPEAT_LABEL = { hourly: 'hourly', daily: 'daily', weekly: 'weekly' };
+
+  // funny-feedback copy, tiered by how many tasks finished today — picked
+  // deterministically from today's count + day-of-month so it holds steady
+  // across re-renders instead of reshuffling on every board refresh
+  const QUIP_TIERS = [
+    { max: 0, quips: [
+      "Blank scoreboard. The cursor blinks, waiting for greatness.",
+      "Nothing shipped yet — the agents are as idle as you are.",
+    ] },
+    { max: 2, quips: [
+      "One down, momentum is now technically real.",
+      "Warming up the flux capacitor. Nice start.",
+    ] },
+    { max: 5, quips: [
+      "Now we're vibing. Keep the streak alive.",
+      "Solid pace — the rubber duck is impressed.",
+    ] },
+    { max: 9, quips: [
+      "Certified task-shredder today. Hydrate, though.",
+      "You're basically speedrunning your own backlog.",
+    ] },
+    { max: Infinity, quips: [
+      "10+? Okay Flash Gordon, save some tasks for tomorrow.",
+      "Are you even sleeping, or just compiling dreams into commits?",
+    ] },
+  ];
+
+  function pickQuip(todayCount) {
+    const tier = QUIP_TIERS.find((t) => todayCount <= t.max);
+    const list = tier.quips;
+    return list[(todayCount + new Date().getDate()) % list.length];
+  }
+
+  /* Midnight starting the day/week/month/year `ts` falls in — the four windows
+   * the stat row counts completions in. Only the date step differs, so it is
+   * the only thing written per period; weeks start on Monday. */
+  const PERIOD_START = {
+    day: () => {},
+    week: (d) => d.setDate(d.getDate() - ((d.getDay() + 6) % 7)),
+    month: (d) => d.setDate(1),
+    year: (d) => d.setMonth(0, 1),
+  };
+  function startOf(period, ts) {
+    const d = new Date(ts);
+    PERIOD_START[period](d);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+
+  // counts tasks completed today/this-week/this-month/this-year across both
+  // the live board and the archive (archiving a task doesn't erase its
+  // completedAt) — shown next to the new-task form to nudge you along
+  function renderStats() {
+    const now = Date.now();
+    const dayStart = startOf('day', now);
+    const weekStart = startOf('week', now);
+    const monthStart = startOf('month', now);
+    const yearStart = startOf('year', now);
+    let today = 0, week = 0, month = 0, year = 0;
+    for (const t of [...lastTasks, ...lastArchivedTasks]) {
+      if (!t.completedAt) continue;
+      if (t.completedAt >= yearStart) year++;
+      if (t.completedAt >= monthStart) month++;
+      if (t.completedAt >= weekStart) week++;
+      if (t.completedAt >= dayStart) today++;
+    }
+    statTodayEl.textContent = today;
+    statWeekEl.textContent = week;
+    statMonthEl.textContent = month;
+    statYearEl.textContent = year;
+    statQuipEl.textContent = pickQuip(today);
+  }
+
+  function selectedRadio() {
+    const r = modeRadios.find((r) => r.checked);
+    return r ? r.value : 'now';
+  }
+
+  function updateAutoHint() {
+    const mode = selectedRadio();
+    autoHint.hidden = mode === 'now';
+    // an OpenRouter task is billed to OpenRouter, so the scheduler starts it
+    // without waiting for Claude session headroom (scheduler.js runScheduler)
+    if (mode === 'auto') {
+      autoHint.textContent = isOrPick()
+        ? 'starts as soon as an agent slot is free — OpenRouter ignores Claude usage'
+        : `starts once usage stays under ${autoUsageLimit}%`;
+    } else if (mode === 'next-session') autoHint.textContent = 'starts once the current usage session ends and a new one begins';
+    else if (mode === 'manual') autoHint.textContent = 'stays in Manual until you move it to Scheduled';
+  }
+
+  // openrouter.js loads after this file, so nothing here may read OpenRouterUI
+  // at load time — the harness options are filled on the first sync instead.
+  const isOrPick = () => !!window.OpenRouterUI && OpenRouterUI.isOpenRouter(modelSel.value);
+
+  /* An OpenRouter pick runs a bare harness: main drops `--effort` for those
+   * models and there is no Claude Code footer to `/focus`, so the two controls
+   * the scheduler would ignore grey out rather than lie — the same rule the
+   * launch card applies (launcher.js fillModels). The Harness picker is the
+   * mirror image: it only means anything here, so it appears only here. */
+  function syncModelDeps() {
+    const or = isOrPick();
+    if (or && !harnessSel.options.length) {
+      for (const [prefix, label] of OpenRouterUI.HARNESSES) harnessSel.add(new Option(label, prefix));
+    }
+    harnessSel.hidden = !or;
+    effortSel.disabled = or;
+    focusToggle.disabled = or;
+    effortSel.dataset.tip = or
+      ? 'effort is Claude-only — OpenRouter models ignore it'
+      : 'Claude reasoning effort for this task';
+    focusToggle.parentElement.dataset.tip = or
+      ? '/focus is Claude Code only — an OpenRouter agent has no footer to toggle'
+      : '';
+    updateAutoHint();
+  }
+
+  /* What the model picker plus the harness picker mean together: the select
+   * only ever carries clean's 'oc:' spelling (OpenRouterUI.install), so the
+   * harness chosen beside it replaces that prefix on the way out. Like the
+   * launch card, the pick is a one-off for this task and never rewrites the
+   * remembered habit. */
+  function pickedModel() {
+    if (!isOrPick() || !harnessSel.value) return modelSel.value;
+    return harnessSel.value + OpenRouterUI.slugOf(modelSel.value);
+  }
+
+  // rebuilds the category select from the currently chosen workspace's
+  // categories, keeping the previous pick only if it still exists there
+  function populateCategorySelect() {
+    const ws = lastWorkspaces.find((w) => w.id === wsSel.value);
+    const cats = (ws && ws.categories) || [];
+    const prev = categorySel.value;
+    categorySel.innerHTML = '';
+    for (const c of cats) categorySel.add(new Option(c, c));
+    if (cats.includes(prev)) categorySel.value = prev;
+    else if (cats.includes('maintenance')) categorySel.value = 'maintenance';
+    else if (cats.length) categorySel.value = cats[0];
+  }
+
+  // shared by the live-board and archive category filters: every category
+  // any workspace currently defines, plus any category still sitting on a
+  // task even if its workspace later deleted that category
+  function populateCategoryFilter(selectEl, tasksList, workspaces) {
+    const names = new Set();
+    for (const ws of workspaces) for (const c of ws.categories || []) names.add(c);
+    for (const t of tasksList) if (t.category) names.add(t.category);
+    const sorted = [...names].sort((a, b) => a.localeCompare(b));
+    const prev = selectEl.value;
+    selectEl.innerHTML = '';
+    selectEl.add(new Option('all categories', ''));
+    for (const name of sorted) selectEl.add(new Option(name, name));
+    if (sorted.includes(prev)) selectEl.value = prev;
+  }
+
+  function showForm(show) {
+    stopDictation(); // opening, clearing (submit) or hiding the form must release the mic
+    formEl.hidden = !show;
+    statsEl.hidden = !show;
+    if (show) {
+      textEl.value = '';
+      chainEl.value = '';
+      submitBtn.disabled = true;
+      startModeSel.value = defaults.defaultStartMode;
+      modelSel.value = defaults.defaultModel;
+      effortSel.value = defaults.defaultEffort;
+      focusToggle.checked = defaults.defaultFocus;
+      closeOnEndToggle.checked = true;
+      prioritySel.value = 'medium';
+      repeatSel.value = 'none';
+      if (categorySel.querySelector('option[value="maintenance"]')) categorySel.value = 'maintenance';
+      syncModelDeps(); // greys effort/focus and offers Harness when the default is an OpenRouter model
+      if (window.OpenRouterUI) harnessSel.value = OpenRouterUI.harnessPrefix();
+      updateAutoHint();
+      renderStats();
+      textEl.focus();
+    }
+  }
+
+  // Tab/letters typed here must not fall through to the document-level
+  // shortcut handler (bare Tab would cycle agents mid-edit) — Escape is the
+  // one key left alone so it bubbles up to app.js's board-close handling,
+  // which this module doesn't own.
+  formEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') e.stopPropagation();
+    if (modHeld(e) && e.key === 'Enter' && !submitBtn.disabled) { // modHeld: app.js's one modifier rule
+      e.preventDefault();
+      submitBtn.click();
+    }
+  });
+
+  textEl.addEventListener('input', () => {
+    submitBtn.disabled = !textEl.value.trim();
+  });
+
+  // dropping files onto the task text pastes their paths at the cursor —
+  // same path-rewriting convention as dropping onto a running agent's
+  // terminal (pane.js), just inserted into a textarea instead of xterm
+  textEl.addEventListener('dragover', (e) => {
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    textEl.classList.add('file-drop');
+  });
+  textEl.addEventListener('dragleave', () => textEl.classList.remove('file-drop'));
+  textEl.addEventListener('drop', (e) => {
+    textEl.classList.remove('file-drop');
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    const paths = droppedPaths(e);
+    if (!paths.length) return;
+    const insert = paths.join(' ') + ' ';
+    const start = textEl.selectionStart ?? textEl.value.length;
+    const end = textEl.selectionEnd ?? textEl.value.length;
+    textEl.value = textEl.value.slice(0, start) + insert + textEl.value.slice(end);
+    textEl.selectionStart = textEl.selectionEnd = start + insert.length;
+    textEl.dispatchEvent(new Event('input'));
+    textEl.focus();
+  });
+  // stops an in-progress dictation (no-op otherwise) — without this the mic
+  // kept recording invisibly after submit/cancel/board-close, and the next
+  // recognition result resurrected the previous task's text in the cleared box
+  // dictated text appends to whatever was already typed, so micBase has to be
+  // re-snapshotted when the mic opens and after every finalized phrase
+  let micBase = '';
+  const mic = window.Speech.wire(micBtn, {
+    interim: true,
+    onStart: () => {
+      micBase = textEl.value;
+      if (micBase && !/\s$/.test(micBase)) micBase += ' ';
+    },
+    onResult: (text, isFinal) => {
+      textEl.value = micBase + text;
+      textEl.dispatchEvent(new Event('input'));
+      if (isFinal) {
+        micBase = textEl.value;
+        if (!/\s$/.test(micBase)) micBase += ' ';
+      }
+    },
+  });
+  const stopDictation = mic.stop;
+  const toggleDictation = mic.toggle;
+  /* the follow-up box holds a whole pipeline: one prompt per step, steps split
+   * by a line of ---. Each step runs as its own task once the previous one
+   * completes (app.js startChain). */
+  function parseChain(raw) {
+    return String(raw || '').split(/^\s*-{3,}\s*$/m).map((s) => s.trim()).filter(Boolean);
+  }
+
+  modeRadios.forEach((r) => r.addEventListener('change', updateAutoHint));
+  newBtn.addEventListener('click', () => showForm(formEl.hidden));
+  cancelBtn.addEventListener('click', () => showForm(false));
+  wsSel.addEventListener('change', populateCategorySelect);
+  modelSel.addEventListener('change', syncModelDeps);
+  submitBtn.addEventListener('click', () => {
+    const text = textEl.value.trim();
+    if (!text || !wsSel.value || !lastHandlers) return;
+    lastHandlers.onCreate({
+      text,
+      workspaceId: wsSel.value,
+      mode: selectedRadio(),
+      startMode: startModeSel.value,
+      model: pickedModel(),
+      effort: effortSel.value,
+      focus: focusToggle.checked,
+      closeOnComplete: closeOnEndToggle.checked,
+      priority: prioritySel.value,
+      repeat: repeatSel.value,
+      category: categorySel.value,
+      chain: parseChain(chainEl.value),
+    });
+    showForm(true);
+  });
+
+  // category-manage popover: add/remove categories for whichever workspace
+  // is currently picked in the new-task form
+  function renderCategoryPop() {
+    const ws = lastWorkspaces.find((w) => w.id === wsSel.value);
+    categoryPopTitleEl.textContent = 'Categories' + (ws ? ' (' + ws.name + ')' : '');
+    categoryPopListEl.innerHTML = '';
+    const cats = (ws && ws.categories) || [];
+    if (!cats.length) {
+      const empty = document.createElement('div');
+      empty.className = 'board-col-empty';
+      empty.textContent = 'no categories — add one below';
+      categoryPopListEl.appendChild(empty);
+    }
+    for (const c of cats) {
+      const row = document.createElement('div');
+      row.className = 'arch-row';
+      const info = document.createElement('div');
+      info.className = 'arch-info arch-name';
+      info.textContent = c;
+      const del = document.createElement('button');
+      del.className = 'arch-del';
+      Icons.set(del, 'close');
+      del.dataset.tip = 'Remove category (click twice)';
+      del.addEventListener('click', () => {
+        armOrFire(del, 'cat:' + ws.id + ':' + c, () => lastHandlers && lastHandlers.onRemoveCategory(ws.id, c));
+      });
+      restoreArmed(del, 'cat:' + ws.id + ':' + c);
+      row.append(info, del);
+      categoryPopListEl.appendChild(row);
+    }
+  }
+
+  function addCategoryFromPop() {
+    const ws = lastWorkspaces.find((w) => w.id === wsSel.value);
+    const name = categoryPopInputEl.value.trim();
+    if (!ws || !name || !lastHandlers) return;
+    lastHandlers.onAddCategory(ws.id, name);
+    categoryPopInputEl.value = '';
+  }
+  categoryPopAddBtn.addEventListener('click', addCategoryFromPop);
+
+  // stop keys from falling through to the document-level shortcut handler
+  // (same reason as formEl above) — Escape closes just this popover
+  categoryPopEl.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); addCategoryFromPop(); }
+    else if (e.key === 'Escape') { e.preventDefault(); categoryPopEl.hidden = true; }
+  });
+
+  categoryManageBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!categoryPopEl.hidden) { categoryPopEl.hidden = true; return; }
+    renderCategoryPop();
+    // unhidden first: placePop measures the box to keep it inside the window
+    categoryPopEl.hidden = false;
+    placePop(categoryPopEl, categoryManageBtn, { gap: 8 });
+  });
+  document.addEventListener('click', (e) => {
+    if (!categoryPopEl.hidden && !categoryPopEl.contains(e.target)) categoryPopEl.hidden = true;
+  });
+
+  // shared by the live board and the archive view — who/badges/meta/text are
+  // identical, only the action row (start/jump vs. permanent delete) differs
+  // completed-task transcript popup — the scrollback captured by app.js the
+  // moment a task finished, so you can review what an agent actually did
+  // after its pane is long gone. Works the same from the live board and the
+  // archive, since both pass the same handlers object through.
+  function openSessionView(task, workspaces, handlers) {
+    sessionViewTask = task;
+    sessionViewHandlers = handlers;
+    const ws = workspaces.find((w) => w.id === task.workspaceId);
+    const agentName = handlers.getPaneAgentName(task.paneId);
+    sessionViewTitleEl.textContent = [agentName, ws && ws.name].filter(Boolean).join(' — ') || 'session';
+    sessionViewBodyEl.textContent = task.sessionLog || '';
+    sessionViewEl.hidden = false;
+    // an archived task arrives from config:get without its log — main keeps it
+    // out of the boot payload and hands it over one id at a time
+    if (!task.sessionLog && task.hasSessionLog) {
+      window.swarm.archivedTaskLog(task.id).then((r) => {
+        if (sessionViewTask !== task) return;
+        task.sessionLog = (r && r.sessionLog) || '';
+        sessionViewBodyEl.textContent = task.sessionLog;
+      });
+    }
+  }
+
+  function closeSessionView() {
+    sessionViewEl.hidden = true;
+    sessionViewTask = null;
+    sessionViewHandlers = null;
+  }
+
+  sessionViewCloseBtn.addEventListener('click', closeSessionView);
+  sessionViewExportBtn.addEventListener('click', () => {
+    if (sessionViewTask && sessionViewHandlers) sessionViewHandlers.onExportSession(sessionViewTask);
+  });
+  // click on the dimmed backdrop (not the box itself) closes it
+  sessionViewEl.addEventListener('click', (e) => {
+    if (e.target === sessionViewEl) closeSessionView();
+  });
+
+  const PRIORITIES = [['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['critical', 'critical']];
+
+  /* the priority/category badges on a not-yet-running card double as pickers.
+   * Rendered as real <select>s styled like the static badges, so editing is
+   * one click with no popover machinery. `card` is needed to suspend its own
+   * draggable while the dropdown is being used, or the mousedown that opens
+   * the list starts a card drag instead. */
+  function makeCardSelect(card, className, options, value, onPick) {
+    const sel = document.createElement('select');
+    sel.className = 'board-card-select ' + className;
+    for (const [v, label] of options) sel.add(new Option(label, v));
+    sel.value = value;
+    sel.addEventListener('mousedown', () => { card.draggable = false; });
+    // renders were skipped while this held focus — catch up now that it
+    // doesn't, so a card the category filter should hide actually goes
+    sel.addEventListener('blur', () => { card.draggable = true; renderCols(); });
+    sel.addEventListener('click', (e) => e.stopPropagation()); // jumpable cards jump on click — not from here
+    sel.addEventListener('change', () => onPick(sel.value));
+    return sel;
+  }
+
+  function priorityPicker(card, task, handlers) {
+    const value = task.priority || 'medium';
+    const sel = makeCardSelect(card, 'board-card-priority board-card-priority-' + value, PRIORITIES, value, (v) => {
+      // recolor now: the re-render that follows is skipped while this select
+      // still holds focus (see renderCols), so the badge would keep the old hue
+      sel.className = 'board-card-select board-card-priority board-card-priority-' + v;
+      handlers.onSetPriority(task.id, v);
+    });
+    sel.dataset.tip = 'Priority — auto mode starts higher-priority tasks first';
+    return sel;
+  }
+
+  function categoryPicker(card, task, workspaces, handlers) {
+    const ws = workspaces.find((w) => w.id === task.workspaceId);
+    const names = [...((ws && ws.categories) || [])];
+    // a task keeps its category even if the workspace later drops it — listing
+    // it anyway stops the picker from silently reading as "(none)"
+    if (task.category && !names.includes(task.category)) names.push(task.category);
+    const options = [['', '(none)'], ...names.map((c) => [c, c])];
+    const sel = makeCardSelect(card, 'board-card-category', options, task.category || '', (v) => {
+      handlers.onSetCategory(task.id, v);
+    });
+    sel.dataset.tip = 'Category';
+    return sel;
+  }
+
+  function buildCardBody(card, task, workspaces, handlers, editable) {
+    const top = document.createElement('div');
+    top.className = 'board-card-top';
+    const whoWrap = elt('span', 'board-card-who-wrap');
+    if (task.status === 'active') {
+      const dot = document.createElement('span');
+      dot.className = 'board-card-dot';
+      dot.dataset.tip = 'active';
+      whoWrap.appendChild(dot);
+    }
+    const who = document.createElement('span');
+    who.className = 'board-card-who';
+    const agentName = handlers.getPaneAgentName(task.paneId);
+    const ws = workspaces.find((w) => w.id === task.workspaceId);
+    who.textContent = ws ? ws.name : '(removed)';
+    whoWrap.appendChild(who);
+    const badges = document.createElement('span');
+    badges.className = 'board-card-badges';
+    const badge = document.createElement('span');
+    badge.className = 'board-card-badge';
+    const modeText = task.mode === 'auto' ? 'auto' : task.mode === 'next-session' ? 'next session' : task.mode === 'manual' ? 'manual' : 'now';
+    badge.textContent = modeText + ' · ' + modeLabel(task.startMode);
+    if (editable) {
+      badges.appendChild(priorityPicker(card, task, handlers));
+      badges.appendChild(categoryPicker(card, task, workspaces, handlers));
+    } else {
+      const priority = document.createElement('span');
+      priority.className = 'board-card-priority board-card-priority-' + (task.priority || 'medium');
+      priority.textContent = task.priority || 'medium';
+      badges.appendChild(priority);
+      if (task.category) {
+        const cat = document.createElement('span');
+        cat.className = 'board-card-category';
+        cat.textContent = task.category;
+        badges.appendChild(cat);
+      }
+    }
+    if (REPEAT_LABEL[task.repeat]) {
+      const repeatBadge = elt('span', 'board-card-badge', '⟳ ' + REPEAT_LABEL[task.repeat]);
+      // a queued next run carries its due time; the run currently in flight
+      // (or already finished) has none, and only says how often it repeats
+      repeatBadge.dataset.tip = task.nextRunAt && task.status === 'pending'
+        ? 'repeats ' + REPEAT_LABEL[task.repeat] + ' — next run ' + new Date(task.nextRunAt).toLocaleString()
+        : 'repeats ' + REPEAT_LABEL[task.repeat] + ' — the next run is queued when this one finishes';
+      badges.appendChild(repeatBadge);
+    }
+    if (task.chain && task.chain.length) {
+      const chainBadge = elt('span', 'board-card-badge', '+' + task.chain.length + ' next');
+      chainBadge.dataset.tip = 'follow-up agents once this finishes:\n— ' + task.chain.join('\n— ');
+      badges.appendChild(chainBadge);
+    }
+    badges.appendChild(badge);
+    top.append(whoWrap, badges);
+    card.appendChild(top);
+
+    // agent/branch detail row — only meaningful once a task has a live or
+    // former agent attached (pending tasks have neither yet)
+    const git = handlers.getGit(task.workspaceId);
+    if (agentName || (git && git.branch)) {
+      const meta = document.createElement('div');
+      meta.className = 'board-card-meta';
+      if (agentName) {
+        const agentEl = elt('span', 'board-card-agent', '▸ ' + agentName);
+        agentEl.dataset.tip = 'agent: ' + agentName;
+        meta.appendChild(agentEl);
+      }
+      if (git && git.branch) {
+        const branchEl = elt('span', 'board-card-branch', '⎇ ' + git.branch);
+        branchEl.classList.toggle('dirty', !!git.dirty);
+        branchEl.dataset.tip = git.dirty === null
+          ? `branch ${git.branch} — could not read status`
+          : git.dirty
+            ? `branch ${git.branch} — uncommitted changes`
+            : `branch ${git.branch} — clean`;
+        meta.appendChild(branchEl);
+      }
+      card.appendChild(meta);
+    }
+
+    const text = document.createElement('div');
+    text.className = 'board-card-text';
+    text.textContent = task.text;
+    text.dataset.tip = task.text;
+    card.appendChild(text);
+
+    // what the agent said when it finished (main/hooks.js reads it out of the
+    // transcript; the ⚙ option can turn it off) — the answer to "what came of
+    // this task", without opening the transcript popup
+    if (task.summary) {
+      const summary = document.createElement('div');
+      summary.className = 'board-card-summary';
+      summary.textContent = task.summary;
+      summary.dataset.tip = task.summary;
+      card.appendChild(summary);
+    }
+
+    return agentName;
+  }
+
+  // shared by both card renderers — re-queues a completed task as a fresh
+  // 'now' task with the same text/settings, so a one-off task doesn't have
+  // to be retyped from scratch to run it again
+  function addRunAgainButton(actions, task, handlers) {
+    if (task.status !== 'completed') return;
+    const btn = elt('button', 'board-card-rerun');
+    btn.dataset.tip = 'Run this task again';
+    Icons.set(btn, 'refresh');
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handlers.onRunAgain(task);
+    });
+    actions.appendChild(btn);
+  }
+
+  // shared by both card renderers — only a completed task ever has a
+  // sessionLog (captured by app.js when the task finishes), so this quietly
+  // no-ops for every other status
+  function addSessionButton(actions, task, workspaces, handlers) {
+    if (!task.sessionLog && !task.hasSessionLog) return;
+    const viewBtn = elt('button', 'board-card-session');
+    viewBtn.dataset.tip = 'View agent session transcript';
+    Icons.set(viewBtn, 'view');
+    viewBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openSessionView(task, workspaces, handlers);
+    });
+    actions.appendChild(viewBtn);
+  }
+
+  /* drag & drop between columns. Manual/pending/active cards move; nothing
+   * un-completes, so Completed accepts nothing. Dragging Active back to
+   * Manual or Scheduled stops the running agent first (onStopAndMove) —
+   * same as dragging manual/pending across each other (plain onMoveStatus),
+   * and dragging manual/pending onto Active starts it (identical to ▶). */
+  const DROP_TARGETS = {
+    manual: {
+      accepts: ['pending', 'active'],
+      apply: (id, from) => (from === 'active' ? lastHandlers.onStopAndMove(id, 'manual') : lastHandlers.onMoveStatus(id, 'manual')),
+    },
+    pending: {
+      accepts: ['manual', 'active'],
+      apply: (id, from) => (from === 'active' ? lastHandlers.onStopAndMove(id, 'pending') : lastHandlers.onMoveStatus(id, 'pending')),
+    },
+    active: { accepts: ['manual', 'pending'], apply: (id) => lastHandlers.onStart(id) },
+  };
+  let draggingTask = null; // { id, status } while a card is in flight
+
+  function clearDropHighlights() {
+    for (const key of Object.keys(DROP_TARGETS)) cols[key].classList.remove('drag-over');
+  }
+
+  for (const [key, target] of Object.entries(DROP_TARGETS)) {
+    const list = cols[key];
+    const accepts = () => draggingTask && target.accepts.includes(draggingTask.status);
+    list.addEventListener('dragover', (e) => {
+      if (!accepts()) return;
+      e.preventDefault(); // the only way to declare this a valid drop target
+      e.dataTransfer.dropEffect = 'move';
+      list.classList.add('drag-over');
+    });
+    // fires when crossing onto a child too — only a move that actually left
+    // the column should drop the highlight
+    list.addEventListener('dragleave', (e) => {
+      if (!list.contains(e.relatedTarget)) list.classList.remove('drag-over');
+    });
+    list.addEventListener('drop', (e) => {
+      clearDropHighlights();
+      if (!accepts()) return;
+      e.preventDefault();
+      const id = draggingTask.id;
+      const from = draggingTask.status;
+      draggingTask = null; // cleared before apply(), whose re-render must not be skipped
+      target.apply(id, from);
+    });
+  }
+
+  function makeDraggable(card, task) {
+    card.draggable = true;
+    card.addEventListener('dragstart', (e) => {
+      draggingTask = { id: task.id, status: task.status };
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', task.id);
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      clearDropHighlights();
+      if (!draggingTask) return; // dropped: apply() already re-rendered
+      draggingTask = null;
+      renderCols(); // cancelled drag — replay the renders skipped meanwhile
+    });
+  }
+
+  /* Board and archive cards share their shell, their actions row and their ✕;
+   * they differ in the middle (an archive card has no move/start controls) and
+   * in what the ✕ does — archive vs permanently delete. */
+  function makeCardShell(task) {
+    const card = document.createElement('div');
+    card.className = 'board-card board-card-' + task.status + (task.stopped ? ' board-card-stopped' : '');
+    return card;
+  }
+
+  function makeActionsRow(task) {
+    const actions = document.createElement('div');
+    actions.className = 'board-card-actions';
+    if (task.status === 'completed' && task.stopped) {
+      const stoppedBadge = elt('span', 'board-card-stopped-badge', '■ stopped');
+      stoppedBadge.dataset.tip = 'You stopped this agent before it finished';
+      actions.appendChild(stoppedBadge);
+    }
+    return actions;
+  }
+
+  function addDeleteButton(actions, { tip, key, fire }) {
+    const delBtn = elt('button', 'board-del');
+    Icons.set(delBtn, 'close');
+    delBtn.dataset.tip = tip;
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      armOrFire(delBtn, key, fire);
+    });
+    restoreArmed(delBtn, key);
+    actions.appendChild(delBtn);
+  }
+
+  function makeCard(task, workspaces, handlers) {
+    const card = makeCardShell(task);
+
+    const editable = task.status === 'manual' || task.status === 'pending';
+    // active cards drag too — dropping one on Manual/Scheduled stops the
+    // agent (see DROP_TARGETS above); they just don't get the inline
+    // priority/category pickers `editable` grants.
+    if (editable || task.status === 'active') makeDraggable(card, task);
+
+    const agentName = buildCardBody(card, task, workspaces, handlers, editable);
+
+    const actions = makeActionsRow(task);
+
+    if (task.status === 'manual') {
+      const rightBtn = elt('button', 'board-card-move');
+      rightBtn.dataset.tip = 'Move to Scheduled';
+      Icons.set(rightBtn, 'right');
+      rightBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handlers.onMoveStatus(task.id, 'pending');
+      });
+      actions.appendChild(rightBtn);
+    } else if (task.status === 'pending') {
+      const leftBtn = elt('button', 'board-card-move');
+      leftBtn.dataset.tip = 'Move to Manual';
+      Icons.set(leftBtn, 'left');
+      leftBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handlers.onMoveStatus(task.id, 'manual');
+      });
+      actions.appendChild(leftBtn);
+
+      const startBtn = elt('button', 'board-card-start');
+      startBtn.dataset.tip = 'Start this task now';
+      Icons.set(startBtn, 'play', 'start');
+      startBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handlers.onStart(task.id);
+      });
+      actions.appendChild(startBtn);
+    } else if (agentName) {
+      // active/completed cards with a live pane jump to it on click
+      card.classList.add('jumpable');
+      card.dataset.tip = 'Jump to this agent';
+      card.addEventListener('click', () => handlers.onJump(task.paneId));
+    }
+
+    addRunAgainButton(actions, task, handlers);
+    addSessionButton(actions, task, workspaces, handlers);
+
+    addDeleteButton(actions, {
+      tip: task.status === 'active'
+        ? 'Archive (click twice) — does not stop the agent'
+        : 'Archive (click twice)',
+      key: 'del:' + task.id,
+      fire: () => handlers.onDelete(task.id),
+    });
+
+    card.appendChild(actions);
+    return card;
+  }
+
+  function makeArchiveCard(task, workspaces, handlers) {
+    const card = makeCardShell(task);
+
+    buildCardBody(card, task, workspaces, handlers, false);
+
+    const actions = makeActionsRow(task);
+
+    addRunAgainButton(actions, task, handlers);
+    addSessionButton(actions, task, workspaces, handlers);
+
+    addDeleteButton(actions, {
+      tip: 'Permanently delete (click twice)',
+      key: 'purge:' + task.id,
+      fire: () => handlers.onPurge(task.id),
+    });
+
+    card.appendChild(actions);
+    return card;
+  }
+
+  /* Everything the four columns draw, in one string. renderCols runs on every
+   * git poll and hook event whether or not a card changed, and a rebuild
+   * scrolls the Completed column back to the top and orphans the tooltip of
+   * whatever card the cursor is on — so an unchanged signature means no
+   * rebuild at all. */
+  function colsSig(tasks, categoryFilter) {
+    const parts = [categoryFilter];
+    for (const t of tasks) {
+      const ws = lastWorkspaces.find((w) => w.id === t.workspaceId);
+      const git = lastHandlers && lastHandlers.getGit(t.workspaceId);
+      parts.push([t.id, t.status, t.stopped, t.createdAt, t.mode, t.startMode, t.priority,
+        t.category, t.repeat, t.nextRunAt, (t.chain || []).length, t.text, t.summary,
+        !!(t.sessionLog || t.hasSessionLog), lastHandlers && lastHandlers.getPaneAgentName(t.paneId),
+        ws && ws.name, ((ws && ws.categories) || []).join('+'),
+        git && git.branch, git && git.dirty].join('\u0001'));
+    }
+    return parts.join('\u0002');
+  }
+  let lastColsSig = null;
+
+  function renderCols() {
+    // renders arrive on git polls and hook events — rebuilding the cards
+    // mid-interaction would yank the dragged card out from under the cursor
+    // (cancelling the drag) or snap an open priority/category picker shut.
+    // Both paths re-render themselves once done.
+    if (draggingTask) return;
+    if (document.activeElement && document.activeElement.classList.contains('board-card-select')) return;
+
+    const categoryFilter = categoryFilterEl.value;
+    const filtered = categoryFilter ? lastTasks.filter((t) => (t.category || '') === categoryFilter) : lastTasks;
+    const sig = colsSig(filtered, categoryFilter);
+    if (sig === lastColsSig) return;
+    lastColsSig = sig;
+    const byStatus = { manual: [], pending: [], active: [], completed: [] };
+    for (const t of filtered) (byStatus[t.status] || byStatus.pending).push(t);
+
+    for (const key of ['manual', 'pending', 'active', 'completed']) {
+      const list = byStatus[key].sort((a, b) => a.createdAt - b.createdAt);
+      cols[key].innerHTML = '';
+      counts[key].textContent = list.length || '';
+      if (!list.length) {
+        const empty = document.createElement('div');
+        empty.className = 'board-col-empty';
+        empty.textContent = EMPTY_TEXT[key];
+        cols[key].appendChild(empty);
+      } else {
+        for (const t of list) cols[key].appendChild(makeCard(t, lastWorkspaces, lastHandlers));
+      }
+    }
+  }
+  categoryFilterEl.addEventListener('change', renderCols);
+
+  function render(tasks, archivedTasks, workspaces, limit, handlers) {
+    autoUsageLimit = limit;
+    lastHandlers = handlers;
+    lastTasks = tasks;
+    lastArchivedTasks = archivedTasks;
+    lastWorkspaces = workspaces;
+    // renders arrive from every task-lifecycle event whether or not the board
+    // is on screen — the state assignments above must still run (other paths
+    // read them), but the DOM work below is wasted on a hidden view.
+    // toggleBoard(true) re-renders on open, so nothing goes stale.
+    if (document.getElementById('board').hidden) return;
+    if (!formEl.hidden) { updateAutoHint(); renderStats(); }
+
+    // refresh the pickers (not user-typed state, safe to rebuild) — unless
+    // one is focused/open right now: renders arrive on git polls and hook
+    // events, and rebuilding would snap its dropdown shut mid-selection
+    const active = document.activeElement;
+    if (active !== wsSel && active !== categorySel && active !== categoryFilterEl) {
+      const prevWs = wsSel.value;
+      wsSel.innerHTML = '';
+      for (const ws of workspaces) wsSel.add(new Option(ws.name, ws.id));
+      if (workspaces.some((w) => w.id === prevWs)) wsSel.value = prevWs;
+      populateCategorySelect();
+      populateCategoryFilter(categoryFilterEl, tasks, workspaces);
+    }
+    if (!categoryPopEl.hidden) renderCategoryPop();
+
+    renderCols();
+  }
+
+  // same handlers/workspaces objects render() gets — app.js drives both from
+  // one state, so the board and the archive never need their own copies
+  function renderArchive(archivedTasks, workspaces, handlers) {
+    lastHandlers = handlers;
+    lastArchivedTasks = archivedTasks;
+    lastWorkspaces = workspaces;
+    // same open-dropdown guard as render() above
+    if (document.activeElement !== archiveCategoryFilterEl) {
+      populateCategoryFilter(archiveCategoryFilterEl, archivedTasks, workspaces);
+    }
+    renderArchiveList();
+  }
+
+  function renderArchiveList() {
+    const query = archiveSearchEl.value.trim().toLowerCase();
+    const priorityFilter = archivePriorityFilterEl.value;
+    const categoryFilter = archiveCategoryFilterEl.value;
+    let list = [...lastArchivedTasks].sort((a, b) => (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt));
+    if (priorityFilter) list = list.filter((t) => (t.priority || 'medium') === priorityFilter);
+    if (categoryFilter) list = list.filter((t) => (t.category || '') === categoryFilter);
+    if (query) list = list.filter((t) => (t.text || '').toLowerCase().includes(query));
+
+    archiveCountEl.textContent = list.length || '';
+    archiveDeleteAllBtn.disabled = !lastArchivedTasks.length;
+    archiveListEl.innerHTML = '';
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'board-col-empty';
+      empty.textContent = lastArchivedTasks.length ? 'no archived tasks match' : 'no archived tasks';
+      archiveListEl.appendChild(empty);
+    } else {
+      for (const t of list) archiveListEl.appendChild(makeArchiveCard(t, lastWorkspaces, lastHandlers));
+    }
+  }
+
+  archiveSearchEl.addEventListener('input', renderArchiveList);
+  // same reason as formEl above: typed keys must not reach the document-level
+  // shortcut handler, and Escape is left to bubble up to app.js
+  archiveSearchEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') e.stopPropagation();
+  });
+  archivePriorityFilterEl.addEventListener('change', renderArchiveList);
+  archiveCategoryFilterEl.addEventListener('change', renderArchiveList);
+
+  function toggleArchive(show) {
+    archiveShown = show;
+    boardMainEl.hidden = show;
+    archiveViewEl.hidden = !show;
+    archiveBtn.classList.toggle('active', show);
+    Icons.set(archiveBtn, show ? 'left' : 'archive', show ? 'Board' : 'Archive');
+    if (show) {
+      // the list is only repainted when something archives or purges, so a
+      // task archived since the board opened would be missing until a filter
+      // fired
+      renderArchiveList();
+      stopDictation(); // the form is hidden without going through showForm
+      formWasOpenBeforeArchive = !formEl.hidden;
+      formEl.hidden = true;
+    } else if (formWasOpenBeforeArchive) {
+      formWasOpenBeforeArchive = false;
+      formEl.hidden = false;
+    }
+  }
+
+  archiveBtn.addEventListener('click', () => toggleArchive(!archiveShown));
+  archiveDeleteAllBtn.addEventListener('click', () => {
+    if (!lastHandlers) return;
+    // through Confirm like every other destructive control: its own arm/fire
+    // was invisible to the app-wide single-arm rule, so an arm left behind
+    // here survived the board closing and fired on the first click back in
+    armOrFire(archiveDeleteAllBtn, 'purge-all', () => lastHandlers.onPurgeAll());
+  });
+
+  function setDefaults(patch) {
+    Object.assign(defaults, patch);
+  }
+
+  return {
+    render, renderArchive, toggleArchive, setDefaults, showForm, closeSessionView, REPEAT_MS,
+    stopDictation: () => stopDictation(),
+    toggleDictation: () => toggleDictation(),
+    isFormOpen: () => !formEl.hidden,
+  };
+})();
+
+window.Board = Board;

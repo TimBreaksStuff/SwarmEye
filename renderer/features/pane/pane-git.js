@@ -62,22 +62,13 @@ Object.assign(Pane.prototype, {
     const diffEl = elt('div', 'branch-diff', 'checking changes…');
     const listEl = elt('div', 'branch-list', 'fetching branches…');
     menu.append(diffEl, listEl);
-    // fixed-position (the pane clips overflow), anchored under the chip
-    const r = this.gitEl.getBoundingClientRect();
-    menu.style.left = `${Math.round(Math.min(r.left, window.innerWidth - 470))}px`;
-    menu.style.top = `${Math.round(r.bottom + 6)}px`;
+    // fixed-position (the pane clips overflow), anchored under the chip — and
+    // flipped above it for a pane low in the grid, since this popover is tall
+    // (the diff summary plus the branch list). See dom.js placePop.
     document.body.appendChild(menu);
+    placePop(menu, this.gitEl, { flip: true });
     this.branchMenuEl = menu;
-    // now that it has been measured: a pane low in the grid would push a
-    // popover this tall (diff summary plus the branch list) off the bottom,
-    // so flip it above the chip instead
-    if (r.bottom + 6 + menu.offsetHeight > window.innerHeight - 8) {
-      menu.style.top = `${Math.round(Math.max(8, r.top - 6 - menu.offsetHeight))}px`;
-    }
-    this._branchDismiss = (e) => {
-      if (!menu.contains(e.target) && e.target !== this.gitEl) this.closeBranchMenu();
-    };
-    document.addEventListener('mousedown', this._branchDismiss, true);
+    this._branchDismiss = dismissPop(menu, () => this.closeBranchMenu(), { keep: [this.gitEl] });
 
     window.swarm.gitDiff(this.session.workspaceId).then((d) => {
       if (this.branchMenuEl !== menu) return; // dismissed while the read ran
@@ -127,7 +118,8 @@ Object.assign(Pane.prototype, {
     if (!this.branchMenuEl) return;
     this.branchMenuEl.remove();
     this.branchMenuEl = null;
-    document.removeEventListener('mousedown', this._branchDismiss, true);
+    this._branchDismiss();
+    this._branchDismiss = null;
   },
 
   async pickBranch(branch, { create = false } = {}) {
@@ -174,7 +166,7 @@ Object.assign(Pane.prototype, {
   /* ---- scope picker ---- */
 
   /* Switch which folder this agent may edit inside, from its scope chip: the
-   * same areas+folders menu + Agent offers (renderer/scope.js), with "whole
+   * same areas+folders menu + Agent offers (renderer/features/scope/scope.js), with "whole
    * workspace" lifting the boundary. Like the model pick it is a restart with
    * --continue — the deny rules live in the per-session settings file claude
    * read at startup, so a running agent cannot be re-fenced in place. */

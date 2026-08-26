@@ -169,7 +169,7 @@ const WsAgents = (() => {
     });
   }
 
-  return { reset, attach, sync, summarize };
+  return { reset, attach, sync };
 })();
 
 window.WsAgents = WsAgents;

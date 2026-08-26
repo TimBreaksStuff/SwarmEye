@@ -62,7 +62,6 @@ import {
   startTask,
   tryInjectPrompt,
   applyTaskSummary,
-  createTask,
   startChain,
   startRepeat,
   noteStartFailure,
@@ -71,7 +70,6 @@ import {
 
 import {
   init as initOrchestrator,
-  open as openOrchestratorCard,
   close as closeOrchestratorCard,
   popEl as orchPopEl,
   restore as restoreLeads,
@@ -81,6 +79,15 @@ import {
   hiddenIds as crewHidden,
   paintCrew,
 } from './features/orchestrator/orchestrator.js';
+
+import { init as initUpdate } from './features/update/update.js';
+import {
+  init as initGlobalSearch,
+  toggle as toggleGlobalSearch,
+  popEl as gsearchEl,
+} from './features/gsearch/gsearch.js';
+import { init as initAddAgentMenu } from './features/addagent/addagent.js';
+import { check as checkUsageWarnings } from './features/usage/usage-warnings.js';
 
 const grid = new GridController(document.getElementById('grid'));
 const gridWrapEl = document.getElementById('grid-wrap');
@@ -169,22 +176,19 @@ function syncChromeNow() {
     counts[id].panes.push(pane); // the rail's fold-out agent rows
     if (pane.status === 'attention') counts[id].attn = true;
   }
-  Topbar.renderWorkspaces(orderedWorkspaces(), state.selectedWorkspaceId, counts, {
+  Topbar.renderWorkspaces(state.workspaces, state.selectedWorkspaceId, counts, {
     onSelect: (id) => { toggleBoard(false); selectWorkspace(id); }, // a pill always means "show me the grid"
     onOpenAgent: notifHandlers.onOpen, // a fold-out agent row focuses its pane
 
     onRemove: removeWorkspace,
     onReorder: reorderWorkspaces,
     onRename: renameWorkspace,
-    onSetColor: setWorkspaceColor,
-    onSetPinned: setWorkspacePinned,
-    onSetIsolate: setWorkspaceIsolate,
   });
   Topbar.updateAgentCap(liveAgentCount(), maxAgents);
   emptyState.style.display = grid.panes.length ? 'none' : '';
   Launcher.sync({
     // the id, not a boolean: the card's Scope field offers this workspace's
-    // own folders (renderer/scope.js)
+    // own folders (renderer/features/scope/scope.js)
     workspace: state.selectedWorkspaceId,
     free: Math.max(0, maxAgents - liveAgentCount()),
   });
@@ -299,40 +303,6 @@ async function renameWorkspace(id, name) {
   syncChrome();
 }
 
-/* Pinned workspaces are drawn (and cycled through) first; inside each group
- * the drag order in state.workspaces is preserved, so unpinning a workspace
- * drops it back exactly where it was rather than to the end. */
-function orderedWorkspaces() {
-  return [...state.workspaces.filter((w) => w.pinned), ...state.workspaces.filter((w) => !w.pinned)];
-}
-
-async function setWorkspacePinned(id, pinned) {
-  const ws = state.workspaces.find((w) => w.id === id);
-  if (ws) ws.pinned = pinned; // optimistic; syncChrome() below re-sorts the rail
-  await window.swarm.setWorkspacePinned(id, pinned);
-  syncChrome();
-}
-
-/* Isolation is a property of the workspace, not of one launch: with it on,
- * every agent started here — + Agent, the launch card, a board task — gets a
- * git worktree of its own (main/worktree.js). */
-async function setWorkspaceIsolate(id, isolate) {
-  const ws = state.workspaces.find((w) => w.id === id);
-  if (ws) ws.isolate = isolate;
-  await window.swarm.setWorkspaceIsolate(id, isolate);
-  toast(isolate
-    ? 'new agents here get their own branch and worktree'
-    : 'new agents here work in the workspace itself');
-  syncChrome();
-}
-
-async function setWorkspaceColor(id, color) {
-  const ws = state.workspaces.find((w) => w.id === id);
-  if (ws) ws.color = color; // optimistic; syncChrome() repaints the tiles
-  await window.swarm.setWorkspaceColor(id, color);
-  syncChrome();
-}
-
 /* drag-reorder: move dragId before/after targetId, persist the new order */
 function reorderWorkspaces(dragId, targetId, before) {
   const list = state.workspaces;
@@ -357,14 +327,11 @@ async function addWorkspace() {
   if (res.template && res.template.copied) toast('CLAUDE.md added from your standard');
   syncGrid();
   syncChrome();
-  // pop the new workspace's flyout so its colour can be picked straight away
-  // (runs after syncChrome's rAF has built the tile)
-  if (res.workspace) requestAnimationFrame(() => Topbar.openWorkspaceFlyout(res.workspace.id));
 }
 
 function cycleWorkspace(dir) {
-  // the rail's own order, pinned first — Ctrl+Tab must walk what's on screen
-  const list = orderedWorkspaces();
+  // the rail's own order — Ctrl+Tab must walk what's on screen
+  const list = state.workspaces;
   const n = list.length;
   if (n < 2) return;
   const i = list.findIndex((w) => w.id === state.selectedWorkspaceId);
@@ -755,9 +722,6 @@ const paneHandlers = {
       workspaceName: s.workspaceName,
       agentName: s.agentName,
       cwd: s.cwd,
-      // an isolated agent goes back into its own worktree: the name, not the
-      // path — main rebuilds the path and checks it is still there
-      worktree: s.worktree,
       cols: pane.term.cols,
       rows: pane.term.rows,
       resume,
@@ -1028,11 +992,9 @@ window.swarm.onSessionState((payload) => {
   }
 });
 
-/* An isolated agent's branch and dirtiness are its worktree's, not the
- * workspace's — main sweeps both and keys the isolated ones by session id
- * (main/git.js). Every other pane still reads its workspace's entry. */
+/* every pane reads its workspace's git entry (main/git.js) */
 function gitFor(session) {
-  return state.git[session.id] || state.git[session.workspaceId];
+  return state.git[session.workspaceId];
 }
 
 window.swarm.onGitUpdate((info) => {
@@ -1041,53 +1003,12 @@ window.swarm.onGitUpdate((info) => {
   if (!boardEl.hidden) renderBoard(); // keep board branch chips current while it's open
 });
 
-/* ---- rate-limit warning ----
- * The rail's gauges already colour themselves amber past 75% and red past 90%,
- * but that only helps while you're looking at them; with a swarm running you
- * can walk into the ceiling and only find out when agents start failing
- * mid-turn. Toast once per crossing, at the same two thresholds the gauges
- * change colour at, so the warning and the gauge always agree.
- *
- * Armed level per window: 0 none, 1 warn, 2 crit. It only ever fires on the
- * way up; dropping back below a threshold (or the window resetting, which
- * moves resetsAt) re-arms it for the next time. */
-const USAGE_WARN_PCT = 75;
-const USAGE_CRIT_PCT = 90;
-const USAGE_WINDOWS = [['fiveHour', '5-hour'], ['weekly', 'weekly']];
-const usageWarned = { fiveHour: { level: 0, resetsAt: null }, weekly: { level: 0, resetsAt: null } };
-
-function checkUsageWarnings(snapshot) {
-  // no data is not 0% — a degraded or stale snapshot says nothing about the
-  // quota, so it must neither warn nor clear an already-armed level
-  if (!snapshot || !snapshot.ok || snapshot.stale) return;
-  const crossed = [];
-  for (const [key, label] of USAGE_WINDOWS) {
-    const w = snapshot[key];
-    const state = usageWarned[key];
-    if (!w || typeof w.usedPct !== 'number') continue;
-    if (w.resetsAt !== state.resetsAt) { // a fresh window starts unwarned
-      state.resetsAt = w.resetsAt;
-      state.level = 0;
-    }
-    const level = w.usedPct >= USAGE_CRIT_PCT ? 2 : w.usedPct >= USAGE_WARN_PCT ? 1 : 0;
-    if (level > state.level) {
-      const resets = w.resetsAt ? ' · resets in ' + Topbar.fmtIn(new Date(w.resetsAt) - Date.now()) : '';
-      crossed.push(level === 2
-        ? `${label} usage ${w.usedPct}% — agents may start failing${resets}`
-        : `${label} usage at ${w.usedPct}%${resets}`);
-    }
-    state.level = level;
-  }
-  // one toast at a time: both windows crossing on the same poll share it
-  if (crossed.length) toast('⚠ ' + crossed.join(' · '));
-}
-
 window.swarm.onUsageUpdate((snapshot) => {
   Topbar.renderUsage(snapshot);
   setUsageSnapshot(snapshot);
   // each pane's cost panel measures its own burn against this window
   Pane.setUsageWindow(snapshot && snapshot.ok ? snapshot.fiveHour : null);
-  checkUsageWarnings(snapshot);
+  checkUsageWarnings(snapshot, toast);
   runScheduler();
 });
 
@@ -1129,81 +1050,7 @@ reattachAllBtn.addEventListener('click', async () => {
   syncChrome();
 });
 
-/* ---- update: topbar pill + Options row ----
- * The pill is just an at-a-glance indicator; clicking it opens the same
- * Options row the update actually happens in, rather than a browser tab. */
-const updatePillEl = document.getElementById('update-pill');
-const updateStatusEl = document.getElementById('update-status');
-const updateActionBtn = document.getElementById('update-action-btn');
-const updateCheckBtn = document.getElementById('update-check-btn');
-let pendingUpdate = null; // { version, releaseUrl }
-let appVersion = '';
-
-window.swarm.getAppVersion().then((version) => {
-  appVersion = version;
-  if (!pendingUpdate) updateStatusEl.textContent = `v${version} — up to date`;
-});
-
-/* The background check is silent by design, so a failing one (no release
- * published, offline, rate-limited) used to leave the row reading "up to
- * date". Asking by hand reports what actually came back. */
-updateCheckBtn.addEventListener('click', async () => {
-  updateCheckBtn.disabled = true;
-  updateStatusEl.textContent = 'checking GitHub…';
-  const res = await window.swarm.checkUpdate();
-  updateCheckBtn.disabled = false;
-  if (res.state === 'available') return; // onUpdateAvailable already repainted the row
-  updateStatusEl.textContent = res.state === 'current'
-    ? `v${appVersion} — up to date`
-    : `v${appVersion} — check failed: ${res.error}`;
-});
-
-updateActionBtn.addEventListener('click', () => {
-  if (updateActionBtn.dataset.action === 'install') {
-    updateActionBtn.disabled = true;
-    window.swarm.installUpdate();
-    return;
-  }
-  updateActionBtn.disabled = true;
-  updateStatusEl.textContent = `v${pendingUpdate.version} — downloading…`;
-  window.swarm.downloadUpdate();
-});
-
-window.swarm.onUpdateAvailable(({ version, releaseUrl }) => {
-  pendingUpdate = { version, releaseUrl };
-  updateStatusEl.textContent = `v${version} available`;
-  updateActionBtn.textContent = 'Download';
-  updateActionBtn.dataset.action = 'download';
-  updateActionBtn.disabled = false;
-  updateActionBtn.hidden = false;
-
-  updatePillEl.textContent = `v${version} available`;
-  updatePillEl.dataset.tip = 'A newer SwarmEye is ready — click to update';
-  updatePillEl.hidden = false;
-  updatePillEl.onclick = () => kbdHelpBtn.click();
-});
-
-window.swarm.onUpdateProgress(({ percent }) => {
-  if (!pendingUpdate) return;
-  updateStatusEl.textContent = `v${pendingUpdate.version} — downloading… ${percent}%`;
-});
-
-window.swarm.onUpdateReady(() => {
-  if (!pendingUpdate) return;
-  updateStatusEl.textContent = `v${pendingUpdate.version} ready to install`;
-  updateActionBtn.textContent = 'Restart & Update';
-  updateActionBtn.dataset.action = 'install';
-  updateActionBtn.disabled = false;
-});
-
-window.swarm.onUpdateError(({ error }) => {
-  toast('update failed: ' + error);
-  if (!pendingUpdate) return;
-  updateStatusEl.textContent = `v${pendingUpdate.version} available`;
-  updateActionBtn.textContent = 'Download';
-  updateActionBtn.dataset.action = 'download';
-  updateActionBtn.disabled = false;
-});
+initUpdate({ toast, openOptions: () => kbdHelpBtn.click() });
 
 /* ---- messages between agents ----
  * One line, addressed with @name (several names allowed) or @all, written
@@ -1343,213 +1190,22 @@ Messenger.init({
   },
 });
 
-/* ---- global search across all agents ---- */
-
-const gsearchEl = document.getElementById('gsearch');
-const gsearchBtnEl = document.getElementById('gsearch-btn');
-const gsInput = document.getElementById('gs-input');
-const gsResults = document.getElementById('gs-results');
-let gsTimer = null;
-
-function toggleGlobalSearch(show) {
-  if (show) {
-    // anchor the popup right below the button (the top bar can be zoomed)
-    const r = gsearchBtnEl.getBoundingClientRect();
-    gsearchEl.style.top = Math.round(r.bottom + 8) + 'px';
-    gsearchEl.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
-  }
-  gsearchEl.hidden = !show;
-  if (show) {
-    gsInput.focus();
-    gsInput.select();
-    runGlobalSearch();
-  } else {
-    const pane = focusedPane();
-    if (pane) pane.term.focus();
-  }
-}
-
-function runGlobalSearch() {
-  const q = gsInput.value.trim().toLowerCase();
-  gsResults.innerHTML = '';
-  if (q.length < 2) return;
-  let total = 0;
-  for (const pane of state.panes.values()) {
-    const lines = pane.getBufferText().split('\n');
-    const hits = [];
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].toLowerCase().includes(q)) hits.push(i);
-    }
-    if (!hits.length) continue;
-    total += hits.length;
-    const group = document.createElement('div');
-    group.className = 'gs-group';
-    const head = document.createElement('div');
-    head.className = 'gs-head';
-    head.textContent = `${pane.session.agentName} · ${pane.session.workspaceName} · ${hits.length} match${hits.length > 1 ? 'es' : ''}`;
-    group.appendChild(head);
-    for (const i of hits.slice(0, 4)) {
-      const row = document.createElement('div');
-      row.className = 'gs-row';
-      row.textContent = lines[i].trim().slice(0, 160) || '(blank line)';
-      row.dataset.tip = 'Jump to this match';
-      row.addEventListener('click', () => jumpToMatch(pane, i, gsInput.value.trim()));
-      group.appendChild(row);
-    }
-    if (hits.length > 4) {
-      const more = document.createElement('div');
-      more.className = 'gs-more';
-      more.textContent = `… ${hits.length - 4} more — jump in and use the pane search`;
-      group.appendChild(more);
-    }
-    gsResults.appendChild(group);
-  }
-  if (!total) {
-    const none = document.createElement('div');
-    none.className = 'gs-none';
-    none.textContent = 'no matches in any agent';
-    gsResults.appendChild(none);
-  }
-}
-
-async function jumpToMatch(pane, line, q) {
-  toggleGlobalSearch(false);
-  toggleBoard(false);
-  if (pane.session.workspaceId !== state.selectedWorkspaceId) {
-    await selectWorkspace(pane.session.workspaceId);
-  }
-  pane.focus();
-  pane.term.scrollToLine(line);
-  pane.searchInput.value = q;
-  pane.toggleSearch(true);
-  pane.search.findNext(q);
-}
-
-/* Every run translates each live pane's whole scrollback (up to 20k lines) —
- * pane.write() drops that memo on every chunk of agent output, so with a busy
- * swarm the work is real on every keystroke. Debounced long enough that typing
- * a word costs one pass rather than one per letter. */
-gsInput.addEventListener('input', () => {
-  clearTimeout(gsTimer);
-  gsTimer = setTimeout(runGlobalSearch, 400);
-});
-gsInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { toggleGlobalSearch(false); e.preventDefault(); }
-  e.stopPropagation();
-});
-// click outside the popup closes it
-document.addEventListener('click', (e) => {
-  if (!gsearchEl.hidden && !gsearchEl.contains(e.target)) toggleGlobalSearch(false);
-});
-gsearchBtnEl.addEventListener('click', (e) => {
-  e.stopPropagation();
-  toggleGlobalSearch(gsearchEl.hidden);
-});
+initGlobalSearch({ state, focusedPane, toggleBoard, selectWorkspace });
 
 document.getElementById('add-workspace').addEventListener('click', addWorkspace);
-/* + Coding Agent opens a small popover under the button: a plain Claude, then
- * the role presets (each launches with its own system prompt and model tier —
- * main/sessions.js owns both).
- * (Ctrl/Cmd+N always spawns a plain Claude; a pane's → / ↓ splits inherit its
- * role.) */
-const addAgentBtn = document.getElementById('add-agent');
-let agentKindMenuEl = null;
-let roles = []; // [{key, label, model}] — from main, once
-window.swarm.listRoles().then((list) => { roles = list || []; });
-
-function closeAgentKindMenu() {
-  if (!agentKindMenuEl) return;
-  agentKindMenuEl.remove();
-  agentKindMenuEl = null;
-  document.removeEventListener('mousedown', onAgentKindDismiss, true);
-}
-function onAgentKindDismiss(e) {
-  if (!agentKindMenuEl.contains(e.target) && e.target !== addAgentBtn) closeAgentKindMenu();
-}
-addAgentBtn.addEventListener('click', () => {
-  if (agentKindMenuEl) { closeAgentKindMenu(); return; }
-  const menu = document.createElement('div');
-  // its own class as well: the rows sit indented under their section labels,
-  // which the branch and scope menus using .branch-menu must not pick up
-  menu.className = 'branch-menu agent-kind-menu';
-  // the two plain agents lead the menu and are emphasised — they are the
-  // provider choice, the roles below are flavours of the first one
-  const entries = [{ label: 'Provider', section: true },
-    { label: 'Anthropic Subscription', strong: true, tip: 'A plain agent — your Options default model, no role prompt' }];
-  // an OpenRouter agent is a plain agent on a catalog model — the entry only
-  // exists once a key is saved (Options → Setup) and the catalog is in
-  if (OpenRouterUI.models.length) entries.push({ label: 'OpenRouter', openrouter: true, strong: true, tip: 'A plain agent on any OpenRouter model — pick it from the catalog' });
-  entries.push({ divider: true });
-  entries.push({ label: 'Roles', section: true });
-  for (const r of roles) entries.push({ label: r.label, role: r.key, tip: `${r.label} role prompt · ${r.model || 'default tier'}` });
-  // the coordinator is the odd one out: it starts no agent of its own, it
-  // splits a request into board tasks that the scheduler then starts
-  entries.push({ label: 'Coordinator', coordinate: true, tip: 'Split one multi-part request into subtasks on the board — nothing starts until you approve them' });
-  // the lead agent: unlike the coordinator it *is* an agent — it reads the
-  // code, then delegates each piece to a worker on the model you picked
-  entries.push({ label: 'Orchestrator', orchestrate: true, tip: 'One agent plans and delegates; its workers run on a model of their own' });
-  for (const { label, role, tip, coordinate, orchestrate, openrouter, strong, divider, section } of entries) {
-    if (divider) {
-      menu.appendChild(Object.assign(document.createElement('div'), { className: 'branch-menu-divider' }));
-      continue;
-    }
-    if (section) {
-      menu.appendChild(Object.assign(document.createElement('div'), { className: 'branch-menu-label', textContent: label }));
-      continue;
-    }
-    const row = elt('button', 'branch-item' + (strong ? ' branch-item-strong' : ''), label);
-    row.dataset.tip = tip;
-    row.addEventListener('click', () => {
-      closeAgentKindMenu();
-      if (coordinate) openCoordinator();
-      else if (orchestrate) openOrchestrator();
-      // the picked model rides the same one-launch `launch` channel the
-      // empty-workspace card uses; permissions keep the Options default
-      else if (openrouter) OpenRouterUI.openModelMenu(addAgentBtn, (model) => addAgent({
-        launch: { model, effort: 'default', focus: null, startMode: localStorage.getItem('swarmeye.defaultStartMode') || 'default' },
-      }));
-      else addAgent({ role, claudeOnly: true });
-    });
-    menu.appendChild(row);
-  }
-  const r = addAgentBtn.getBoundingClientRect();
-  menu.style.top = `${Math.round(r.bottom + 6)}px`;
-  document.body.appendChild(menu);
-  const left = Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8));
-  menu.style.left = `${Math.round(left)}px`;
-  agentKindMenuEl = menu;
-  document.addEventListener('mousedown', onAgentKindDismiss, true);
+initAddAgentMenu({
+  toast,
+  addAgent,
+  selectedWorkspace: () => state.workspaces.find((w) => w.id === state.selectedWorkspaceId),
 });
 
-/* The coordinator splits into tasks, so it needs a workspace but no agent
- * slot — the cap applies later, when the scheduler starts what it produced. */
-function openCoordinator() {
-  const ws = state.workspaces.find((w) => w.id === state.selectedWorkspaceId);
-  if (!ws) {
-    toast('add and select a workspace first');
-    return;
-  }
-  Coordinator.open({ workspaceId: ws.id, workspaceName: ws.name, roles, onCreate: createTask });
-}
-
-/* The lead agent takes an agent slot itself — but the cap is checked where
- * every other launch checks it (session:create), so this only needs the
- * workspace its swarm will work in. */
-function openOrchestrator() {
-  const ws = state.workspaces.find((w) => w.id === state.selectedWorkspaceId);
-  if (!ws) {
-    toast('add and select a workspace first');
-    return;
-  }
-  openOrchestratorCard({ workspaceId: ws.id, workspaceName: ws.name, roles });
-}
 // the number and the gauges are two elements showing one thing — clicking
 // either refreshes it
 async function refreshUsageNow() {
   const snap = await window.swarm.refreshUsage();
   Topbar.renderUsage(snap);
   setUsageSnapshot(snap);
-  checkUsageWarnings(snap);
+  checkUsageWarnings(snap, toast);
   runScheduler();
 }
 for (const id of ['usage', 'usage-gauges']) {
@@ -1575,7 +1231,6 @@ document.fonts.ready.then(() => {
 
 (async function boot() {
   const cfg = await window.swarm.getConfig();
-  Topbar.setWorkspaceColors(cfg.workspaceColors); // before the first renderWorkspaces
   OpenRouterUI.install(cfg.openrouterModels || []); // extends the model selects
   state.workspaces = cfg.workspaces || [];
   state.selectedWorkspaceId = cfg.selectedWorkspaceId || null;

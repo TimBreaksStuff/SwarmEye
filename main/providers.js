@@ -281,7 +281,7 @@ function cleanContinueArg(oldSessionId) {
  * of claude, each carrying a SwarmEye adapter (agent/opencode-plugin.js,
  * agent/pi-extension.ts) that emits the same hook-state files and
  * Claude-format transcript the pipeline already reads — so status, cost and
- * summaries work without touching hooks.js. See opencode-pi-plan.md.
+ * summaries work without touching hooks.js. See agent/README.md.
  *
  * The slug is the plain OpenRouter catalog id in both spellings; only the
  * flag that carries it differs (opencode wants the provider glued on as

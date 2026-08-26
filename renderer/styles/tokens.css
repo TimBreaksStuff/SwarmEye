@@ -54,53 +54,17 @@
 /* Colour themes — override the dark defaults above. Picked in the ⌨ popover,
  * applied via data-theme on <html> (app.js), persisted in localStorage. */
 
-:root[data-theme="light"] {
-  --bg: #eef0f3;
-  --surface: #f7f8fa;
-  --hover: #e7eaee;
-  --border: #d7dbe1;
-  --border2: #cbd0d8;
-  --border3: #bdc3cc;
-  --border-hover: #a8afb9;
-
-  /* Every value that carries text is at 4.5:1 (WCAG AA) or better against
-   * --bg, the palest surface it is ever drawn on — the dark theme's ramp
-   * lightened for a light page does not survive the flip, so these are picked
-   * against the backdrop rather than mirrored. --faint is the exception: it
-   * only ever draws dividers and disabled ghosts, and lifting it too would
-   * collapse the four greys into one. */
-  --text: #1b1e23;
-  --text2: #4d545c;
-  --muted: #646a75;
-  --muted2: #6b7280;
-  --faint: #8b919a;
-
-  /* --accent doubles as a fill (the primary button, the active swatch), so it
-   * has to carry white text as well as read as text itself */
-  --accent: #476d0a;
-  --accent-text: #3f6212;
-  --on-accent: #ffffff;
-
-  --header-bg: rgba(247, 248, 250, 0.85);
-  --accent-glow: rgba(71, 109, 10, 0.35);
-
-  --grid-line: rgba(0, 0, 0, 0.16);
-  --glass: rgba(255, 255, 255, 0.5);
-
-  --tag: #7c3aed;
-  --amber: #8f5c00;
-  --err: #c62828;
-  --term-bg: #ffffff;
-  --pill-hover: rgba(71, 109, 10, 0.1);
-  --entry-dot: #2563eb;
-}
-
-/* Twelve more light themes — the same white page and neutral ramp as "light",
- * with only the accent hue swapped. Each --accent still has to clear 4.5:1
- * against --bg *and* carry white text as a fill, so they are picked, not
- * hue-rotated. Everything not listed inherits the light block above, which
- * they extend by also matching its selector (:root[data-theme="light"] does
- * not, so the shared values are repeated via a grouped selector). */
+/* The thirteen light themes — one white page and one neutral ramp between
+ * them, with only the accent hue swapped. Everything they share is here; each
+ * theme's own block further down carries nothing but its accent.
+ *
+ * Every value that carries text is at 4.5:1 (WCAG AA) or better against --bg,
+ * the palest surface it is ever drawn on — the dark theme's ramp lightened for
+ * a light page does not survive the flip, so these are picked against the
+ * backdrop rather than mirrored. --faint is the exception: it only ever draws
+ * dividers and disabled ghosts, and lifting it too would collapse the four
+ * greys into one. */
+:root[data-theme="light"],
 :root[data-theme="blue"],
 :root[data-theme="neoblue"],
 :root[data-theme="purple"],
@@ -138,6 +102,17 @@
   --err: #c62828;
   --term-bg: #ffffff;
   --entry-dot: #2563eb;
+}
+
+/* ...and one accent each: the fill, the same hue as text, its glow, its hover
+ * wash. Each --accent has to clear 4.5:1 against --bg *and* carry white text
+ * as a fill (it is the primary button and the active swatch), so these are
+ * picked rather than hue-rotated. */
+:root[data-theme="light"] {
+  --accent: #476d0a;
+  --accent-text: #3f6212;
+  --accent-glow: rgba(71, 109, 10, 0.35);
+  --pill-hover: rgba(71, 109, 10, 0.1);
 }
 
 :root[data-theme="blue"] {

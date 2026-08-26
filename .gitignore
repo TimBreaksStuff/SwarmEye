@@ -4,3 +4,5 @@ node_modules/
 dist/
 .github-mirror/
 .DS_Store
+.env
+.env.*

@@ -6,12 +6,6 @@ const FILE = () => path.join(app.getPath('userData'), 'config.json');
 
 const DEFAULT_TASK_CATEGORIES = ['maintenance', 'bugfix', 'features'];
 
-// per-workspace identity colours — assigned round-robin as workspaces are
-// added, then surfaced as the rail-tile dot, the flyout swatch picker, and the
-// swarm-map slot borders. Chosen to read as a border on both light and dark
-// themes. The renderer receives this list over config:get — no hand-synced copy.
-const WORKSPACE_COLORS = ['#e5484d', '#e5822d', '#e0b341', '#d6ff4b', '#5bbf3a', '#2bb9a3', '#3d8bf0', '#7c5cff', '#c44de5', '#e5489b', '#8b93a0'];
-
 const DEFAULTS = {
   workspaces: [],
   archivedWorkspaces: [],
@@ -33,6 +27,10 @@ const DEFAULTS = {
   openrouterCatalog: null, // { fetchedAt, models: [{id,label,ctx,in,out,cr,cw}] }
   openrouterAlts: [], // up to 3 slugs `/model` offers alongside the launch model (providers.js)
   claudeTemplate: '', // path to the standard CLAUDE.md copied into each new workspace (main/template.js)
+  // macOS "Native Apple style" (Options → Appearance): the renderer half is a
+  // localStorage flag, but the window frame is decided at createWindow, so the
+  // setting has to survive here too. Ignored off darwin.
+  nativeStyle: false,
 };
 
 let cache = null;
@@ -56,9 +54,8 @@ function load() {
   // get them too: re-adding a removed folder pushes the old record straight
   // back into cache.workspaces, without passing through the code that mints one
   for (const list of [cache.workspaces, cache.archivedWorkspaces || []]) {
-    list.forEach((ws, i) => {
+    list.forEach((ws) => {
       if (!Array.isArray(ws.categories)) ws.categories = [...DEFAULT_TASK_CATEGORIES];
-      if (!ws.color) ws.color = WORKSPACE_COLORS[i % WORKSPACE_COLORS.length];
     });
   }
   return cache;
@@ -120,4 +117,4 @@ function patch(partial) {
   save(Object.assign(load(), partial));
 }
 
-module.exports = { load, save, patch, loadArchive, saveArchive, DEFAULT_TASK_CATEGORIES, WORKSPACE_COLORS };
+module.exports = { load, save, patch, loadArchive, saveArchive, DEFAULT_TASK_CATEGORIES };

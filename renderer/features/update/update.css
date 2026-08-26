@@ -1,0 +1,22 @@
+/* The top bar's "v… available" pill. The Options row it opens is styled by
+   features/settings/settings.css — this sheet is only the pill.
+
+   Cut out of styles/app.css, so it loads in app.css's own slot (before
+   chrome-clean.css) and its rules keep the cascade position they had. */
+
+#update-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 100px;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: box-shadow 0.15s;
+}
+#update-pill:hover { box-shadow: 0 0 14px -4px var(--accent-glow); }

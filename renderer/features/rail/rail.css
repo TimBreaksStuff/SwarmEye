@@ -54,7 +54,7 @@
   transition: width 0.16s ease;
 }
 #leftbar.expanded {
-  width: 232px;
+  width: 264px;
 }
 
 #leftbar-surface {
@@ -181,27 +181,6 @@
   box-shadow: 0 0 8px var(--amber);
   animation: attn-pulse 1.1s ease-in-out infinite;
 }
-/* workspace identity colour: a dot in the bottom-left corner (mirrors the
- * top-right .ws-attn) */
-.rail-tile .ws-color-dot {
-  position: absolute;
-  bottom: -3px;
-  left: -3px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  border: 1px solid var(--surface);
-}
-/* pinned workspaces float to the top of the rail — the marker sits in the
- * free top-left corner, opposite .ws-attn */
-.rail-tile .ws-pin {
-  position: absolute;
-  top: -4px;
-  left: -4px;
-  font-size: 9px;
-  line-height: 1;
-  filter: drop-shadow(0 0 3px var(--bg));
-}
 /* small corner counter (agents per workspace, archived count) */
 .rail-n {
   position: absolute;
@@ -241,8 +220,6 @@
   text-transform: uppercase;
 }
 
-#leftbar.expanded .rail-tile .ws-pin,
-#leftbar.hover-expanded .rail-tile .ws-pin,
 #leftbar.expanded .rail-tile .ws-attn,
 #leftbar.hover-expanded .rail-tile .ws-attn,
 #leftbar.expanded .rail-tile .rail-n,
@@ -250,12 +227,6 @@
   position: static;
   flex: none;
   margin-left: auto;
-}
-#leftbar.expanded .rail-tile .ws-pin ~ .ws-attn,
-#leftbar.hover-expanded .rail-tile .ws-pin ~ .ws-attn,
-#leftbar.expanded .rail-tile .ws-pin ~ .rail-n,
-#leftbar.hover-expanded .rail-tile .ws-pin ~ .rail-n {
-  margin-left: 6px;
 }
 #leftbar.expanded .rail-tile .ws-attn ~ .rail-n,
 #leftbar.hover-expanded .rail-tile .ws-attn ~ .rail-n {
@@ -400,86 +371,48 @@
   .sw-arc-spinner { animation-duration: 2.4s; }
 }
 
-/* right-click flyout: full workspace name + rename (dblclick) + remove (✕) */
-#rail-flyout {
+/* right-click menu on a workspace tile: rename, remove */
+#rail-menu {
   position: fixed;
   z-index: 24;
+  min-width: 132px;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
   background: color-mix(in srgb, var(--surface) 78%, transparent);
   backdrop-filter: blur(18px);
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
   border-radius: 10px;
-  padding: 7px 12px;
+  padding: 5px;
   box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-#rail-flyout[hidden] { display: none; }
-.rail-flyout-info { min-width: 0; }
-.rail-flyout-name {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text);
-  white-space: nowrap;
-  cursor: text;
-}
-.rail-flyout-name[contenteditable] {
-  outline: 1px solid var(--accent);
-  border-radius: 4px;
-  padding: 0 3px;
-  text-transform: none;
-}
-.rail-flyout-sub {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 280px;
-}
-.rail-flyout-pin,
-.rail-flyout-x {
-  font-size: 12px;
-  line-height: 1;
-  color: var(--muted);
+#rail-menu[hidden] { display: none; }
+.rail-menu-item {
   background: none;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  width: 22px;
-  height: 22px;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
   cursor: pointer;
-  flex: none;
-  padding: 0;
 }
-.rail-flyout-x:hover { color: var(--err); border-color: rgba(255, 90, 90, 0.4); }
-/* pinned reads as "on" — the unpinned state is deliberately dim, so the two
- * are distinguishable without hovering for the tooltip */
-.rail-flyout-pin { opacity: 0.35; }
-.rail-flyout-pin:hover { opacity: 0.8; border-color: var(--border-hover); }
-.rail-flyout-pin.on { opacity: 1; border-color: var(--accent); }
-/* workspace colour picker inside the flyout */
-.rail-flyout-colors {
-  display: flex;
-  gap: 5px;
-  margin-top: 7px;
-}
-.ws-swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  padding: 0;
-  cursor: pointer;
-  flex: none;
-  transition: transform 0.12s;
-}
-.ws-swatch:hover { transform: scale(1.18); }
-.ws-swatch.active {
-  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--text2);
+.rail-menu-item:hover { background: var(--hover); }
+.rail-menu-danger:hover { color: var(--err); }
+
+/* rename in place: an input laid over the tile being renamed (topbar.js
+   startRenameWorkspace), so it works in the collapsed rail too */
+.ws-rename {
+  position: fixed;
+  z-index: 25;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 100px;
+  outline: none;
 }
 
 #logo {
@@ -797,6 +730,17 @@
 #topbar-actions > #voice-btn.listening,
 #topbar-actions > #voice-btn.listening:hover { color: var(--err); }
 
+/* Appearance (Auto / Light / Dark) — shown only while "Native Apple style" is
+ * on, since that is the one mode where light vs dark is not the swatch row's
+ * job. It carries all three icons and reveals one; both rules have to outrank
+ * the generic `> button` pair above, which sets display on the button and on
+ * every svg inside it. */
+#appearance-btn[hidden] { display: none; }
+#topbar-actions > #appearance-btn > .ap-ic { display: none; }
+#topbar-actions > #appearance-btn[data-appearance="system"] > .ap-auto,
+#topbar-actions > #appearance-btn[data-appearance="light"] > .ap-light,
+#topbar-actions > #appearance-btn[data-appearance="dark"] > .ap-dark { display: block; }
+
 /* Options lives in the cluster now — no name, no rail tile look */
 #topbar-actions > #kbd-help .rail-tile-name { display: none !important; }
 
@@ -827,7 +771,7 @@
 
 #leftbar.expanded #leftbar-surface,
 #leftbar.hover-expanded #leftbar-surface {
-  width: 232px;
+  width: 264px;
   gap: 0;
   padding: 0;
   overflow: hidden;                       /* the workspace list scrolls, not the rail */
@@ -882,22 +826,7 @@
 #leftbar.expanded .leftbar-spacer,
 #leftbar.hover-expanded .leftbar-spacer { order: 5; flex: 1 1 auto; }
 
-/* the two destinations get the same head the workspace list has, so the rail
- * reads as two named groups rather than one named list and two loose rows */
-#leftbar.expanded .nav-head,
-#leftbar.hover-expanded .nav-head { order: 7; margin-top: 4px; }
-
-#leftbar.expanded #board-btn,       #leftbar.hover-expanded #board-btn       { order: 8; }
-
-#leftbar.expanded #skills-btn,      #leftbar.hover-expanded #skills-btn      { order: 9; }
-
-#leftbar.expanded #board-btn,
-#leftbar.expanded #skills-btn,
-#leftbar.hover-expanded #board-btn,
-#leftbar.hover-expanded #skills-btn { margin: 0 10px 2px; }
-
-#leftbar.expanded #skills-btn,
-#leftbar.hover-expanded #skills-btn { margin-bottom: 12px; }
+/* the two destinations sit side by side at the foot — see #rail-foot below */
 
 /* Options moved to the top bar */
 #leftbar #kbd-help { display: none; }
@@ -1138,18 +1067,9 @@
   text-overflow: ellipsis;
 }
 
-/* workspace identity colour reads as a vertical bar, not a dot — appended
- * after the name in the DOM, so `order` pulls it back to the leading edge */
-#leftbar.expanded .rail-tile .ws-color-dot,
-#leftbar.hover-expanded .rail-tile .ws-color-dot {
-  position: static;
-  order: -1;
-  width: 3px; height: 16px;
-  flex: none;
-  border: none;
-  border-radius: 2px;
-  box-shadow: none;
-}
+/* a workspace name carries more weight than a destination row */
+#leftbar.expanded .ws-tile .rail-tile-name,
+#leftbar.hover-expanded .ws-tile .rail-tile-name { font-weight: 600; }
 
 #leftbar.expanded .rail-tile .rail-n,
 #leftbar.hover-expanded .rail-tile .rail-n {
@@ -1253,30 +1173,10 @@
   box-shadow: none;
 }
 
-/* two badges per tile, not four. The agent count and the pin marker both read
- * in the hover flyout ("N agents · path", and the pin lit); hanging them off
- * the corners of a borderless tile only made it look busy. */
-#leftbar:not(.expanded):not(.hover-expanded) .rail-tile .rail-n,
-#leftbar:not(.expanded):not(.hover-expanded) .rail-tile .ws-pin { display: none; }
-
-/* the initial is dropped in the 57px rail: one letter is a poor stand-in for a
- * name (two workspaces starting with the same letter are indistinguishable),
- * and it left the identity bar hanging off the tile's left edge with a gap
- * between them. The colour bar alone is the tile — the name is in the hover
- * flyout and in the expanded rail. */
-#leftbar:not(.expanded):not(.hover-expanded) .ws-tile .rail-tile-glyph { display: none; }
-
-/* the identity colour is the same 3px bar the expanded row uses, centred */
-#leftbar:not(.expanded):not(.hover-expanded) .rail-tile .ws-color-dot {
-  top: 50%;
-  bottom: auto;
-  left: 50%;
-  width: 3px;
-  height: 16px;
-  margin: -8px 0 0 -1.5px;
-  border: none;
-  border-radius: 2px;
-}
+/* one badge per tile, not two: the agent count reads in the expanded rail, and
+ * hanging it off the corner of a borderless tile only made it look busy. The
+ * initial is all the 57px rail carries. */
+#leftbar:not(.expanded):not(.hover-expanded) .rail-tile .rail-n { display: none; }
 
 #leftbar:not(.expanded):not(.hover-expanded) .rail-tile .ws-attn {
   top: 5px;
@@ -1293,55 +1193,6 @@
 .rail-tile:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-/* the flyout's pin button and the rail's pinned marker are stroke SVGs from
- * icons.js now, not emoji — the one icon set, sized like its neighbours */
-.rail-flyout-pin svg{ width: 13px; height: 13px; display: block; margin: 0 auto; }
-
-.rail-tile .ws-pin svg { width: 9px; height: 9px; display: block; }
-
-/* ---- isolated agents: the flyout toggle ---- */
-
-/* one more flyout button beside pin/✕, same size and the same "on"
-   treatment the pin already uses for a persisted workspace flag */
-.rail-flyout-isolate {
-  background: none;
-  border: none;
-  cursor: pointer;
-  line-height: 1;
-  padding: 4px;
-  border-radius: 6px;
-  color: var(--text2);
-  opacity: 0.55;
-}
-
-.rail-flyout-isolate:hover { opacity: 1; background: var(--hover); }
-
-.rail-flyout-isolate.on { opacity: 1; color: var(--accent-text); }
-
-.rail-flyout-isolate svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
-
-/* --- workspace identity colours on a light chassis ---
- * `WORKSPACE_COLORS` in main/config.js was picked against the dark page, and
- * that is where it works: on Light a `#d6ff4b` tile dot or swatch is drawn on
- * `#eef0f3` and is not visible at all. The hue *is* the identity, so the hue
- * and chroma are kept and only the lightness is pinned dark enough to read.
- *
- * Every element painted in a workspace's colour carries the raw value as `--ws`
- * and paints with `var(--ws-ink)`. Keyed off the chassis rather than the theme
- * name, since "Theme background overlay: off" keeps a light theme on the dark
- * chassis, where the raw colour is already right — and done in CSS rather than
- * in the renderer so a theme flip repaints without a render pass. */
-.ws-tint {
-  --ws-ink: var(--ws);
-  --ws-op-boost: 1;
-  /* the hub disc's four alphas, in app.css's own order: the wash, its edge and
-   * the two spinning rings */
-  --ws-disc: 20%;
-  --ws-edge: 40%;
-  --ws-ring: 50%;
-  --ws-ring2: 25%;
 }
 
 /* the rail's right border is a drag handle (railgrip.js): pull it left or right
@@ -1384,70 +1235,28 @@
 #leftbar.rail-dragging,
 #leftbar.rail-dragging #leftbar-surface { transition: none; }
 
-/* --- foot group: the "Views" head + its four destinations, collapsible ---
- * #rail-foot is display:contents while open, so every existing order/margin
- * rule above still addresses the four buttons directly and the two rail
- * layouts are unchanged. It only becomes a real box once collapsed, where it
- * has to lay its buttons out as one row.
- * The wrapper sits after .leftbar-spacer in the DOM (the collapsed row must
- * not swallow it), so the small rail restores its own order below. */
+/* --- foot group: the two destinations, side by side ---
+ * #rail-foot is display:contents in the 57px rail, so the icon-only order and
+ * margin rules above still address the two buttons directly. The expanded rail
+ * makes it a real box: one row, the buttons splitting its width. */
 #rail-foot { display: contents; }
 
 #leftbar:not(.expanded):not(.hover-expanded) .leftbar-spacer { order: 1; }
 #leftbar:not(.expanded):not(.hover-expanded) #skills-btn { order: 3; }
 
-/* the grip strip: drag its line down to fold the group away, up to bring it
- * back. Only the expanded rail can be folded — the 57px rail is already icons
- * and has no width for a bottom row. */
-.rail-foot-grip { display: none; }
-#leftbar.expanded .rail-foot-grip {
-  display: block;
-  position: relative;
-  order: 7;
-  flex: none;
-  width: auto;
-  height: 11px;
-  margin: 0 12px;
-  cursor: ns-resize;
-}
-.rail-foot-grip::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 34px;
-  height: 2px;
-  border-radius: 2px;
-  transform: translate(-50%, -50%);
-  background: var(--border3);
-  transition: background 0.12s ease, width 0.12s ease;
-}
-.rail-foot-grip:hover::after,
-#leftbar.foot-dragging .rail-foot-grip::after {
-  background: var(--accent);
-  width: 44px;
-}
-
-#leftbar.expanded.foot-collapsed #rail-foot {
+#leftbar.expanded #rail-foot,
+#leftbar.hover-expanded #rail-foot {
   display: flex;
   order: 8;
   flex: none;
-  align-items: center;
-  justify-content: center;
   gap: 6px;
-  margin: 2px 12px 12px;
+  margin: 0 10px 12px;
 }
-#leftbar.expanded.foot-collapsed .nav-head { display: none; }
-#leftbar.expanded.foot-collapsed #rail-foot .rail-tile {
-  width: 38px;
-  height: 38px;
-  margin: 0;
-  padding: 0;
-  border-radius: 10px;
-  justify-content: center;
-}
-#leftbar.expanded.foot-collapsed #rail-foot .rail-tile-name { display: none; }
 
-/* the fold is a layout change, not a resize — kill the width animation only */
-#leftbar.foot-dragging,
-#leftbar.foot-dragging #leftbar-surface { transition: none; }
+#leftbar.expanded #rail-foot .rail-tile,
+#leftbar.hover-expanded #rail-foot .rail-tile {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0 10px;
+}

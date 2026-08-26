@@ -423,7 +423,7 @@ class Pane {
       minimumContrastRatio: activeMinContrast,
       // opaque, so the glyph atlas gets subpixel antialiasing — see paneTheme
       allowTransparency: false,
-      fontFamily: "'JetBrains Mono', monospace",
+      fontFamily: activeMonoFont,
       fontSize: activeFontSize,
       fontWeight: activeFontWeight,
       fontWeightBold: boldFor(activeFontWeight),
@@ -1261,6 +1261,15 @@ Pane.setDefaultFontSize = (px) => {
   activeFontSize = size;
   localStorage.setItem('swarmeye.paneFontSize', String(size));
   return size;
+};
+
+/* the macOS "Native Apple style" option's terminal half — new panes read the
+ * result here, already-open ones are restyled by the caller (a font swap needs
+ * a refit, since the cell size changes with it) */
+Pane.getMonoFont = () => activeMonoFont;
+Pane.setMonoFont = (native) => {
+  activeMonoFont = native ? NATIVE_MONO_FONT : DEFAULT_MONO_FONT;
+  return activeMonoFont;
 };
 
 /* and the same for "Agent pane text weight" — no keyboard path, so the option

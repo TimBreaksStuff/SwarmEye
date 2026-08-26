@@ -231,7 +231,7 @@ function claudeBase({ model, role, effort, orSkills, continueFrom, resumeId } = 
       || cannotLaunch('clean');
   }
   // 'opencode:' / 'pi:' replace claude with a third-party CLI carrying our own
-  // adapter (opencode-pi-plan.md). Same failure rule as the clean agent: a
+  // adapter (agent/README.md). Same failure rule as the clean agent: a
   // null command is a visible one-line message in the pane, never a silent
   // fall-through to a Claude launch nobody picked. opencode has no
   // system-prompt flag, so a role preset only supplies its model there; pi
@@ -449,23 +449,16 @@ class PtyManager {
       .concat([...this.sessions.values()].map((s) => s.session.agentName));
   }
 
-  /* The name an agent is about to get. main needs it before spawning an
-   * isolated agent: that agent's worktree is named after it and has to exist
-   * before node-pty can chdir into it. */
+  /* The name an agent is about to get. */
   pickAgentName() {
     return pickName(this.namesInUse());
   }
 
-  /* opts.worktree = { name, branch, path } makes this an isolated agent: the
-   * pty chdirs into the worktree instead of the workspace, and the pair is
-   * persisted so a restart lands back in it.
-   *
-   * opts.scope = a folder inside cwd this agent may edit and nothing else
-   * (main/scope.js). Anchored at cwd rather than the workspace, so an
-   * isolated agent is scoped inside its own worktree. */
+  /* opts.scope = a folder inside cwd this agent may edit and nothing else
+   * (main/scope.js). */
   spawn(workspace, cols, rows, opts = {}) {
     if (this.sessions.size >= this.maxSessions) throw new Error('cap');
-    const cwd = opts.worktree ? opts.worktree.path : workspace.path;
+    const cwd = workspace.path;
     // a moved/renamed/unmounted workspace folder makes posix_spawn fail on
     // chdir with the same opaque "posix_spawnp failed" — catch it here with
     // a message that actually says what's wrong
@@ -485,7 +478,6 @@ class PtyManager {
     // persisted so a pane rebuilt from tmux after a restart still shows its
     // role chip — the flag itself is long gone by then, it lives in the process
     if (roles.has(opts.role)) meta.role = opts.role;
-    if (opts.worktree) meta.worktree = { name: opts.worktree.name, branch: opts.worktree.branch };
     // persisted for the same reason as the role: the deny rules live in the
     // launch, so a restart has to rebuild them rather than inherit them
     const denyEdit = scopeDeny(cwd, opts.scope);
@@ -517,7 +509,7 @@ class PtyManager {
   /* Respawn an exited agent in the same folder under the same name.
    * resume=true continues the last conversation in that directory —
    * silently downgraded to a fresh session when there is none. */
-  async restart({ workspaceId, workspaceName, agentName, cwd, worktree, cols, rows, resume, role, model, continueFrom, resumeId, orSkills, replaceId, scope: scopeRel }) {
+  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, role, model, continueFrom, resumeId, orSkills, replaceId, scope: scopeRel }) {
     if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
     // rebuilt against the tree as it is now, and before the kill below: a
     // scope whose folder went away must refuse the restart while the old
@@ -568,9 +560,6 @@ class PtyManager {
     // a restarted agent keeps the role it was launched with — the system
     // prompt has to be re-appended, it is not part of the resumed conversation
     if (roles.has(role)) meta.role = role;
-    // and it comes back in the same worktree: cwd already points there, this
-    // is what keeps the chip and the next restart on it
-    if (worktree) meta.worktree = worktree;
     // and inside the same folder it was scoped to
     if (scopeRel) meta.scope = scopeRel;
     // `model` is how a restart moves the agent to another tier (the pane's

@@ -180,8 +180,6 @@
 .board-card-rerun,
 .board-card-session,
 .arch-del,
-.hist-copy,
-.hist-resume,
 .skill-update-btn,
 .skill-copy-btn,
 .skill-remove-btn,
@@ -200,7 +198,6 @@
 .board-card,
 .skill-row,
 .skills-stat-card,
-.hist-row,
 #board-form,
 #skills-form,
 #board-stats,
@@ -236,10 +233,8 @@
 }
 /* --- cards and rows: one row language --- */
 .board-card,
-.skill-row,
-.hist-row { border-radius: 9px; }
-.board-card.jumpable:hover,
-.hist-row:hover {
+.skill-row { border-radius: 9px; }
+.board-card.jumpable:hover {
   background: var(--hover);
   border-color: var(--border2);
 }
@@ -260,7 +255,6 @@
 .board-card-rerun,
 .board-card-session,
 .arch-del,
-.hist-copy,
 .skill-copy-btn,
 .skill-remove-btn,
 #board-form-category-manage {
@@ -275,7 +269,6 @@
 .board-card-move:hover,
 .board-card-rerun:hover,
 .board-card-session:hover,
-.hist-copy:hover,
 .skill-copy-btn:hover,
 #board-form-category-manage:hover {
   color: var(--text);
@@ -283,7 +276,6 @@
   border-color: var(--border2);
 }
 .board-card-start,
-.hist-resume,
 .skill-update-btn,
 .skill-repo-remove-btn,
 .board-archive-delall{
@@ -298,14 +290,12 @@
 }
 .board-archive-delall,
 .skill-repo-remove-btn{ color: var(--text2); border-color: var(--border2); background: transparent; }
-.board-card-start,
-.hist-resume {
+.board-card-start {
   color: var(--accent-text);
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border2));
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
-.board-card-start:hover,
-.hist-resume:hover {
+.board-card-start:hover {
   color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border2));
@@ -344,14 +334,11 @@
 /* --- keyboard focus, which the views had on one control --- */
 .pill:focus-visible,
 .board-card:focus-visible,
-.hist-row:focus-visible,
 .board-del:focus-visible,
 .board-card-move:focus-visible,
 .board-card-start:focus-visible,
 .board-card-rerun:focus-visible,
 .board-card-session:focus-visible,
-.hist-copy:focus-visible,
-.hist-resume:focus-visible,
 .skill-update-btn:focus-visible,
 .skill-copy-btn:focus-visible,
 .skill-remove-btn:focus-visible,
@@ -611,29 +598,11 @@
 #msg-pop,
 .branch-menu,
 .app-tooltip,
-#rail-flyout,
+#rail-menu,
 #board-category-pop {
   background: var(--surface);
   backdrop-filter: none;
 }
-
-:root[data-theme-overlay="on"]:is([data-theme="light"], [data-theme="blue"], [data-theme="neoblue"], [data-theme="purple"], [data-theme="teal"], [data-theme="rose"], [data-theme="violet"], [data-theme="sky"], [data-theme="indigo"], [data-theme="fuchsia"], [data-theme="emerald"], [data-theme="amber"], [data-theme="slate"]) .ws-tint {
-  --ws-ink: oklch(from var(--ws) 0.47 c h);
-  /* the map's links carry their agent's status as an alpha ramp (0.1 dead to
-   * 0.42 busy), picked for a bright line on black. The same alpha on a dark
-   * line over a white page is a ghost, so the whole ramp lifts together and
-   * the gradation survives. */
-  --ws-op-boost: 2.2;
-  /* same story on the hub: the strokes firm up, and the wash goes the other way
-   * so the count sitting on it keeps its contrast */
-  --ws-disc: 12%;
-  --ws-edge: 70%;
-  --ws-ring: 75%;
-  --ws-ring2: 45%;
-}
-
-.ws-color-dot.ws-tint,
-.ws-swatch.ws-tint { background: var(--ws-ink); }
 
 /* --- the role editor --- */
 /* clear of the resize grip */

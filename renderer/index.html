@@ -18,6 +18,8 @@
   <link rel="stylesheet" href="features/message/message.css" />
   <link rel="stylesheet" href="features/board/board.css" />
   <link rel="stylesheet" href="features/skills/skills.css" />
+  <link rel="stylesheet" href="features/update/update.css" />
+  <link rel="stylesheet" href="features/gsearch/gsearch.css" />
   <link rel="stylesheet" href="styles/chrome-clean.css" />
   <!-- these two took BOTH halves — app.css's and chrome-clean's — so they are
        self-contained and belong after it rather than before -->
@@ -26,6 +28,11 @@
   <!-- the lead-agent launch card carries its own flat-popover treatment, so it
        belongs after chrome-clean.css rather than in the block above -->
   <link rel="stylesheet" href="features/orchestrator/orchestrator.css" />
+  <!-- "Native Apple style" (Options → Appearance, macOS only). Every rule in
+       it is scoped to :root[data-native="on"], so with the option off the
+       sheet costs nothing; last in the order because its whole job is
+       overriding the sheets above, tokens included. -->
+  <link rel="stylesheet" href="styles/native-mac.css" />
 </head>
 <body>
   <header id="topbar">
@@ -60,6 +67,15 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="13" rx="2"/><path d="M9 20.5h6M12 17.5v3"/></svg>
       </button>
       <button id="notif-btn" aria-label="Notifications" data-tip="Notifications — what your agents did"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5v2M8.6 4.5h6.8l1.2 8 2 3.5H5.4l2-3.5 1.2-8Z"/><path d="M9.8 19.2a2.2 2.2 0 0 0 4.4 0"/></svg><span id="notif-n" hidden></span></button>
+      <!-- Native Apple style only (settings.js unhides it): Auto / Light / Dark.
+           Auto is what the option does on its own — follow System Settings —
+           and the other two override it. One icon shows at a time, picked by
+           data-appearance in rail.css. -->
+      <button id="appearance-btn" hidden data-appearance="system" aria-label="Appearance">
+        <svg class="ap-ic ap-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16Z" fill="currentColor" stroke="none"/></svg>
+        <svg class="ap-ic ap-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
+        <svg class="ap-ic ap-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.2A8.5 8.5 0 0 1 9.8 4a8.5 8.5 0 1 0 10.2 10.2Z"/></svg>
+      </button>
       <button id="kbd-help" data-tip="Options" aria-label="Options">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
@@ -130,8 +146,6 @@
       <div class="leftbar-spacer"></div>
 
       <div id="rail-foot">
-      <div class="ws-head nav-head"><span>Views</span></div>
-
       <button id="board-btn" class="rail-tile" aria-label="Task board (Ctrl+Shift+B)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15M14.8 4.5v15"/></svg>
         <span class="rail-tile-name">Task Board</span>
@@ -445,6 +459,12 @@
         <button id="agent-weight-up" data-tip="Thicker agent text — the light themes draw dark on light, which reads thinner">+</button>
       </span>
     </div>
+    <div class="kbd-row kbd-opt" id="native-style-row" hidden><span>Native Apple style</span>
+      <span class="opt-ctl">
+        <button id="native-style-restart" hidden data-tip="Relaunch SwarmEye now to apply the window frame">Restart</button>
+        <input type="checkbox" id="native-style-toggle" data-tip="macOS look: the system font in the chrome and in agent panes, macOS greys, corner radii and controls, and a light/dark theme that follows System Settings. The window frame — traffic lights inside the top bar, a translucent sidebar — needs a restart.">
+      </span>
+    </div>
     <div class="kbd-row kbd-opt"><span>Theme background overlay</span>
       <span class="opt-ctl">
         <input type="checkbox" id="theme-overlay-toggle" data-tip="On: the theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, agent panes — stays the default dark shade; only the theme's colours (borders, text, accents, terminal) follow the theme.">
@@ -649,12 +669,14 @@
   <script src="../node_modules/@xterm/addon-webgl/lib/addon-webgl.js"></script>
   <script src="../node_modules/@xterm/addon-search/lib/addon-search.js"></script>
   <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
-  <script src="dom.js"></script>
-  <script src="tooltip.js"></script>
-  <script src="confirm.js"></script>
-  <script src="icons.js"></script>
-  <script src="resizable.js"></script>
-  <script src="speech.js"></script>
+  <!-- lib/: the five shared helpers every area uses. Not an area themselves,
+       so they live outside features/ and load first. -->
+  <script src="lib/dom.js"></script>
+  <script src="lib/tooltip.js"></script>
+  <script src="lib/confirm.js"></script>
+  <script src="lib/icons.js"></script>
+  <script src="lib/resizable.js"></script>
+  <script src="features/speech/speech.js"></script>
   <!-- The pane, split across six classic scripts sharing one script scope.
        Order matters twice: the vocabulary files must precede the class that
        closes over their consts, and the three prototype mixins must follow it
@@ -665,21 +687,20 @@
   <script src="features/pane/pane-status.js"></script>
   <script src="features/pane/pane-usage.js"></script>
   <script src="features/pane/pane-git.js"></script>
-  <script src="grid.js"></script>
-  <script src="scope.js"></script>
-  <script src="launcher.js"></script>
+  <script src="features/grid/grid.js"></script>
+  <script src="features/scope/scope.js"></script>
+  <script src="features/launcher/launcher.js"></script>
   <script src="features/rail/wsagents.js"></script>
-  <script src="topbar.js"></script>
-  <script src="railgrip.js"></script>
-  <script src="features/rail/railfoot.js"></script>
-  <script src="board.js"></script>
-  <script src="skills.js"></script>
-  <script src="coordinator.js"></script>
-  <script src="message.js"></script>
-  <script src="palette.js"></script>
-  <script src="preview.js"></script>
-  <script src="sounds.js"></script>
-  <script src="openrouter.js"></script>
+  <script src="features/rail/topbar.js"></script>
+  <script src="features/rail/railgrip.js"></script>
+  <script src="features/board/board.js"></script>
+  <script src="features/skills/skills.js"></script>
+  <script src="features/coordinator/coordinator.js"></script>
+  <script src="features/message/message.js"></script>
+  <script src="features/palette/palette.js"></script>
+  <script src="features/preview/preview.js"></script>
+  <script src="features/sounds/sounds.js"></script>
+  <script src="features/openrouter/openrouter.js"></script>
   <!-- app.js is a module: it imports the features/ modules, which is why it has
        no <script> tag of its own. Module scripts are deferred, so every classic
        script above has already run and its window global is there to read. -->

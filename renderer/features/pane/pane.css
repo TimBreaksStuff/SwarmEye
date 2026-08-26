@@ -1181,8 +1181,6 @@
 }
 
 /* the menu row that opens all this is an action, not another agent to start */
-.branch-item-quiet { color: var(--muted); }
-
 /* the two plain-agent rows lead the + Coding Agent menu — the provider choice,
  * pulled forward from the role presets under them */
 .branch-menu .branch-item-strong { color: var(--text); font-weight: 600; }

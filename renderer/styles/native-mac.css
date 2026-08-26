@@ -1,0 +1,252 @@
+/* ---- "Native Apple style" (Options → Appearance, macOS only) ----
+ *
+ * Every rule here is scoped to :root[data-native="on"], so with the option off
+ * the sheet is inert. It loads last of all, because its whole job is to
+ * override the sheets above it — tokens.css included.
+ *
+ * Three things make the app read as a Mac app rather than a themed Electron
+ * window: the system font, the system palette (which follows System Settings,
+ * so the option pins data-theme to dark or light and nothing else), and the
+ * window itself — traffic lights inside the top bar and vibrancy behind the
+ * sidebar, both set up in main/main.js at launch. The CSS half of that last
+ * one is here: the surfaces that must let the material through go
+ * transparent, and every content surface is painted opaque again.
+ *
+ * The palette blocks carry two attributes rather than one on purpose: the
+ * "Theme background overlay: off" rules in app.css are [data-theme-overlay]
+ * + [data-theme], and a one-attribute block here would lose to them.
+ */
+
+/* ---------- palette ---------- */
+
+:root[data-native="on"] {
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  /* the hex wash is hidden below, so nothing draws with this */
+  --grid-line: transparent;
+}
+
+/* macOS light: white content, a tinted sidebar over the vibrancy, hairlines
+ * rather than drawn borders. The greys are alpha on purpose — that is what
+ * makes them sit right on both the opaque content and the translucent rail. */
+:root[data-native="on"][data-theme="light"] {
+  --bg: #ffffff;
+  --surface: #f6f6f8;
+  --hover: rgba(0, 0, 0, 0.05);
+  --border: rgba(0, 0, 0, 0.10);
+  --border2: rgba(0, 0, 0, 0.14);
+  --border3: rgba(0, 0, 0, 0.18);
+  --border-hover: rgba(0, 0, 0, 0.28);
+
+  --text: #1d1d1f;
+  --text2: rgba(60, 60, 67, 0.78);
+  --muted: rgba(60, 60, 67, 0.62);
+  --muted2: rgba(60, 60, 67, 0.52);
+  --faint: rgba(60, 60, 67, 0.34);
+
+  /* macOS's Orange accent. The fill has to carry white and the text has to
+   * clear 4.5:1 on white, so both are the darkened orange rather than the
+   * bright #ff9f0a the dark side uses. */
+  --accent: #c2620a;
+  --accent-text: #a95408;
+  --on-accent: #ffffff;
+
+  --header-bg: rgba(246, 246, 248, 0.8);
+  --accent-glow: rgba(194, 98, 10, 0.35);
+  --glass: rgba(0, 0, 0, 0.04);
+
+  --tag: #9542b8;
+  /* the "needs attention" amber, pushed yellow: the accent is orange now, and
+   * a chip that matches the accent is a chip that stops standing out */
+  --amber: #8a6d06;
+  --err: #d70015;
+  --term-bg: #ffffff;
+  --pill-hover: rgba(194, 98, 10, 0.10);
+  --entry-dot: #c2620a;
+}
+
+/* macOS dark. The content background is true black rather than macOS's own
+ * #1e1e1e: the panes are terminals, and black is the backdrop their output was
+ * written for. --surface stays a shade above it so the top bar, the rail and
+ * the pane headers still separate from the document area. */
+:root[data-native="on"][data-theme="dark"] {
+  --bg: #000000;
+  --surface: #141414;
+  --hover: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.10);
+  --border2: rgba(255, 255, 255, 0.14);
+  --border3: rgba(255, 255, 255, 0.18);
+  --border-hover: rgba(255, 255, 255, 0.30);
+
+  --text: #f5f5f7;
+  --text2: rgba(235, 235, 245, 0.74);
+  --muted: rgba(235, 235, 245, 0.56);
+  --muted2: rgba(235, 235, 245, 0.46);
+  --faint: rgba(235, 235, 245, 0.30);
+
+  /* the bright side of the same accent. White on #ff9f0a is barely 2:1, so
+   * what the fill carries is near-black — which is what macOS does with its
+   * own light accents too. */
+  --accent: #ff9f0a;
+  --accent-text: #ffbe5c;
+  --on-accent: #2a1800;
+
+  --header-bg: rgba(20, 20, 20, 0.8);
+  --accent-glow: rgba(255, 159, 10, 0.4);
+  --glass: rgba(255, 255, 255, 0.06);
+
+  --tag: #bf5af2;
+  /* pushed yellow, away from the orange accent — see the light block */
+  --amber: #ffd60a;
+  --err: #ff453a;
+  --term-bg: #000000;
+  --pill-hover: rgba(255, 159, 10, 0.16);
+  --entry-dot: #ff9f0a;
+}
+
+/* ---------- window material ---------- */
+
+/* The window is built with an alpha background and `vibrancy: 'sidebar'`, so
+ * whatever is left unpainted shows the material. Exactly two surfaces are:
+ * the top bar (a unified toolbar, the way a Mac app's is) and the rail. */
+:root[data-native="on"] html,
+:root[data-native="on"] body {
+  background: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+/* the hex wash belongs to the app's own look, not to this one */
+:root[data-native="on"] body::before { display: none; }
+
+/* every content surface paints itself back in — without this they would all
+ * be vibrant, which is not what macOS does with document areas */
+:root[data-native="on"] #grid-wrap,
+:root[data-native="on"] #board,
+:root[data-native="on"] #skills-view {
+  background: var(--bg);
+}
+:root[data-native="on"] #body-wrap { background: transparent; }
+
+/* Traffic lights sit at x=14 (main/main.js) and run ~56px wide; the padding
+ * clears them and the bar itself becomes the drag region. The tint is a
+ * fallback as much as a look: if the material is ever unavailable, the bar
+ * still reads as a surface rather than as a hole. */
+:root[data-native="on"] #topbar {
+  height: 52px;
+  padding-left: 84px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+:root[data-native="on"] #topbar > * { -webkit-app-region: no-drag; }
+/* the two flex spacers are the part of the bar there is nothing to click on,
+ * which makes them the part worth being able to drag by */
+:root[data-native="on"] #topbar > .spacer { -webkit-app-region: drag; }
+
+:root[data-native="on"] #leftbar-surface {
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  border-right: 1px solid var(--border);
+}
+/* the hover preview floats over the grid, so it cannot be translucent — there
+ * is app content directly behind it, not the desktop */
+:root[data-native="on"] #leftbar.hover-expanded #leftbar-surface {
+  background: var(--surface);
+  box-shadow: 0 22px 60px -18px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- shapes ---------- */
+
+/* macOS radii: 6px for rows and controls, 10-12px for cards and popovers.
+ * The app's own look uses full pills for rail rows and chips; those are the
+ * shapes that read most obviously as "not a Mac app". */
+:root[data-native="on"] .rail-tile,
+:root[data-native="on"] #leftbar.expanded .rail-tile,
+:root[data-native="on"] #leftbar.hover-expanded .rail-tile {
+  border-radius: 6px;
+  background: transparent;
+  border-color: transparent;
+}
+:root[data-native="on"] .rail-tile:hover { background: var(--hover); }
+:root[data-native="on"] .rail-tile.selected,
+:root[data-native="on"] .rail-tile.attn.selected {
+  background: var(--accent);
+  border-color: transparent;
+}
+:root[data-native="on"] .rail-n {
+  border-radius: 5px;
+  background: var(--hover);
+}
+
+:root[data-native="on"] .pane {
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+:root[data-native="on"] #kbd-pop,
+:root[data-native="on"] #kbd-shortcuts-pop,
+:root[data-native="on"] #palette-pop,
+:root[data-native="on"] #notif-panel,
+:root[data-native="on"] .gs-box,
+:root[data-native="on"] #board-category-pop {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: saturate(180%) blur(24px);
+  box-shadow: 0 16px 44px -12px rgba(0, 0, 0, 0.38);
+}
+
+/* the toolbar pills — mono, uppercase and letter-spaced is a terminal look,
+ * not a Mac one */
+:root[data-native="on"] #update-pill,
+:root[data-native="on"] #reattach-all,
+:root[data-native="on"] #health-banner,
+:root[data-native="on"] #add-agent {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  border-radius: 6px;
+}
+:root[data-native="on"] #gsearch-btn { border-radius: 6px; }
+
+/* ---------- controls ---------- */
+
+/* macOS switch: 38×22 with a shadowed knob, and the fill is the system accent
+ * rather than the theme's */
+:root[data-native="on"] .opt-ctl input[type="checkbox"] {
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--border3);
+}
+:root[data-native="on"] .opt-ctl input[type="checkbox"]::after {
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+:root[data-native="on"] .opt-ctl input[type="checkbox"]:checked::after { left: 18px; }
+
+/* pop-up buttons and chips */
+:root[data-native="on"] .opt-ctl select,
+:root[data-native="on"] .opt-ctl button,
+:root[data-native="on"] #kbd-pop .opt-ctl:has(> button + span + button) {
+  font-family: var(--font-ui);
+  border-radius: 6px;
+}
+:root[data-native="on"] .opt-ctl > span { font-family: var(--font-ui); }
+
+/* the system focus ring, in place of the app's hard accent outline */
+:root[data-native="on"] *:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+}
+
+/* Both theme rows are inert while this is on: the light/dark choice comes from
+ * System Settings, and the overlay's dark-chassis pinning is what this sheet's
+ * palette replaces. Dimmed rather than hidden, so the rows still explain
+ * themselves once the option goes back off. */
+:root[data-native="on"] #kbd-pop .kbd-opt-theme,
+:root[data-native="on"] #kbd-pop .kbd-opt:has(#theme-overlay-toggle) {
+  opacity: 0.4;
+  pointer-events: none;
+}

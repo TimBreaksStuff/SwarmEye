@@ -154,7 +154,7 @@ class SkillsManager {
   }
 
   /* Re-scanned on every call rather than cached: an agent can create a skill
-   * at any moment, and the Skills screen refreshes on open (renderer/skills.js
+   * at any moment, and the Skills screen refreshes on open (renderer/features/skills/skills.js
    * refresh()), which is exactly when a fresh answer is wanted. Two small
    * readdirs per workspace is cheaper than a watcher's bookkeeping. */
   listLocal() {

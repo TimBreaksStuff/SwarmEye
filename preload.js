@@ -10,8 +10,6 @@ contextBridge.exposeInMainWorld('swarm', {
   removeWorkspace: (id) => ipcRenderer.invoke('workspace:remove', id),
   reorderWorkspaces: (ids) => ipcRenderer.invoke('workspace:reorder', ids),
   renameWorkspace: (id, name) => ipcRenderer.invoke('workspace:rename', { id, name }),
-  setWorkspaceColor: (id, color) => ipcRenderer.invoke('workspace:set-color', { id, color }),
-  setWorkspacePinned: (id, pinned) => ipcRenderer.invoke('workspace:set-pinned', { id, pinned }),
   selectWorkspace: (id) => ipcRenderer.invoke('workspace:select', id),
   addWorkspaceCategory: (id, name) => ipcRenderer.invoke('workspace:add-category', { id, name }),
   removeWorkspaceCategory: (id, name) => ipcRenderer.invoke('workspace:remove-category', { id, name }),
@@ -20,6 +18,10 @@ contextBridge.exposeInMainWorld('swarm', {
   stopPreview: (workspaceId) => ipcRenderer.invoke('preview:stop', { workspaceId }),
   setAutoUsageLimit: (n) => ipcRenderer.invoke('config:set-auto-usage-limit', n),
   setSkipPermissions: (on) => ipcRenderer.invoke('config:set-skip-permissions', on),
+  // macOS "Native Apple style": main only needs it to pick the window frame at
+  // the next launch, which relaunchApp is what triggers
+  setNativeStyle: (on) => ipcRenderer.invoke('config:set-native-style', on),
+  relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   // the standard CLAUDE.md copied into every workspace folder as it is added;
   // the current path arrives with config:get, these two change it
   pickTemplate: () => ipcRenderer.invoke('template:pick'),
@@ -65,9 +67,6 @@ contextBridge.exposeInMainWorld('swarm', {
   listBranches: (workspaceId) => ipcRenderer.invoke('git:branches', workspaceId),
   gitDiff: (workspaceId) => ipcRenderer.invoke('git:diff', workspaceId),
   checkoutBranch: (workspaceId, branch, create) => ipcRenderer.invoke('git:checkout', { workspaceId, branch, create }),
-
-  // isolated agents: a worktree each (main/worktree.js)
-  setWorkspaceIsolate: (id, isolate) => ipcRenderer.invoke('workspace:set-isolate', { id, isolate }),
 
   listSkills: () => ipcRenderer.invoke('skills:list'),
   installSkill: (repoUrl) => ipcRenderer.invoke('skills:install', repoUrl),

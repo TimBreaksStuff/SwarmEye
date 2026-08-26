@@ -1,0 +1,187 @@
+/* renderer/features/speech/speech.js — local dictation. Chromium's SpeechRecognition doesn't
+ * work in Electron (its cloud backend needs Google API keys Electron doesn't
+ * ship — every session dies with error:network), so the mic is captured here
+ * via getUserMedia, downsampled to 16 kHz 16-bit mono PCM and streamed over
+ * IPC to a Whisper (faster-whisper) recognizer in WSL (install:
+ * scripts/setup-stt.sh). Fully
+ * offline — audio never leaves the machine. Exposes window.Speech:
+ * { wire(button, opts) }, which is how every mic button in the app is hooked
+ * up. Only one dictation session runs app-wide at a time. */
+const Speech = (() => {
+  const supported = !!(window.swarm && window.swarm.speechStart && navigator.mediaDevices);
+  let active = null; // { id, opts, stream, ctx }
+  let nextId = 1;
+  const DOUBLE_CLICK_MS = 250;
+
+  function teardownAudio(a) {
+    if (a.stream) a.stream.getTracks().forEach((t) => t.stop());
+    if (a.ctx && a.ctx.state !== 'closed') a.ctx.close();
+    a.stream = null;
+    a.ctx = null;
+  }
+
+  // finish `active` locally without waiting for the backend's speech:end —
+  // used when a new session supersedes it; late events are dropped by id
+  function finishActive() {
+    const a = active;
+    if (!a) return;
+    active = null;
+    teardownAudio(a);
+    window.swarm.speechStop();
+    a.opts.onEnd && a.opts.onEnd();
+  }
+
+  function stop() {
+    if (!active) return;
+    // a press-and-hold can be released before getUserMedia has even resolved —
+    // the flag makes that late stream tear itself down instead of staying hot
+    active.stopped = true;
+    teardownAudio(active); // release the mic immediately, don't wait for the backend
+    window.swarm.speechStop(); // backend flushes the final phrase, then speech:end fires
+  }
+
+  if (supported) {
+    window.swarm.onSpeechResult(({ id, text, isFinal }) => {
+      if (!active || active.id !== id || !text) return;
+      if (!isFinal && !active.opts.interim) return;
+      active.opts.onResult(text, !!isFinal);
+    });
+    window.swarm.onSpeechError(({ id, code }) => {
+      if (active && active.id === id && active.opts.onError) active.opts.onError(code);
+    });
+    window.swarm.onSpeechEnd(({ id }) => {
+      if (!active || active.id !== id) return;
+      const a = active;
+      active = null;
+      teardownAudio(a);
+      a.opts.onEnd && a.opts.onEnd();
+    });
+  }
+
+  /**
+   * @param {object} opts
+   *   interim: boolean — fire onResult for non-final text too
+   *   onResult: (text, isFinal) => void
+   *   onEnd: () => void
+   *   onError: (code) => void   // 'not-allowed', 'not-installed', 'backend'
+   */
+  async function start(opts) {
+    if (!supported) return null;
+    finishActive();
+    const session = { id: nextId++, opts, stream: null, ctx: null, stopped: false };
+    active = session;
+
+    const res = await window.swarm.speechStart(session.id);
+    if (session !== active) return null; // superseded while starting
+    if (!res.ok) {
+      active = null;
+      opts.onError && opts.onError(res.reason === 'not-installed' ? 'not-installed' : 'backend');
+      opts.onEnd && opts.onEnd();
+      return null;
+    }
+    try {
+      session.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      });
+    } catch {
+      if (session === active) {
+        active = null;
+        window.swarm.speechStop();
+        opts.onError && opts.onError('not-allowed');
+        opts.onEnd && opts.onEnd();
+      }
+      return null;
+    }
+    if (session !== active || session.stopped) { teardownAudio(session); return null; }
+
+    // AudioContext resamples the mic to the recognizer's 16 kHz for us
+    session.ctx = new AudioContext({ sampleRate: 16000 });
+    const src = session.ctx.createMediaStreamSource(session.stream);
+    const node = session.ctx.createScriptProcessor(4096, 1, 1);
+    node.onaudioprocess = (e) => {
+      if (session !== active) return;
+      const f = e.inputBuffer.getChannelData(0);
+      const pcm = new Int16Array(f.length);
+      for (let i = 0; i < f.length; i++) {
+        const s = Math.max(-1, Math.min(1, f[i]));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      window.swarm.speechAudio(new Uint8Array(pcm.buffer).toBase64());
+    };
+    src.connect(node);
+    node.connect(session.ctx.destination); // keeps the graph pulling; output stays silent
+    return session;
+  }
+
+  /* Wire a mic button to a dictation session. Every call site had written out
+   * the same bookkeeping by hand: hide the button when dictation isn't
+   * available, track whether *this* button is the one recording, toggle the
+   * .listening class, and turn the two user-facing failures into the same two
+   * toasts. Only the interim flag and what to do with the text ever differed.
+   *
+   * opts: { interim, hold, onStart, onResult, onEnd, onDouble }  — `hold`
+   * makes the button push-to-talk (open while held) instead of a click
+   * toggle, which is how the app-wide mic in the top bar works. onStart runs
+   * just before the mic opens, for a caller that needs to snapshot state first (the
+   * task form remembers what was already typed); onEnd when it closes, however
+   * it closed. A caller that passes onDouble also gets double-click: the
+   * single-click toggle is then held back by DOUBLE_CLICK_MS so a second click
+   * can claim it instead (the pane's hands-free mode) — without that wait, the
+   * two clicks would start and kill a recognizer before the double even fired.
+   *
+   * Returns { toggle, stop }; both are safe no-ops when dictation isn't
+   * supported, and stop() only stops a session this button actually started. */
+  function wire(btn, opts) {
+    if (!supported) {
+      btn.style.display = 'none';
+      return { toggle: () => {}, stop: () => {} };
+    }
+    let dictating = false;
+    const finish = () => {
+      dictating = false;
+      btn.classList.remove('listening');
+      opts.onEnd && opts.onEnd();
+    };
+    const toggle = () => {
+      if (dictating) { stop(); return; }
+      if (opts.onStart) opts.onStart();
+      dictating = true;
+      btn.classList.add('listening');
+      start({
+        interim: !!opts.interim,
+        onResult: opts.onResult,
+        onEnd: finish,
+        onError: (err) => {
+          finish();
+          if (err === 'not-allowed' || err === 'service-not-allowed') toast('microphone permission denied');
+          else if (err === 'not-installed') toast('dictation engine not installed — install it in ⌨ Options');
+        },
+      });
+    };
+    // push-to-talk: the mic is open only while the button is held. pointerup
+    // is watched on the window, so releasing after the cursor has slid off the
+    // button still closes it rather than leaving the mic hot.
+    if (opts.hold) {
+      btn.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!dictating) toggle(); });
+      window.addEventListener('pointerup', () => {
+        if (!dictating) return;
+        stop();
+        // drop the red on release rather than when the backend finishes
+        // flushing the last phrase a moment later — the button is not held any
+        // more, and `dictating` still guards a second start until then
+        btn.classList.remove('listening');
+      });
+      return { toggle, stop: () => { if (dictating) stop(); } };
+    }
+    let clickTimer = null;
+    btn.addEventListener('click', () => {
+      if (!opts.onDouble) { toggle(); return; }
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; opts.onDouble(); return; }
+      clickTimer = setTimeout(() => { clickTimer = null; toggle(); }, DOUBLE_CLICK_MS);
+    });
+    return { toggle, stop: () => { if (dictating) stop(); } };
+  }
+
+  return { wire };
+})();
+window.Speech = Speech;

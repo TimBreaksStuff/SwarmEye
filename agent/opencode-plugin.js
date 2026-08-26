@@ -4,7 +4,7 @@
  * It translates opencode's own events into the two artifacts main/hooks.js
  * already watches: the hook-state file (busy / waiting / done + the call in
  * flight) and a Claude-format transcript JSONL (cost, context, model chip and
- * the closing summary). Nothing in hooks.js changes — see opencode-pi-plan.md.
+ * the closing summary). Nothing in hooks.js changes — see ./README.md.
  *
  * Loaded per launch via OPENCODE_CONFIG pointing at a config file whose
  * "plugin" array names this file as a file:// URL, so the user's own opencode

@@ -26,6 +26,47 @@ const kbdShortcutsBtn = document.getElementById('kbd-shortcuts-btn');
  * because the command palette offers the same switch. */
 export const themeDots = document.querySelectorAll('#theme-opts .theme-dot');
 
+/* "Native Apple style" (macOS only). Its renderer half is instant — one
+ * attribute switches styles/native-mac.css on, the terminal font follows and
+ * the theme starts tracking System Settings; its window half (traffic lights
+ * in the top bar, the translucent sidebar) is decided at createWindow, so the
+ * row carries a Restart button rather than pretending the flip was complete. */
+const nativeRow = document.getElementById('native-style-row');
+const nativeRestartBtn = document.getElementById('native-style-restart');
+const osDark = window.matchMedia('(prefers-color-scheme: dark)');
+let nativeStyle = false;
+
+/* Light/dark while the native style is on. "system" is the mode the option
+ * ships in — follow System Settings, the way a Mac app does — and the other
+ * two override it, because the swatch row (which is inert in this mode) is no
+ * longer the place to say so. The button lives in the top bar's action
+ * cluster, left of the gear, and is hidden whenever the option is off. */
+const appearanceBtn = document.getElementById('appearance-btn');
+const APPEARANCE_MODES = ['system', 'light', 'dark'];
+const APPEARANCE_TIP = {
+  system: 'Appearance: follows macOS — click for Light',
+  light: 'Appearance: Light — click for Dark',
+  dark: 'Appearance: Dark — click to follow macOS',
+};
+let appearance = localStorage.getItem('swarmeye.appearance') || 'system';
+
+/* the theme a native session shows: the OS's, unless the button overrode it */
+const nativeThemeName = () => (appearance === 'system' ? (osDark.matches ? 'dark' : 'light') : appearance);
+
+function applyAppearance(mode) {
+  appearance = APPEARANCE_MODES.includes(mode) ? mode : 'system';
+  localStorage.setItem('swarmeye.appearance', appearance);
+  appearanceBtn.dataset.appearance = appearance;
+  appearanceBtn.dataset.tip = APPEARANCE_TIP[appearance];
+  if (nativeStyle) applyTheme(nativeThemeName(), false);
+}
+
+/* the swatch the user picked, minus the themes this build no longer ships */
+const storedTheme = () => {
+  const t = localStorage.getItem('swarmeye.theme');
+  return [...themeDots].some((d) => d.dataset.theme === t) ? t : 'dark';
+};
+
 /* option values the rest of the app reads. Assigned here, imported live. */
 export let maxAgents = 10; // cap on simultaneous agents — also stored in config
 export let autoUsageLimit = 85; // usage-% ceiling for auto-scheduled tasks — also stored in config
@@ -144,9 +185,21 @@ function applyLeftbarStyle(style) {
 
 /* colour theme — pushes the matching xterm palette into every open pane, so a
  * theme switch reaches running agents and not just the chrome. */
-export function applyTheme(name) {
+export function applyTheme(name, persist = true) {
+  /* While the native style is on, light vs dark comes from System Settings and
+   * nothing else — a swatch or command-palette pick is stored (so it is still
+   * there when the option goes off) but not shown, which also keeps data-theme
+   * at exactly dark or light, the two the native palette is written for. */
+  if (nativeStyle && persist) {
+    localStorage.setItem('swarmeye.theme', name);
+    name = nativeThemeName();
+    persist = false;
+  }
   document.documentElement.dataset.theme = name;
-  localStorage.setItem('swarmeye.theme', name);
+  // the native style drives the theme off System Settings rather than off the
+  // swatch row — applied without persisting, so the colour the user picked is
+  // still there when the option goes back off
+  if (persist) localStorage.setItem('swarmeye.theme', name);
   const xt = Pane.setXtermTheme(name);
   const minContrast = Pane.getMinContrast();
   for (const p of ctx.state.panes.values()) {
@@ -242,6 +295,8 @@ async function resetOptions() {
   applied.taskSummary(true);
   applied.desktopNotifs(true);
   applied.notifSpeech(false);
+  applyAppearance('system');
+  applied.nativeStyle(false);
   applyTheme('dark');
   applied.themeOverlay(true);
   notifSound = 'chime';
@@ -276,12 +331,9 @@ export function init(context) {
     if (kbdPop.hidden) {
       ctx.closeNotifPop(); // popovers are mutually exclusive
       // anchor the popover below the gear button — it sits in the top bar's
-      // icon group, so it drops down right-aligned with the button
-      const r = kbdHelpBtn.getBoundingClientRect();
+      // icon group, so it drops down right-aligned with the button (dom.js)
       kbdPop.style.bottom = '';
-      kbdPop.style.left = '';
-      kbdPop.style.top = Math.round(r.bottom + 8) + 'px';
-      kbdPop.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
+      placePop(kbdPop, kbdHelpBtn, { align: 'right', gap: 8 });
     }
     kbdPop.hidden = !kbdPop.hidden;
     if (kbdPop.hidden) kbdShortcutsPop.hidden = true;
@@ -533,6 +585,37 @@ export function init(context) {
    * to dark rather than leaving data-theme pointing at a block that is gone */
   const savedTheme = localStorage.getItem('swarmeye.theme');
   applyTheme([...themeDots].some((d) => d.dataset.theme === savedTheme) ? savedTheme : 'dark');
+
+  /* "Native Apple style" — off by default, and only offered on macOS: the
+   * system font, the system mono in agent panes and the vibrancy behind the
+   * sidebar are all things Windows and Linux would only be imitating. Wired
+   * after the theme above because its effect overrides it. */
+  nativeRow.hidden = !window.swarm.isMac;
+  osDark.addEventListener('change', () => { if (nativeStyle && appearance === 'system') applyTheme(nativeThemeName(), false); });
+  appearanceBtn.addEventListener('click', () => {
+    applyAppearance(APPEARANCE_MODES[(APPEARANCE_MODES.indexOf(appearance) + 1) % APPEARANCE_MODES.length]);
+  });
+  applyAppearance(appearance); // sets the icon and the tooltip; the theme follows below
+  nativeRestartBtn.addEventListener('click', () => window.swarm.relaunchApp());
+  let nativeBooted = false;
+  applied.nativeStyle = boolOption('native-style-toggle', 'nativeStyle', false, (on) => {
+    nativeStyle = on && window.swarm.isMac;
+    document.documentElement.dataset.native = nativeStyle ? 'on' : 'off';
+    // the terminal font changes the cell size, so open panes need a refit as
+    // well as the new family
+    const font = Pane.setMonoFont(nativeStyle);
+    for (const p of ctx.state.panes.values()) {
+      p.term.options.fontFamily = font;
+      p.refit();
+    }
+    appearanceBtn.hidden = !nativeStyle;
+    applyTheme(nativeStyle ? nativeThemeName() : storedTheme(), !nativeStyle);
+    window.swarm.setNativeStyle(nativeStyle);
+    // the boot-time apply changes nothing about the frame that is already on
+    // screen — only a flip during the session needs the relaunch
+    if (nativeBooted) nativeRestartBtn.hidden = false;
+  });
+  nativeBooted = true;
 
   /* "Theme background overlay" — on by default; off hides the theme-tinted
    * background grid wash and pins the app's chassis (background, left bar,

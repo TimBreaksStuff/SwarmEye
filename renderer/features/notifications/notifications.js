@@ -194,29 +194,8 @@ export function init(context) {
 
   /* drag the panel's left edge to resize it — same handle as the preview dock,
    * width remembered across restarts */
-  const MIN_WIDTH = 300;
-  const handle = document.getElementById('notif-panel-resizer');
-  const saved = Number(localStorage.getItem('swarmeye.notifPanelWidth'));
-  if (saved >= MIN_WIDTH) notifPanelEl.style.width = saved + 'px';
-  handle.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    handle.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const startW = notifPanelEl.getBoundingClientRect().width;
-    const onMove = (ev) => {
-      const w = Math.max(MIN_WIDTH, Math.min(window.innerWidth - 360, startW + (startX - ev.clientX)));
-      notifPanelEl.style.width = Math.round(w) + 'px';
-    };
-    const onUp = () => {
-      handle.removeEventListener('pointermove', onMove);
-      handle.removeEventListener('pointerup', onUp);
-      handle.removeEventListener('pointercancel', onUp);
-      localStorage.setItem('swarmeye.notifPanelWidth', String(Math.round(notifPanelEl.getBoundingClientRect().width)));
-    };
-    handle.addEventListener('pointermove', onMove);
-    handle.addEventListener('pointerup', onUp);
-    handle.addEventListener('pointercancel', onUp);
-  });
+  dragWidth(document.getElementById('notif-panel-resizer'), notifPanelEl,
+    { key: 'swarmeye.notifPanelWidth', min: 300 });
 
   notifBtnEl.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -224,9 +203,7 @@ export function init(context) {
       kbdPop.hidden = true; // popovers are mutually exclusive
       kbdShortcutsPop.hidden = true;
       // anchor the popover right below the bell (the top bar can be zoomed)
-      const r = notifBtnEl.getBoundingClientRect();
-      notifPopEl.style.top = Math.round(r.bottom + 8) + 'px';
-      notifPopEl.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
+      placePop(notifPopEl, notifBtnEl, { align: 'right', gap: 8 });
       notifPopEl.hidden = false;
       renderNotifs(); // the list is only built while it is visible
     } else {

@@ -2,7 +2,7 @@
 
 All notable changes to SwarmEye are documented here.
 
-## 1.63.44
+## 1.63.48
 
 Current public release. See [README.md](README.md) and [docs/README.md](docs/README.md).
 
@@ -10,11 +10,10 @@ Since 1.0.0 the app has gained:
 
 - **OpenRouter models** — paste one openrouter.ai key and every picker grows the catalog (Kimi, Qwen, GLM, GPT, Grok, …). Those agents run through your key, as SwarmEye's own clean CLI or [opencode](https://opencode.ai) / [pi](https://pi.dev).
 - **Coordinator and orchestrator** — split a request into role-assigned tasks, or run a lead plus a crew of cheaper workers in one pane slot.
-- **Isolated agents** — a git worktree and branch per agent, reviewed and merged from that agent's own terminal.
 - **Scope** — an agent may edit only inside an area or folder; Claude Code deny rules hold even in auto mode.
 - **Task board, attention queue, cost panel** — plus the real Claude 5-hour / weekly limits and OpenRouter spend in the rail.
 - **Free-canvas layout** when auto-organize is off; paste with Ctrl+V, right-click or Shift+Insert.
-- macOS, in-app updates, voice dictation, skills from GitHub.
+- macOS, in-app updates, voice dictation, skills from GitHub, and a Native Apple style that follows System Settings.
 
 ## 1.0.0 — 2026-07-19
 

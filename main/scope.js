@@ -58,8 +58,7 @@ function escapePattern(name) {
 }
 
 /* Every Edit deny that together mean "only inside these paths", anchored at
- * `root` — the agent's own working directory, so an isolated agent is scoped
- * inside its worktree rather than the workspace it was cut from.
+ * `root` — the agent's own working directory.
  *
  * One walk down from the root. At each level an entry is either one of the
  * allowed paths (left alone, with everything under it), an ancestor of one
@@ -83,7 +82,7 @@ function denyRules(root, rels) {
   const walk = (dir, prefix) => {
     /* what this level may hold: the next segment of every allowed path still
      * running through here, mapped to whether the path *ends* on it — one
-     * area can name both `renderer/board.js` and `renderer/features/board`,
+     * area can name both `renderer/features/board` and a single file,
      * so a segment can be an endpoint and a waypoint at once. */
     const allowed = new Map();
     for (const parts of wanted) {

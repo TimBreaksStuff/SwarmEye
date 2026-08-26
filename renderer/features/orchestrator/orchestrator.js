@@ -1,6 +1,6 @@
 /* The orchestrator: a lead agent that plans, workers that execute.
  *
- * The coordinator (renderer/coordinator.js) splits a *sentence* — one headless
+ * The coordinator (renderer/features/coordinator/coordinator.js) splits a *sentence* — one headless
  * haiku call with no tools and no view of the code. This is the other thing: a
  * real agent in a pane that reads the repo, decides what the work is, and
  * hands each piece to a worker on whatever model workers are worth. The lead
