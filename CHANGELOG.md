@@ -2,7 +2,7 @@
 
 All notable changes to SwarmEye are documented here.
 
-## 2.0.0
+## 2.0.2
 
 Current public release. See [README.md](README.md) and [docs/README.md](docs/README.md).
 

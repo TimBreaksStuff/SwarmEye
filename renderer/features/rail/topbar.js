@@ -77,7 +77,7 @@ const Topbar = (() => {
     // the nested agent rows move on every status flip, so they are reconciled
     // on every beat — outside the signature guard above (features/rail/wsagents)
     workspaces.forEach((ws) => {
-      WsAgents.sync(ws.id, (counts[ws.id] || {}).panes || [], handlers.onOpenAgent);
+      WsAgents.sync(ws.id, (counts[ws.id] || {}).panes || [], handlers.onOpenAgent, handlers.onCloseAgent);
     });
   }
 

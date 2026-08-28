@@ -42,6 +42,12 @@ the platform.
 - **One `--append-system-prompt`.** `claude` keeps only the last such flag, so
   everything appended to the system prompt shares one — see `sessions.js`.
 - **Every `exec` is a `wsl.exe` spawn on Windows.** Batch related commands.
+- **On Windows the tmux server only lives as long as a Windows-side WSL client
+  does.** WSL powers the distro down once its last client exits — a process
+  *inside* WSL, tmux included, does not hold it — so closing SwarmEye used to
+  kill every agent. `sessions.js` leaves one detached keeper client behind
+  (`_ensureKeeper`, via `platform.spawnDetachedShell`); it exits by itself once
+  tmux has no sessions left.
 
 ## How to test
 

@@ -20,11 +20,12 @@ because Chromium fires no `mouseout` for a removed element.
 
 `Topbar.renderWorkspaces`, `.renderNotifications`, `.renderNotifPanel`,
 `.updateAgentCap`, `.renderUsage`, `.setUsageSection`, `.fmtIn`;
-`WsAgents.reset`, `.attach`, `.sync`; `railgrip.js` exposes nothing. Classic
+`WsAgents.reset`, `.attach`, `.sync(wsId, panes, onOpen, onClose)`; `railgrip.js` exposes nothing. Classic
 scripts.
 
 ## How to test
 
 `npm start` with several workspaces. Drag a tile to reorder, right-click for
 Rename/Remove, drag the grip to resize and collapse, and watch the gauges while
-agents run.
+agents run. Right-click an agent row inside a tile's fold-out list for its
+"Close agent" menu — one click there kills that agent.

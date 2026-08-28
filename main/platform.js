@@ -70,6 +70,23 @@ function spawnScript(scriptPath) {
     : spawn('/bin/bash', [p]);
 }
 
+/* Start a shell command that must outlive this process — nothing is read back
+ * from it and it is never waited on.
+ *
+ * On Windows it goes through `cmd /c start` rather than being spawned as our
+ * own child: a `detached` child is still inside the electron.exe process
+ * tree, and `taskkill /T` (how this app is usually stopped) takes the whole
+ * tree with it. The empty string is `start`'s window-title argument, which it
+ * would otherwise take from the command. */
+function spawnDetachedShell(cmd) {
+  const child = IS_WIN
+    ? spawn('cmd.exe', ['/c', 'start', '', '/b', 'wsl.exe', '-e', 'bash', '-c', cmd],
+      { detached: true, stdio: 'ignore', windowsHide: true })
+    : spawn(SHELL, ['-lc', cmd], { detached: true, stdio: 'ignore' });
+  child.unref();
+  return child;
+}
+
 function shQuote(p) {
   return "'" + String(p).replace(/'/g, "'\\''") + "'";
 }
@@ -149,6 +166,7 @@ module.exports = {
   exec,
   spawnShell,
   spawnScript,
+  spawnDetachedShell,
   shQuote,
   toShellPath,
   installUpdate,

@@ -179,6 +179,11 @@ function syncChromeNow() {
   Topbar.renderWorkspaces(state.workspaces, state.selectedWorkspaceId, counts, {
     onSelect: (id) => { toggleBoard(false); selectWorkspace(id); }, // a pill always means "show me the grid"
     onOpenAgent: notifHandlers.onOpen, // a fold-out agent row focuses its pane
+    // right-clicking that row offers Close agent — same kill path as the pane's ✕
+    onCloseAgent: (sid) => {
+      const pane = state.panes.get(sid);
+      if (pane) paneHandlers.onClose(pane);
+    },
 
     onRemove: removeWorkspace,
     onReorder: reorderWorkspaces,

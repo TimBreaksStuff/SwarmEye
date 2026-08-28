@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { IS_WIN, SHELL, exec, toShellPath } = require('./platform');
+const { IS_WIN, SHELL, exec, spawnDetachedShell, toShellPath } = require('./platform');
 
 /* macOS: node-pty's darwin prebuild execs a separate `spawn-helper` binary
  * to set up the pty before exec'ing the real command. Some zip
@@ -54,6 +54,20 @@ const TMUX = `tmux -f ${TMUX_CONF} -L ${socketName()}`;
  * looks up `name` as a *command*, fails with "zsh:1: <name> not found" and
  * aborts the whole line before tmux ever runs. That silently broke attach,
  * kill and the has-session probes on macOS only. */
+
+/* The Windows keeper's script (see PtyManager._ensureKeeper). It crosses to
+ * WSL as a single argument through cmd.exe, which re-parses what it is handed,
+ * so it must contain no double quote — everything below is single-quoted or
+ * bare, and cmd sees the `|`, `&` and `>` inside the argument as literals.
+ *
+ * `flock -n` is what keeps one keeper per machine rather than one per app run:
+ * a second one exec's into flock, fails to take the lock and exits. Should
+ * flock be missing (it is util-linux, so on every WSL image worth running),
+ * `command -v` short-circuits the exec and the loop runs unlocked — a spare
+ * idle keeper is a far smaller problem than no keeper. */
+const KEEPER_LOOP = `while sleep 30; do ${TMUX} list-sessions >/dev/null 2>&1 || break; done`;
+const KEEPER_CMD = `: swarmeye-keeper; command -v flock >/dev/null`
+  + ` && exec flock -n ~/.config/swarmeye/keeper.lock -c '${KEEPER_LOOP}'; ${KEEPER_LOOP}`;
 
 /* Whitelists shared with main.js so a new tier/level/id-shape is one edit.
  * The *checks* stay at every shell boundary on purpose — only the values
@@ -299,6 +313,34 @@ class PtyManager {
     this.probeFailed = false; // last attachExisting couldn't reach tmux — its [] is not ground truth
     this.shuttingDown = false;
     this.replacing = new Set(); // ids killed by restart() — their exit must not orphan a task
+    this.keeperUp = false; // Windows: is the WSL keeper client running (see _ensureKeeper)
+  }
+
+  /* Windows only. WSL powers the distro down once its last *client* exits —
+   * `systemd-poweroff` shows up in the WSL journal seconds after SwarmEye
+   * closes — and that takes the tmux server, and with it every agent, no
+   * matter that the agents are still running inside. A process inside WSL
+   * does not hold the distro open; only a Windows-side client does.
+   *
+   * So one client is left behind that outlives the app: it wakes every 30s,
+   * and the first time tmux has no sessions left to keep alive, it exits and
+   * lets WSL shut down as it always did. Nothing is kept alive for an agent
+   * that isn't there.
+   *
+   * Started at most once per app run, and the lock in KEEPER_CMD makes the
+   * keeper of a *previous* run the only one — cheaper and more reliable than
+   * probing `ps` for one, which any agent whose own command line mentions the
+   * keeper (an agent working on this file, say) would answer wrongly. */
+  _ensureKeeper() {
+    if (!IS_WIN || !this.tmuxOk || this.keeperUp) return;
+    this.keeperUp = true;
+    try {
+      spawnDetachedShell(KEEPER_CMD);
+      this.debugLog('[ptys] WSL keeper started');
+    } catch (err) {
+      this.keeperUp = false; // let the next launch try again
+      this.debugLog(`[ptys] WSL keeper failed: ${err.message}`);
+    }
   }
 
   /* Every exec here is a shell spawn — a `wsl.exe` one on Windows, which costs
@@ -693,6 +735,7 @@ class PtyManager {
     const session = { ...meta, persistent: this.tmuxOk };
     this.sessions.set(meta.id, { proc, session });
     this._saveMeta(meta);
+    this._ensureKeeper(); // every launch path lands here, reattach included
 
     proc.onData((data) => this.onData(meta.id, data));
     proc.onExit(({ exitCode }) => this._handleExit(meta, exitCode));
@@ -702,6 +745,9 @@ class PtyManager {
 
   async _handleExit(meta, exitCode) {
     this.sessions.delete(meta.id);
+    // the keeper ends itself once the last agent is gone, so the next launch
+    // has to be allowed to start a new one
+    if (!this.sessions.size) this.keeperUp = false;
     if (this.shuttingDown) return; // quitting: client detached, agent lives on
     // restart() already killed this id and is about to mint a replacement —
     // a real-exit event would mark the pane exited and orphan its task
