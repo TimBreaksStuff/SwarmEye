@@ -216,9 +216,6 @@ const EFFORTS = [
 ];
 const SHIFT_TAB = '\x1b[Z';
 const MODE_STEP_MS = 300; // redraw grace between Shift+Tab presses
-// rows of `git diff --stat` the git chip's popover shows before eliding the
-// middle (git's own "N files changed" summary line is always kept)
-const DIFF_STAT_MAX_LINES = 14;
 
 // matches a menu line like "  1. Yes" or "❯ 2. No" — group 1 is the leading
 // whitespace/cursor marker (excluded from the clickable range), group 2 the digit

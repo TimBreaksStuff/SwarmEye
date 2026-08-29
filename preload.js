@@ -66,7 +66,6 @@ contextBridge.exposeInMainWorld('swarm', {
   refreshUsage: () => ipcRenderer.invoke('usage:refresh'),
 
   listBranches: (workspaceId) => ipcRenderer.invoke('git:branches', workspaceId),
-  gitDiff: (workspaceId) => ipcRenderer.invoke('git:diff', workspaceId),
   checkoutBranch: (workspaceId, branch, create) => ipcRenderer.invoke('git:checkout', { workspaceId, branch, create }),
 
   listSkills: () => ipcRenderer.invoke('skills:list'),

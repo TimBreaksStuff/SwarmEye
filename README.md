@@ -31,7 +31,7 @@ Recently solid:
 
 **Models.** Every Claude tier in every picker — Sonnet, Opus, Haiku, Fable, `opusplan`, `opus[1m]` / `sonnet[1m]` — each labelled so a subscription tier isn't mistaken for OpenRouter. Paste one openrouter.ai key and every picker grows the catalog (Kimi, Qwen, GLM, GPT, Grok, …). Those agents run through your key, with catalog pricing in the cost panel and today's spend / remaining credits in the rail. Each one is a **clean agent** (SwarmEye's own CLI) unless you hand the same model to opencode or pi. The empty-workspace launch card can start a whole swarm on any of the three.
 
-**Code.** Scope an agent to an area (from `.swarmeye/areas.json`) or a folder — it can still read the repo, but Claude Code deny rules block edits outside, even in `auto`. The git chip shows branch, `git diff --stat`, checkout or create.
+**Code.** Scope an agent to an area (from `.swarmeye/areas.json`) or a folder — it can still read the repo, but Claude Code deny rules block edits outside, even in `auto`. The git chip shows the branch, and lists every branch to check out or create.
 
 **Around the swarm.** The preview dock is the workspace's localhost dev server, reloading itself when an agent there finishes. Skills install from GitHub or show the ones agents wrote. Notifications (optionally spoken) fire when an agent finishes or needs you; approve/deny from the bell. Agents live in a dedicated tmux server, so quitting only detaches them. Fifteen colour themes, plus a **Native Apple style** on macOS that follows System Settings. The app checks GitHub Releases and updates in one click.
 

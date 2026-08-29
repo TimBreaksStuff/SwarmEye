@@ -20,7 +20,7 @@ the platform.
 | `providers.js` | OpenRouter key, catalog and slug decoding |
 | `roles.js` | the four role presets (prompt + model tier) |
 | `scope.js` | a workspace's areas and the deny rules a scope becomes |
-| `git.js` | branch/dirty per workspace and per agent worktree, `diff --stat` |
+| `git.js` | branch/dirty per workspace and per agent worktree, branch list and checkout |
 | `worktree.js` | one git worktree per agent, and landing its branch when the pane closes |
 | `usage.js` | the Claude OAuth usage poll |
 | `skills.js` | clone/symlink/update GitHub skills, discover local ones |

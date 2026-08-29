@@ -12,7 +12,7 @@ const agentScope = require('../scope');
 const attach = require('../attach');
 const preview = require('../preview');
 const path = require('path');
-const { listBranches, checkoutBranch, diffStat } = require('../git');
+const { listBranches, checkoutBranch } = require('../git');
 
 module.exports = function register(deps) {
   const { git } = deps;
@@ -136,12 +136,6 @@ module.exports = function register(deps) {
   ipcMain.handle('git:branches', (e, workspaceId) => {
     const ws = config.load().workspaces.find((w) => w.id === workspaceId);
     return ws ? listBranches(ws) : null;
-  });
-
-  // diff summary shown above the branch list in that same popover
-  ipcMain.handle('git:diff', (e, workspaceId) => {
-    const ws = config.load().workspaces.find((w) => w.id === workspaceId);
-    return ws ? diffStat(ws) : null;
   });
 
   ipcMain.handle('git:checkout', async (e, { workspaceId, branch, create }) => {

@@ -1,7 +1,7 @@
 /* ---- Pane: the git context chip, branch menu and model picker ----
  *
- * Split out of the one 2416-line pane.js. The branch/dirty chip in the pane header, the diff --stat popover behind
- * it, the branch switcher, and the restart-on-another-model menu.
+ * Split out of the one 2416-line pane.js. The branch/dirty chip in the pane header, the branch switcher behind
+ * it, and the restart-on-another-model menu.
  */
 
 Object.assign(Pane.prototype, {
@@ -25,58 +25,25 @@ Object.assign(Pane.prototype, {
       ? `branch ${info.branch} — could not read status`
       : info.dirty
         ? `branch ${info.branch} — uncommitted changes`
-        : `branch ${info.branch} — clean`) + ' · click for the diff and to switch branch';
+        : `branch ${info.branch} — clean`) + ' · click to switch branch';
   },
 
-  /* Fill the popover's top section with what the workspace has changed since
-   * HEAD. Long stats are elided in the middle — the summary line (git's own
-   * "N files changed…") is the one that must survive, so it's kept explicitly
-   * rather than trusting a plain head(). */
-  renderDiffSummary(el, d) {
-    el.textContent = '';
-    if (!d) { el.textContent = 'could not read changes'; return; }
-    const lines = d.stat ? d.stat.split('\n') : [];
-    if (!lines.length && !d.untracked) { el.textContent = 'no changes since HEAD'; return; }
-    const shown = lines.length > DIFF_STAT_MAX_LINES
-      ? [...lines.slice(0, DIFF_STAT_MAX_LINES - 2), '…', lines[lines.length - 1]]
-      : lines;
-    for (const line of shown) {
-      const row = elt('div', 'branch-diff-line', line);
-      el.appendChild(row);
-    }
-    if (d.untracked) {
-      const row = elt('div', 'branch-diff-line branch-diff-untracked', `${d.untracked} untracked file${d.untracked === 1 ? '' : 's'}`);
-      el.appendChild(row);
-    }
-  },
-
-  /* Click on the git chip: a summary of the working tree's changes on top,
-   * then the repo's branches (local + remote, see main/git.js listBranches).
-   * Picking one runs `git checkout` in the workspace; the chip updates via
-   * the git:update push that follows.
-   *
-   * The two reads run concurrently rather than in sequence: listing branches
-   * does a network fetch first and is much the slower of the two, so awaiting
-   * it before asking for the diff would leave the popover blank the whole time. */
+  /* Click on the git chip: the repo's branches (local + remote, see
+   * main/git.js listBranches). Picking one runs `git checkout` in the
+   * workspace; the chip updates via the git:update push that follows. */
   async openBranchMenu() {
     if (this.branchMenuEl) { this.closeBranchMenu(); return; }
     const menu = document.createElement('div');
     menu.className = 'branch-menu';
-    const diffEl = elt('div', 'branch-diff', 'checking changes…');
     const listEl = elt('div', 'branch-list', 'fetching branches…');
-    menu.append(diffEl, listEl);
+    menu.append(listEl);
     // fixed-position (the pane clips overflow), anchored under the chip — and
-    // flipped above it for a pane low in the grid, since this popover is tall
-    // (the diff summary plus the branch list). See dom.js placePop.
+    // flipped above it for a pane low in the grid, since the branch list can
+    // be tall. See dom.js placePop.
     document.body.appendChild(menu);
     placePop(menu, this.gitEl, { flip: true });
     this.branchMenuEl = menu;
     this._branchDismiss = dismissPop(menu, () => this.closeBranchMenu(), { keep: [this.gitEl] });
-
-    window.swarm.gitDiff(this.session.workspaceId).then((d) => {
-      if (this.branchMenuEl !== menu) return; // dismissed while the read ran
-      this.renderDiffSummary(diffEl, d);
-    });
 
     const branches = await window.swarm.listBranches(this.session.workspaceId);
     if (this.branchMenuEl !== menu) return; // dismissed while the fetch ran

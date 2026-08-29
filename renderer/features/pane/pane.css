@@ -746,7 +746,7 @@
   border-radius: 10px;
   padding: 6px;
   min-width: 160px;
-  /* wide enough for a `git diff --stat` line (path + bar) above the branches */
+  /* wide enough for a long remote branch name without wrapping */
   max-width: 460px;
   max-height: 50vh;
   overflow-y: auto;
@@ -789,23 +789,8 @@
   outline: none;
 }
 .branch-menu .branch-new-input::placeholder { color: var(--muted); }
-/* what's actually changed in the workspace, above the branch list — the
- * answer to "the chip says dirty, dirty with what?" */
-.branch-diff {
-  padding: 4px 9px 6px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 4px;
-  max-height: 22vh;
-  overflow: auto;
-}
-.branch-diff-line {
-  white-space: pre;
-  color: var(--text2);
-  line-height: 1.5;
-}
-.branch-diff-line.branch-diff-untracked { color: var(--amber); }
-/* the branch rows moved into their own box under the diff — .branch-menu's
- * column layout no longer reaches them directly */
+/* the branch rows live in their own box — .branch-menu's column layout no
+ * longer reaches them directly */
 .branch-list { display: flex; flex-direction: column; }
 
 /* ---------- model chip ---------- */
