@@ -612,7 +612,12 @@ const paneHandlers = {
     return task ? task.text : null;
   },
   onClose(pane) {
-    if (!pane.exited) killSessionChecked(pane.session.id);
+    /* A detached pane's agent is still running in tmux and closing the pane
+     * has always left it there, so it is the one case that stays untouched.
+     * Everything else goes through main: a live agent to kill, and — for a
+     * pane that already exited — nothing to kill but a worktree to land
+     * (main/worktree.js), which kill() does on the way out. */
+    if (!pane.exited || !pane.detached) killSessionChecked(pane.session.id);
     // closing a still-active task's agent window is how you stop it — send
     // the task to Completed marked 'stopped' instead of leaving it stuck in
     // Active forever. A task already completed (onStatusChange below) has no
@@ -999,15 +1004,32 @@ window.swarm.onSessionState((payload) => {
   }
 });
 
-/* every pane reads its workspace's git entry (main/git.js) */
+/* Every pane reads its workspace's git entry (main/git.js) — unless it has a
+ * worktree of its own, which is polled under its session id and is the branch
+ * the agent is actually on. */
 function gitFor(session) {
-  return state.git[session.workspaceId];
+  return state.git['wt:' + session.id] || state.git[session.workspaceId];
 }
 
 window.swarm.onGitUpdate((info) => {
   state.git = info || {};
   for (const pane of state.panes.values()) pane.setGit(gitFor(pane.session));
   if (!boardEl.hidden) renderBoard(); // keep board branch chips current while it's open
+});
+
+/* What became of a closed agent's worktree (main/worktree.js). A merge that
+ * landed is worth one line; a branch that had to be kept is worth naming,
+ * because nothing else will mention it again. */
+window.swarm.onWorktreeNotice((res) => {
+  if (!res) return;
+  if (res.state === 'merged') {
+    toast(`merged ${res.branch} into ${res.base} (${res.commits} commit${res.commits === 1 ? '' : 's'})`);
+  } else if (res.state === 'kept') {
+    const why = res.reason === 'moved' ? `${res.base} is not checked out any more`
+      : res.reason === 'unreachable' ? 'the shell could not be reached'
+        : 'the merge did not apply cleanly';
+    toast(`kept branch ${res.branch} — ${why}`);
+  }
 });
 
 window.swarm.onUsageUpdate((snapshot) => {

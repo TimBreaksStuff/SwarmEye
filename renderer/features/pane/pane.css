@@ -860,13 +860,13 @@
 
 .pane-busy {
   display: flex;
-  gap: 2px;
+  gap: 3px;
   height: 9px;
   align-items: flex-end;
   flex: none;
 }
 .pane-busy-bar {
-  width: 3px;
+  width: 4.5px;
   height: 100%;
   background: var(--accent);
   border-radius: 1px;

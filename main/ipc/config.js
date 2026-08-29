@@ -37,6 +37,7 @@ module.exports = function register(deps) {
       archivedTasks: projectArchive(config.loadArchive()),
       autoUsageLimit: cfg.autoUsageLimit,
       skipPermissions: cfg.skipPermissions,
+      worktrees: cfg.worktrees,
       claudeTemplate: template.status(),
       // the OpenRouter catalog for the model pickers — the key itself never
       // crosses IPC (providers.js)
@@ -82,6 +83,16 @@ module.exports = function register(deps) {
     const skipPermissions = !!on;
     config.patch({ skipPermissions });
     return { skipPermissions };
+  });
+
+  /* "Isolate agents in git worktrees" (main/worktree.js). Read at spawn, so a
+   * flip decides the agents launched from then on and leaves the running ones
+   * in the tree they were started in — the same rule the permissions flag
+   * follows, and for the same reason: the launch is where it is spent. */
+  ipcMain.handle('config:set-worktrees', (e, on) => {
+    const worktrees = !!on;
+    config.patch({ worktrees });
+    return { worktrees };
   });
 
   // the standard CLAUDE.md (main/template.js): the Options row names the file,

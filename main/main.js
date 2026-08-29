@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, Menu, crashReporter } = require('electron');
+const { app, BrowserWindow, dialog, Menu, crashReporter, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
@@ -274,6 +274,14 @@ app.whenReady().then(() => {
     { role: 'appMenu' },
     { role: 'editMenu' },
   ]));
+
+  // A packaged .app carries its icon in the bundle, but run from source the
+  // Dock and Cmd-Tab show Electron's own — so point them at build/icon.png.
+  if (process.platform === 'darwin' && !app.isPackaged) {
+    const dockIcon = nativeImage.createFromPath(path.join(__dirname, '..', 'build', 'icon.png'));
+    if (!dockIcon.isEmpty()) app.dock.setIcon(dockIcon);
+  }
+
   createWindow();
 
   hooks = new HookMonitor({

@@ -23,6 +23,12 @@ const DEFAULTS = {
   autoUsageLimit: 85,
   lastUsageSnapshot: null, // legacy usage snapshot; usage.js reads it once and writes usage-snapshot.json from then on
   skipPermissions: false,
+  // "Isolate agents in git worktrees" — one switch for every workspace
+  worktrees: false,
+  // session id -> { path, branch, base, repo, workspaceId }, written by
+  // main/worktree.js. Kept out of `sessions` on purpose: a tree outlives the
+  // session metadata, which is dropped the moment an agent exits.
+  agentWorktrees: {},
   openrouterKey: '', // never crosses IPC — see providers.js
   openrouterCatalog: null, // { fetchedAt, models: [{id,label,ctx,in,out,cr,cw}] }
   openrouterAlts: [], // up to 3 slugs `/model` offers alongside the launch model (providers.js)

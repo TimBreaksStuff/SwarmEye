@@ -497,10 +497,12 @@ class PtyManager {
   }
 
   /* opts.scope = a folder inside cwd this agent may edit and nothing else
-   * (main/scope.js). */
+   * (main/scope.js). opts.worktree = the tree main/worktree.js cut for this
+   * agent, which is where it runs instead of the workspace itself — created by
+   * the caller, since making one is a shell round trip and this is sync. */
   spawn(workspace, cols, rows, opts = {}) {
     if (this.sessions.size >= this.maxSessions) throw new Error('cap');
-    const cwd = workspace.path;
+    const cwd = (opts.worktree && opts.worktree.path) || workspace.path;
     // a moved/renamed/unmounted workspace folder makes posix_spawn fail on
     // chdir with the same opaque "posix_spawnp failed" — catch it here with
     // a message that actually says what's wrong
@@ -520,6 +522,9 @@ class PtyManager {
     // persisted so a pane rebuilt from tmux after a restart still shows its
     // role chip — the flag itself is long gone by then, it lives in the process
     if (roles.has(opts.role)) meta.role = opts.role;
+    // the pane labels its own branch from this, and the registry in
+    // config.json (not this copy) is what survives the agent to be landed
+    if (opts.worktree) meta.worktree = opts.worktree;
     // persisted for the same reason as the role: the deny rules live in the
     // launch, so a restart has to rebuild them rather than inherit them
     const denyEdit = scopeDeny(cwd, opts.scope);
@@ -551,7 +556,7 @@ class PtyManager {
   /* Respawn an exited agent in the same folder under the same name.
    * resume=true continues the last conversation in that directory —
    * silently downgraded to a fresh session when there is none. */
-  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, role, model, continueFrom, resumeId, orSkills, replaceId, scope: scopeRel }) {
+  async restart({ workspaceId, workspaceName, agentName, cwd, cols, rows, resume, role, model, continueFrom, resumeId, orSkills, replaceId, scope: scopeRel, worktree }) {
     if (!fs.existsSync(cwd)) throw new Error('workspace folder not found: ' + cwd);
     // rebuilt against the tree as it is now, and before the kill below: a
     // scope whose folder went away must refuse the restart while the old
@@ -604,6 +609,10 @@ class PtyManager {
     if (roles.has(role)) meta.role = role;
     // and inside the same folder it was scoped to
     if (scopeRel) meta.scope = scopeRel;
+    // ↻ stays in the tree the conversation was held in: the transcript a
+    // resume continues is keyed by cwd (claudeProjectDirName), and the work in
+    // progress is in there
+    if (worktree) meta.worktree = worktree;
     // `model` is how a restart moves the agent to another tier (the pane's
     // right-sizing offer); the pane hands back what it was launched with
     // otherwise. Left undefined it is the role's model, or the account

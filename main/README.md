@@ -20,7 +20,8 @@ the platform.
 | `providers.js` | OpenRouter key, catalog and slug decoding |
 | `roles.js` | the four role presets (prompt + model tier) |
 | `scope.js` | a workspace's areas and the deny rules a scope becomes |
-| `git.js` | branch/dirty per workspace, `diff --stat` |
+| `git.js` | branch/dirty per workspace and per agent worktree, `diff --stat` |
+| `worktree.js` | one git worktree per agent, and landing its branch when the pane closes |
 | `usage.js` | the Claude OAuth usage poll |
 | `skills.js` | clone/symlink/update GitHub skills, discover local ones |
 | `speech.js` | both voice directions — Whisper in, Piper out |
@@ -42,6 +43,10 @@ the platform.
 - **One `--append-system-prompt`.** `claude` keeps only the last such flag, so
   everything appended to the system prompt shares one — see `sessions.js`.
 - **Every `exec` is a `wsl.exe` spawn on Windows.** Batch related commands.
+- **No globs in an `exec` string.** These run in the user's login shell, which
+  on macOS is zsh, and zsh treats a pattern that matches nothing as a *fatal*
+  error — it aborts the whole script, and the caller sees the same `null` it
+  would get from an unreachable shell. Use `find` (see `worktree.js`).
 - **On Windows the tmux server only lives as long as a Windows-side WSL client
   does.** WSL powers the distro down once its last client exits — a process
   *inside* WSL, tmux included, does not hold it — so closing SwarmEye used to

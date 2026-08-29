@@ -9,12 +9,22 @@ const config = require('../config');
 const roles = require('../roles');
 const providers = require('../providers');
 const agentScope = require('../scope');
+const worktree = require('../worktree');
 const path = require('path');
 const fs = require('fs');
 const { MODELS, EFFORT_FLAGS } = require('../sessions');
 
 module.exports = function register(deps) {
-  const { ptys, usage, ptysReady, hooks, skills, debugLog } = deps;
+  const { ptys, usage, ptysReady, hooks, skills, debugLog, sendToWin } = deps;
+
+  /* What became of an agent's worktree when its pane closed (main/worktree.js).
+   * A push rather than a return value, because the same answer has to reach the
+   * renderer from three places — the ✕, the board closing a finished task, and
+   * the boot-time reconcile — and only one of them is waiting on a reply. */
+  const sayWorktree = (res) => {
+    if (!res || res.state === 'empty' || res.state === 'gone') return;
+    sendToWin('worktree:notice', res);
+  };
 
   // called once by the renderer at boot: reattach surviving tmux sessions
   ipcMain.handle('session:list', async () => {
@@ -26,6 +36,16 @@ module.exports = function register(deps) {
     // failed, though: that [] means "couldn't reach tmux", and pruning against
     // it would erase every surviving agent's spend history.
     if (!ptys.probeFailed) hooks.pruneUsage(sessions.map((s) => s.id));
+    /* Trees whose agent didn't survive — a crash, a kill from outside, a pane
+     * closed while the app was down — still hold work nobody has landed. Same
+     * treatment the ✕ gives, taken late. Never while the tmux probe failed:
+     * that "no sessions" is "couldn't ask", and retiring against it would
+     * merge every living agent's half-finished work. */
+    if (!ptys.probeFailed) {
+      worktree.reconcile(sessions.map((s) => s.id), debugLog)
+        .then((list) => list.forEach(sayWorktree))
+        .catch((err) => debugLog('[worktree] reconcile failed: ' + err.message));
+    }
     return {
       sessions: sessions.map((s) => ({ ...s, usage: hooks.snapshot(s.id) })),
       persistent: ptys.tmuxOk,
@@ -81,11 +101,23 @@ module.exports = function register(deps) {
     // scope costs nothing to refuse
     const scoped = checkScope(scope, ws.path, model);
     if (scoped.error) return { ok: false, reason: scoped.error };
+    /* The agent's own checkout, when the option is on (main/worktree.js). Cut
+     * before the spawn, because it is the folder the agent chdirs into — and
+     * behind the cap check, so a launch that is going to be refused doesn't
+     * leave a branch behind. A workspace that is not a repo answers null and
+     * the agent runs in the workspace itself, exactly as it always did. */
+    if (worktree.enabled() && ptys.runningCount() >= ptys.maxSessions) return { ok: false, reason: 'cap' };
+    // the name is picked here rather than inside spawn() so the branch can
+    // carry it: `swarmeye/nova-4f2a` says which pane left it behind
+    const agentName = worktree.enabled() ? ptys.pickAgentName() : undefined;
+    const wt = await worktree.create(ws, agentName, debugLog);
     try {
       // resumeId is re-validated again in claudeBase, since it lands in a
       // shell command line. role is only ever a key into main's own table,
       // never free text.
       const session = ptys.spawn(ws, cols || 80, rows || 24, {
+        worktree: wt,
+        agentName,
         model,
         role: roles.has(role) ? role : undefined,
         effort: EFFORT_FLAGS.includes(String(effort || '')) ? effort : undefined,
@@ -95,9 +127,12 @@ module.exports = function register(deps) {
         // three bare harnesses take them; each builder has its own way in.
         orSkills: providers.cleanSlugOf(model) || providers.isForeign(model) ? skills.orSkillDirs(ws.id) : undefined,
       });
+      worktree.attach(session.id, wt);
       debugLog('[session:create] ok ' + session.id + ' "' + session.agentName + '" in ' + session.cwd);
       return { ok: true, session };
     } catch (err) {
+      // nothing ran in it, so there is nothing to land — see worktree.discard
+      worktree.discard(wt, debugLog).catch(() => {});
       debugLog('[session:create] FAIL ' + err.stack);
       return { ok: false, reason: err.message };
     }
@@ -131,11 +166,18 @@ module.exports = function register(deps) {
       resumeId = providers.foreignResumeId(hooks.stateDir, providers.foreignHarness(payload.model), String(payload.oldId || '')) || undefined;
       if (resumeId) continueFrom = payload.oldId; // keep appending the old transcript, so the cost tally carries on
     }
+    /* ↻ stays in the tree the conversation was held in: `claude --continue`
+     * resumes the transcript belonging to that folder, and the work in
+     * progress is in there. A pane that never had one restarts in the
+     * workspace, even with the option now on — the tree it would get would be
+     * empty of everything the conversation is about. */
+    const wt = worktree.get(payload.oldId);
     try {
       const { session, resumed } = await ptys.restart({
         workspaceId: ws.id,
         workspaceName: ws.name,
-        cwd: ws.path,
+        cwd: (wt && wt.path) || ws.path,
+        worktree: wt || undefined,
         agentName: String(payload.agentName || '').slice(0, 40).trim() || 'agent',
         cols: payload.cols,
         rows: payload.rows,
@@ -154,6 +196,9 @@ module.exports = function register(deps) {
         replaceId: /^s_[A-Za-z0-9]+$/.test(String(payload.oldId || '')) ? payload.oldId : undefined,
         scope: scoped.scope,
       });
+      // the tree follows the pane onto its new id, or the retire that closes
+      // it would find nothing to land
+      if (wt && payload.oldId && session.id !== payload.oldId) worktree.inherit(payload.oldId, session.id);
       if (payload.oldId && session.id !== payload.oldId) {
         const tasks = config.load().tasks || [];
         const next = tasks.map((t) => t.paneId === payload.oldId ? { ...t, paneId: session.id } : t);
@@ -223,6 +268,15 @@ module.exports = function register(deps) {
       return { ok: false, reason: err.message };
     }
     hooks.cleanup(id);
+    /* Closing the pane is what lands its worktree: whatever the agent left
+     * uncommitted is committed on its branch and that branch is merged back
+     * into the one it was cut from — or, when that can't be done safely, kept
+     * and named. Never awaited: a merge in a large repo is seconds and the
+     * pane has already gone from the grid. An agent that exited by itself is
+     * killed through here too (the pane's ✕ calls this either way), which is
+     * what stops its tree from outliving it. */
+    worktree.retire(id, debugLog).then(sayWorktree)
+      .catch((err) => debugLog('[worktree] retire failed: ' + err.message));
     return { ok: true };
   });
 };

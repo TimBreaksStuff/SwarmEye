@@ -37,9 +37,12 @@
 <body>
   <header id="topbar">
     <div id="logo">
-      <svg class="logo-icon" viewBox="0 0 160 160" aria-hidden="true">
-        <polygon points="80,2 152,42 152,118 80,158 8,118 8,42" fill="none" stroke="var(--amber)" stroke-width="5"></polygon>
-        <path d="M26 80 L50 80 L59 52 L71 108 L82 58 L93 100 L102 68 L111 80 L134 80" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>
+      <!-- the app icon's mark (build/icon.svg), minus its plate: a filled
+           hexagon with the pulse knocked out of it. The viewBox is the
+           hexagon's own bounding box so the mark fills the 28px box. -->
+      <svg class="logo-icon" viewBox="18 13 64 74" aria-hidden="true">
+        <polygon points="50,13 82,31.5 82,68.5 50,87 18,68.5 18,31.5" fill="var(--accent)"></polygon>
+        <polyline points="26,50 34,50 40,50 45,35 52,66 58,42 63,56 67,50 74,50" fill="none" stroke="var(--on-accent)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
       </svg>
       <span class="logo-word">SWARM<span class="logo-eye">EYE</span></span>
     </div>
@@ -552,6 +555,11 @@
     <div class="kbd-row kbd-opt"><span>Allow auto mode (bypass permissions)</span>
       <span class="opt-ctl">
         <input type="checkbox" id="skip-permissions-toggle" data-tip="Launches new and restarted agents with --allow-dangerously-skip-permissions so claude's Shift+Tab mode cycle includes auto mode without activating it. Existing running agents need a restart to pick this up.">
+      </span>
+    </div>
+    <div class="kbd-row kbd-opt"><span>Isolate agents in git worktrees</span>
+      <span class="opt-ctl">
+        <input type="checkbox" id="worktrees-toggle" data-tip="Every agent launched from now on gets its own git worktree and branch off the workspace's current branch, so a swarm can edit the same repo without fighting over files. Closing its pane commits whatever it left and merges that branch back; a merge that can't be made safely leaves the branch for you. Workspaces that aren't git repos are unaffected.">
       </span>
     </div>
     <div class="kbd-row kbd-opt"><span>Show last command in pane header</span>

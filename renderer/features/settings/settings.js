@@ -226,6 +226,11 @@ function applySkipPermissions(on) {
  * from whatever main hands back — config:get at boot, the pick/clear result
  * afterwards. The readout shows the file's name; the folder is in the title,
  * because a full path does not fit the row. */
+/* Agent worktrees (main/worktree.js) — main owns it, because the decision is
+ * taken at spawn. Nothing in the renderer acts on it; the checkbox is the
+ * whole surface. */
+const worktreesToggle = document.getElementById('worktrees-toggle');
+
 const templatePath = document.getElementById('claude-template-path');
 const templateClear = document.getElementById('claude-template-clear');
 function showTemplate(st) {
@@ -316,6 +321,7 @@ export function applyConfig(cfg) {
   // main, which already has it
   skipPermissionsToggle.checked = !!cfg.skipPermissions;
   Pane.setSkipPermissions(!!cfg.skipPermissions);
+  worktreesToggle.checked = !!cfg.worktrees;
   showTemplate(cfg.claudeTemplate);
 }
 
@@ -522,6 +528,16 @@ export function init(context) {
   document.getElementById('auto-limit-up').addEventListener('click', () => applied.autoUsageLimit(autoUsageLimit + 5));
 
   skipPermissionsToggle.addEventListener('change', () => applySkipPermissions(skipPermissionsToggle.checked));
+
+  worktreesToggle.addEventListener('change', () => {
+    const on = worktreesToggle.checked;
+    window.swarm.setWorktrees(on);
+    // running agents keep the folder they were launched in — say so, or the
+    // flip reads as if it did nothing
+    ctx.toast(on
+      ? 'new agents get their own git worktree and branch'
+      : 'new agents run in the workspace folder again');
+  });
 
   document.getElementById('claude-template-pick').addEventListener('click', async () => {
     const st = await window.swarm.pickTemplate();

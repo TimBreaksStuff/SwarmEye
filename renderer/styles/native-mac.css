@@ -44,26 +44,25 @@
   --muted2: rgba(60, 60, 67, 0.52);
   --faint: rgba(60, 60, 67, 0.34);
 
-  /* macOS's Orange accent. The fill has to carry white and the text has to
-   * clear 4.5:1 on white, so both are the darkened orange rather than the
-   * bright #ff9f0a the dark side uses. */
-  --accent: #c2620a;
-  --accent-text: #a95408;
+  /* the app icon's teal (build/icon.svg). The fill has to carry white and
+   * the text has to clear 4.5:1 on white, and #0e727e does both (5.6:1) — so
+   * unlike the dark side it needs no second, darker shade for text. */
+  --accent: #0e727e;
+  --accent-text: #0b5b65;
   --on-accent: #ffffff;
 
   --header-bg: rgba(246, 246, 248, 0.8);
-  --accent-glow: rgba(194, 98, 10, 0.35);
+  --accent-glow: rgba(14, 114, 126, 0.35);
   --glass: rgba(0, 0, 0, 0.04);
 
   --tag: #9542b8;
-  /* the "needs attention" amber, pushed yellow: the accent is orange now, and
-   * a chip that matches the accent is a chip that stops standing out */
+  /* the "needs attention" amber, pushed yellow — macOS's own system yellow */
   --amber: #8a6d06;
   --ok: #1a7f37;
   --err: #d70015;
   --term-bg: #ffffff;
-  --pill-hover: rgba(194, 98, 10, 0.10);
-  --entry-dot: #c2620a;
+  --pill-hover: rgba(14, 114, 126, 0.10);
+  --entry-dot: #0e727e;
 }
 
 /* macOS dark. The content background is true black rather than macOS's own
@@ -85,25 +84,25 @@
   --muted2: rgba(235, 235, 245, 0.46);
   --faint: rgba(235, 235, 245, 0.30);
 
-  /* the bright side of the same accent. White on #ff9f0a is barely 2:1, so
+  /* the bright side of the same teal. White on #30d4e8 is barely 2:1, so
    * what the fill carries is near-black — which is what macOS does with its
    * own light accents too. */
-  --accent: #ff9f0a;
-  --accent-text: #ffbe5c;
-  --on-accent: #2a1800;
+  --accent: #30d4e8;
+  --accent-text: #75e3f0;
+  --on-accent: #002229;
 
   --header-bg: rgba(20, 20, 20, 0.8);
-  --accent-glow: rgba(255, 159, 10, 0.4);
+  --accent-glow: rgba(48, 212, 232, 0.4);
   --glass: rgba(255, 255, 255, 0.06);
 
   --tag: #bf5af2;
-  /* pushed yellow, away from the orange accent — see the light block */
+  /* macOS's own system yellow — see the light block */
   --amber: #ffd60a;
   --ok: #30d158;
   --err: #ff453a;
   --term-bg: #000000;
-  --pill-hover: rgba(255, 159, 10, 0.16);
-  --entry-dot: #ff9f0a;
+  --pill-hover: rgba(48, 212, 232, 0.16);
+  --entry-dot: #30d4e8;
 }
 
 /* ---------- window material ---------- */
@@ -199,7 +198,7 @@
 
 /* the workspace menu is a Mac contextual menu here: the app's accent-tinted
  * hairline goes back to the system one (the shared rule above), the count
- * chips take the system accent on hover like a selected menu row, and Remove
+ * chips take this style's accent on hover like a selected menu row, and Remove
  * carries the system red rather than a tinted fill. */
 :root[data-native="on"] #rail-menu { padding: 5px; }
 :root[data-native="on"] .rail-menu-label {
@@ -234,8 +233,8 @@
 
 /* ---------- controls ---------- */
 
-/* macOS switch: 38×22 with a shadowed knob, and the fill is the system accent
- * rather than the theme's */
+/* macOS switch: 38×22 with a shadowed knob, and the fill is this style's own
+ * accent rather than the theme's */
 :root[data-native="on"] .opt-ctl input[type="checkbox"] {
   width: 38px;
   height: 22px;

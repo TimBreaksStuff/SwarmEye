@@ -38,10 +38,17 @@ function wsScript(ws) {
 /* Same wslpath dance as wsScript, for the one-shot helpers below: leaves the
  * repo path in $p (empty = unreachable, guarded by the callers' git -C). */
 function wsPrelude(ws) {
-  const wp = shQuote(ws.path);
+  return shPathVar('p', ws.path);
+}
+
+/* The same dance for a script that needs more than one path in it (worktree.js
+ * works a repo and a worktree in one call): a host path into a named shell
+ * variable, translated on Windows, quoted everywhere. */
+function shPathVar(name, hostPath) {
+  const q = shQuote(hostPath);
   return IS_WIN
-    ? `p=$(wslpath -a ${wp} 2>/dev/null); [ -n "$p" ] || exit 9; `
-    : `p=${wp}; `;
+    ? `${name}=$(wslpath -a ${q} 2>/dev/null); [ -n "$${name}" ] || exit 9; `
+    : `${name}=${q}; `;
 }
 
 /* Every branch a checkout could reach: local heads plus remote branches.
@@ -141,7 +148,15 @@ class GitMonitor {
     this.ticking = true;
     try {
       const cfg = config.load();
-      const targets = cfg.workspaces || [];
+      /* Every workspace, plus every agent worktree (main/worktree.js), keyed
+       * `wt:<sessionId>` so the renderer can prefer a pane's own entry over
+       * its workspace's — an agent on `swarmeye/nova-s_ab12` must not have its
+       * chip say `main`. Read out of config rather than through worktree.js:
+       * that module needs shPathVar from here, and requiring it back would be
+       * a cycle. */
+      const targets = [...(cfg.workspaces || [])].concat(
+        Object.entries(cfg.agentWorktrees || {}).map(([id, wt]) => ({ id: 'wt:' + id, path: wt.path })),
+      );
       const info = {};
       if (targets.length) {
         // macOS has no GNU timeout unless coreutils is installed; degrade to
@@ -173,4 +188,4 @@ class GitMonitor {
 
 // wsPrelude is shared with attach.js rather than copied: the wslpath dance
 // is the one piece of this file that is easy to get subtly wrong on Windows
-module.exports = { GitMonitor, listBranches, checkoutBranch, diffStat, wsPrelude };
+module.exports = { GitMonitor, listBranches, checkoutBranch, diffStat, wsPrelude, shPathVar };

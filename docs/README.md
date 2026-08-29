@@ -9,6 +9,7 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
 - [Key features](#key-features)
   - [Command palette](#command-palette-ctrlk)
   - [Cost & context panel](#cost--context-panel) · [Messages between agents](#messages-between-agents) · [Preview dock](#preview-dock)
+- [Agent worktrees](#agent-worktrees)
 - [Scoping an agent to a folder](#scoping-an-agent-to-a-folder)
 - [The task board](#the-task-board)
 - [Orchestrator — a lead agent and its workers](#orchestrator--a-lead-agent-and-its-workers)
@@ -248,6 +249,29 @@ Polls every 90 seconds and backs off exponentially if rate-limited — the endpo
 **Rate-limit warning** — a gauge you aren't looking at can't warn you, and with a swarm running you burn quota several times faster than one session does, so the failure mode is a batch of agents dying mid-turn at once. When a window crosses **75%** or **90%** — the same two thresholds the gauges change colour at — a toast says so, with the reset countdown: *"⚠ 5-hour usage 92% — agents may start failing · resets in 34m"*. It fires once per crossing, not on every poll; dropping back under a threshold (or the window resetting) re-arms it, and a stale or failed reading stays quiet rather than treating "no data" as 0%.
 
 Credentials are read read-only — the macOS Keychain (falling back to `~/.claude/.credentials.json`), or from inside WSL on Windows. Nothing is stored or sent anywhere except `api.anthropic.com`.
+
+---
+
+## Agent worktrees
+
+Agents in the same workspace share one checkout by default, which is why a swarm has to be told to keep off each other's files. Turn on **Isolate agents in git worktrees** in Options and that stops being a rule to remember:
+
+- Every agent launched from then on gets its **own git worktree and its own branch**, cut from whatever the workspace has checked out. The branch is named `swarmeye/<agent>-<id>`, so `git branch --list 'swarmeye/*'` is the whole answer to "what did the swarm leave behind".
+- The tree lives in the app's data folder, not next to your repo — nothing new appears in `git status` and nothing to clean up by hand.
+- A fresh checkout has none of the files git ignores, so two are carried over as it is made: `node_modules` is symlinked to the workspace's (only if the repo ignores it) and any ignored `.env*` file at the top level is copied in. A `.env.example` that is under version control is left alone — it is already in the checkout.
+- **Closing the pane lands the work.** Whatever the agent left uncommitted is committed on its branch, and that branch is merged back into the one it was cut from. The toast says so: *merged swarmeye/nova-4f2a into main (3 commits)*.
+- An agent that changed nothing leaves nothing: its tree and branch are removed without a word.
+- A merge that cannot be made safely is **never forced**. If the workspace has moved to another branch since the agent started, or the merge hits a conflict or local edits in the way, the merge is aborted, the branch is kept, and the toast names it: *kept branch swarmeye/nova-4f2a — the merge did not apply cleanly*. The checkout is left exactly as it was; the branch is yours to merge or delete.
+- `↻` keeps the agent in its tree — the conversation being resumed belongs to that folder.
+- A tree whose agent didn't survive (a crash, a kill from outside the app, a pane closed while SwarmEye was shut) is landed the same way at the next launch.
+
+The pane's branch chip shows the agent's own branch rather than the workspace's, so you can see at a glance which agents are off on their own.
+
+Workspaces that aren't git repositories are unaffected — so are repos with no commit yet, and a checkout sitting on a detached HEAD, since none of them has a branch to come back to. Those agents run in the workspace folder exactly as before.
+
+Flipping the option decides the agents launched **from then on**; the ones already running keep the folder they were started in.
+
+**Two things it does not do yet.** The preview dock still serves the workspace's checkout, not the selected agent's tree. And an agent's worktree is its own checkout, so a dev server it starts and a build it runs are its own too — a workspace-level `node_modules` shared by symlink is the one thing they have in common.
 
 ---
 
@@ -542,6 +566,7 @@ The panel is two columns wide, every section always visible under its header —
 | **Agent pane text size** | 13px | Default terminal text size, 8–24px. Shared with the per-pane `−`/`+` buttons and `Ctrl +`/`−`, so changing it here live-updates every open pane. |
 | **Agent pane text weight** | Semibold on Windows, Normal on macOS | Stroke weight of the terminal text — Light, Normal, Medium or Semibold. The default differs per platform because DirectWrite lays down lighter stems than macOS's CoreText, so the weight that looks right on a Mac reads thin on Windows. Live-updates every open pane. |
 | **Max simultaneous agents** | 10 | Cap on running agents — raise it as high as you want, there is no upper limit. The task scheduler respects it too. |
+| **Isolate agents in git worktrees** | off | Every agent launched from then on gets its own git worktree and branch, so a swarm can work one repo without fighting over files. Closing its pane commits whatever it left and merges that branch back; a merge that can't be made safely leaves the branch for you and says so. See [Agent worktrees](#agent-worktrees). |
 | **Auto-start usage limit** | 85% | The ceiling an **auto** task waits for, on the 5-hour session usage window. 1–100%. |
 | **Allow auto mode (bypass permissions)** | off | Launches agents with `--allow-dangerously-skip-permissions` so `auto` becomes selectable in the mode cycle — *without* starting them in bypass mode. Also auto-accepts the one-time "Do you trust the files in this folder?" and "Running in Bypass Permissions mode" dialogs, since neither is covered by the flag itself. Picking `auto` as the default permission below turns this on automatically, as it's a hard prerequisite. |
 | **Show cost & context panel** | off | Adds a two-row footer to every Claude pane — context fullness, spend, cache hit rate, tokens per turn, turn timer, share of the 5-hour limit and the last tools run. See [Cost & context panel](#cost--context-panel). Costs two rows of terminal height per pane. |
@@ -606,6 +631,8 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 | Voice engine | `~/.local/share/swarmeye/tts` (inside WSL) | `~/.local/share/swarmeye/tts` |
 | Past conversations (read-only, Claude Code's) | `~/.claude/projects/` (inside WSL) | `~/.claude/projects/` |
 | tmux config | `~/.config/swarmeye/tmux.conf` (inside WSL) | `~/.config/swarmeye/tmux.conf` |
+
+With [agent worktrees](#agent-worktrees) on, each agent's checkout is a folder under `worktrees/` in that same app data folder, removed as soon as its work is landed.
 
 One thing lives in the workspace itself rather than in the app: `.swarmeye/areas.json`, the areas the [scope picker](#scoping-an-agent-to-a-folder) offers. It is the repo's file — commit it if the rest of the team should have it.
 

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('swarm', {
   stopPreview: (workspaceId) => ipcRenderer.invoke('preview:stop', { workspaceId }),
   setAutoUsageLimit: (n) => ipcRenderer.invoke('config:set-auto-usage-limit', n),
   setSkipPermissions: (on) => ipcRenderer.invoke('config:set-skip-permissions', on),
+  setWorktrees: (on) => ipcRenderer.invoke('config:set-worktrees', on),
   // macOS "Native Apple style": main only needs it to pick the window frame at
   // the next launch, which relaunchApp is what triggers
   setNativeStyle: (on) => ipcRenderer.invoke('config:set-native-style', on),
@@ -101,6 +102,8 @@ contextBridge.exposeInMainWorld('swarm', {
   onSessionState: (cb) => ipcRenderer.on('session:state', (e, p) => cb(p)),
   onUsageUpdate: (cb) => ipcRenderer.on('usage:update', (e, p) => cb(p)),
   onGitUpdate: (cb) => ipcRenderer.on('git:update', (e, p) => cb(p)),
+  // what became of a closed agent's worktree: { state, branch, base, reason }
+  onWorktreeNotice: (cb) => ipcRenderer.on('worktree:notice', (e, p) => cb(p)),
   // one wave of subtasks a lead agent wrote: { sessionId, items } — or
   // { sessionId, items: [], reason } when its plan file didn't parse
   onOrchestratorPlan: (cb) => ipcRenderer.on('orchestrator:plan', (e, p) => cb(p)),

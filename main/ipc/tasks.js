@@ -11,6 +11,7 @@ const roles = require('../roles');
 const providers = require('../providers');
 const coordinator = require('../coordinator');
 const orchestrator = require('../orchestrator');
+const worktree = require('../worktree');
 const path = require('path');
 const { MODELS, EFFORT_FLAGS } = require('../sessions');
 
@@ -160,7 +161,11 @@ module.exports = function register(deps) {
     if (!ws) return { ok: false, reason: 'no-workspace' };
     const id = String(sessionId || '');
     if (!id) return { ok: false, reason: 'no-session' };
-    const ok = orchestrator.watch(id, ws.path, (wave) => sendToWin('orchestrator:plan', { sessionId: id, ...wave }));
+    /* The lead writes `.swarmeye/plan.json` in the folder it is running in,
+     * which with worktrees on is its own tree and not the workspace — watch
+     * the wrong one and every wave is missed in silence. */
+    const wt = worktree.get(id);
+    const ok = orchestrator.watch(id, (wt && wt.path) || ws.path, (wave) => sendToWin('orchestrator:plan', { sessionId: id, ...wave }));
     return ok ? { ok: true } : { ok: false, reason: 'cannot-watch' };
   });
 
