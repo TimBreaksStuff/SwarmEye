@@ -84,8 +84,8 @@ let ctx = null;
  * 0.7–1.6 in 0.1 steps, scale the elements they own, label the percentage,
  * persist. They differ only in which elements and which storage key.
  *
- * `elements` is a thunk because some of them (gsearch) live in app.js —
- * looking them up at click time avoids depending on load order. */
+ * `elements` is a thunk so the lookups happen at click time rather than at
+ * module load, which avoids depending on the order the popovers are built. */
 function makeZoomControl({ storageKey, elements, valueEl, downId, upId }) {
   let zoom = Number(localStorage.getItem(storageKey)) || 1;
   const apply = (z) => {
@@ -427,7 +427,6 @@ export function init(context) {
     elements: () => [
       document.getElementById('topbar'),
       leftbarEl,
-      document.getElementById('gsearch'),
       document.getElementById('msg-pop'),
       ctx.notifPopEl,
     ],

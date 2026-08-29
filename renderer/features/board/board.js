@@ -468,10 +468,10 @@ const Board = (() => {
     sessionViewTitleEl.textContent = [agentName, ws && ws.name].filter(Boolean).join(' — ') || 'session';
     sessionViewBodyEl.textContent = task.sessionLog || '';
     sessionViewEl.hidden = false;
-    // an archived task arrives from config:get without its log — main keeps it
-    // out of the boot payload and hands it over one id at a time
+    // a task arrives from config:get without its log — main keeps transcripts
+    // out of every payload and hands them over one id at a time
     if (!task.sessionLog && task.hasSessionLog) {
-      window.swarm.archivedTaskLog(task.id).then((r) => {
+      window.swarm.taskLog(task.id).then((r) => {
         if (sessionViewTask !== task) return;
         task.sessionLog = (r && r.sessionLog) || '';
         sessionViewBodyEl.textContent = task.sessionLog;

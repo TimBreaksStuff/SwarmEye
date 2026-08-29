@@ -640,9 +640,9 @@ export const boardHandlers = {
   async onExportSession(task) {
     const ws = ctx.state.workspaces.find((w) => w.id === task.workspaceId);
     const name = boardHandlers.getPaneAgentName(task.paneId) || (ws ? ws.name : 'task');
-    // an archived task's log is fetched on demand, not shipped in the boot payload
+    // a task's log is fetched on demand, not shipped in the boot payload
     if (!task.sessionLog && task.hasSessionLog) {
-      task.sessionLog = (await window.swarm.archivedTaskLog(task.id)).sessionLog || '';
+      task.sessionLog = (await window.swarm.taskLog(task.id)).sessionLog || '';
     }
     const res = await window.swarm.exportSession(name, task.sessionLog || '');
     if (res.ok) ctx.toast('transcript saved to ' + res.path);

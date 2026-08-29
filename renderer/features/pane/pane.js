@@ -37,7 +37,6 @@ class Pane {
     this.statusText = ''; // what the hooks say the agent is doing right now (the permission message / 'done'; empty mid-turn)
     this.lastInputAt = 0; // last keystroke/mouse report — its echo must not read as agent activity
     this.idleTimer = null;
-    this.bufferTextCache = null; // memoized getBufferText result
     this.writeSeq = 0; // bumped on every buffer change, so consumers can memoize reads
     this.screenEl = null; // .xterm-screen and its rect, memoized for the wheel path (cellAt)
     this.screenRect = null;
@@ -53,7 +52,7 @@ class Pane {
     this.planAsked = false; // plan mode was picked but could not be set, so it was asked for in words instead
     this.turnStartedAt = 0; // when the agent started working, 0 while it isn't
     this.waitingSince = 0; // when it started waiting on the user, 0 while it isn't
-    this.usageTimer = null; // 1s tick, only while the panel is visible
+    this.toolTrailSig = null; // what renderToolTrail last drew (pane-usage.js)
     livePanes.add(this);
 
     this.el = elt('section', 'pane');
@@ -1119,7 +1118,6 @@ class Pane {
   refit() {
     this.screenRect = null; // the terminal moved or resized — see cellAt
     if (!this.el.isConnected) return;
-    this.bufferTextCache = null; // a resize reflows/rewraps the buffer
     this.writeSeq++;
     try {
       this.fit.fit();
@@ -1134,7 +1132,6 @@ class Pane {
   }
 
   write(data) {
-    this.bufferTextCache = null; // new output invalidates getBufferText's memo
     this.writeSeq++;
     this.term.write(data);
     this.noteActivity();
@@ -1188,12 +1185,11 @@ class Pane {
     requestAnimationFrame(() => this.refit());
   }
 
-  /* plain-text scrollback (for transcript export and cross-pane search).
-   * Memoized: translating up to 20k scrollback lines is expensive, and the
-   * global search calls this for every pane per keystroke — the cache makes
-   * repeat reads free until new output (write) or a reflow (refit) lands. */
+  /* Plain-text scrollback, for the transcript a finishing task captures. Read
+   * once per task, so it is deliberately not memoized: the search across all
+   * agents that used to call it per keystroke is gone, and holding a second
+   * copy of every pane's scrollback for a once-a-task read is pure memory. */
   getBufferText() {
-    if (this.bufferTextCache != null) return this.bufferTextCache;
     const buf = this.term.buffer.active;
     const out = [];
     for (let i = 0; i < buf.length; i++) {
@@ -1201,8 +1197,7 @@ class Pane {
       out.push(line ? line.translateToString(true) : '');
     }
     while (out.length && !out[out.length - 1]) out.pop();
-    this.bufferTextCache = out.join('\n');
-    return this.bufferTextCache;
+    return out.join('\n');
   }
 
   /* The clipboard into the agent, for the two paste routes the browser does
@@ -1249,8 +1244,8 @@ class Pane {
     if (this.stopDictation) this.stopDictation();
     clearTimeout(this.idleTimer);
     clearTimeout(this.modeTimer);
-    clearInterval(this.usageTimer);
     livePanes.delete(this);
+    Pane.syncUsagePanelTicker(); // the last panel closing stops the shared beat
     this.observer.disconnect();
     // the webgl addon's dispose can throw (upstream bug) — detach it first
     // and never let any teardown error keep the pane element on screen

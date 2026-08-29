@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld('swarm', {
   deleteTask: (id) => ipcRenderer.invoke('task:delete', id),
   purgeTask: (id) => ipcRenderer.invoke('task:purge', id),
   purgeAllTasks: () => ipcRenderer.invoke('task:purge-all'),
-  archivedTaskLog: (id) => ipcRenderer.invoke('task:archived-log', id),
+  taskLog: (id) => ipcRenderer.invoke('task:log', id),
   splitTask: (text, workspaceId) => ipcRenderer.invoke('coordinator:split', { text, workspaceId }),
   // a lead agent's plan file: watch it while its pane lives, and take each
   // wave of subtasks back through onOrchestratorPlan below

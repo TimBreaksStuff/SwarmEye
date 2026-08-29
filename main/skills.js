@@ -150,7 +150,7 @@ class SkillsManager {
   /* Installed-from-a-repo skills only — what the update/enable/symlink
    * machinery below operates on. Local ones have none of that. */
   _configSkills() {
-    return config.load().skills || [];
+    return config.loadSkills();
   }
 
   /* Re-scanned on every call rather than cached: an agent can create a skill
@@ -221,8 +221,7 @@ class SkillsManager {
     const parsed = parseRepoUrl(repoUrl);
     if (!parsed) return { ok: false, reason: 'invalid-url' };
     const repoId = slug(parsed.owner + '-' + parsed.repo);
-    const cfg = config.load();
-    if ((cfg.skills || []).some((s) => s.repoId === repoId)) return { ok: false, reason: 'already-installed' };
+    if (config.loadSkills().some((s) => s.repoId === repoId)) return { ok: false, reason: 'already-installed' };
 
     const dest = path.join(this.root, repoId);
     fs.mkdirSync(this.root, { recursive: true });
@@ -265,8 +264,7 @@ class SkillsManager {
         updateAvailable: false,
       };
     });
-    cfg.skills = [...(cfg.skills || []), ...found];
-    config.save(cfg);
+    config.saveSkills([...config.loadSkills(), ...found]);
     return { ok: true, skills: found };
   }
 
@@ -274,8 +272,8 @@ class SkillsManager {
     // a local skill is enabled by existing where it does — there's no symlink
     // to add or remove, so there's nothing to toggle
     if (String(id).startsWith('local:')) return { ok: false, reason: 'local' };
-    const cfg = config.load();
-    const skill = (cfg.skills || []).find((s) => s.id === id);
+    const list = config.loadSkills();
+    const skill = list.find((s) => s.id === id);
     if (!skill) return { ok: false, reason: 'not-found' };
     const destQ = pathQ(this._skillDir(skill));
     if (!destQ) return { ok: false, reason: 'bad-path' };
@@ -288,7 +286,7 @@ class SkillsManager {
     // a disabled skill can't be auto-invoked at session start (its /id
     // command wouldn't resolve) — active never outlives enabled
     if (!enabled) skill.active = false;
-    config.save(cfg);
+    config.saveSkills(list);
     return { ok: true, skill };
   }
 
@@ -307,14 +305,15 @@ class SkillsManager {
       config.save(cfg);
       return { ok: true, skill: { ...local, active: !!active } };
     }
-    const skill = (cfg.skills || []).find((s) => s.id === id);
+    const list = config.loadSkills();
+    const skill = list.find((s) => s.id === id);
     if (!skill) return { ok: false, reason: 'not-found' };
     if (active && !skill.enabled) {
       const res = await this.setEnabled(id, true);
       if (!res.ok) return res;
     }
     skill.active = !!active;
-    config.save(cfg);
+    config.saveSkills(list);
     return { ok: true, skill };
   }
 
@@ -334,14 +333,15 @@ class SkillsManager {
       config.save(cfg);
       return { ok: true, skill: { ...local, orStartup: !!on } };
     }
-    const skill = (cfg.skills || []).find((s) => s.id === id);
+    const list = config.loadSkills();
+    const skill = list.find((s) => s.id === id);
     if (!skill) return { ok: false, reason: 'not-found' };
     if (on && !skill.enabled) {
       const res = await this.setEnabled(id, true);
       if (!res.ok) return res;
     }
     skill.orStartup = !!on;
-    config.save(cfg);
+    config.saveSkills(list);
     return { ok: true, skill };
   }
 
@@ -361,8 +361,8 @@ class SkillsManager {
   /* Checks the shared clone once and applies the result to every skill
    * entry sharing it (a multi-skill repo updates as one git repo). */
   async checkUpdate(id) {
-    const cfg = config.load();
-    const skill = (cfg.skills || []).find((s) => s.id === id);
+    const list = config.loadSkills();
+    const skill = list.find((s) => s.id === id);
     if (!skill) return false;
     const dirQ = pathQ(path.join(this.root, skill.repoId));
     if (!dirQ) return null;
@@ -377,15 +377,15 @@ class SkillsManager {
       updateAvailable = lines.length === 2 && lines[0] !== lines[1];
     }
     // almost every sweep finds the flag already right — don't rewrite the
-    // whole config.json per repo just to store the value it already holds
+    // registry per repo just to store the value it already holds
     let changed = false;
-    for (const s of cfg.skills || []) {
+    for (const s of list) {
       if (s.repoId === skill.repoId && !!s.updateAvailable !== updateAvailable) {
         s.updateAvailable = updateAvailable;
         changed = true;
       }
     }
-    if (changed) config.save(cfg);
+    if (changed) config.saveSkills(list);
     return updateAvailable;
   }
 
@@ -424,8 +424,8 @@ class SkillsManager {
    * SKILL.md (each can change independently even though the pull is one
    * git operation). */
   async update(id) {
-    const cfg = config.load();
-    const skill = (cfg.skills || []).find((s) => s.id === id);
+    const list = config.loadSkills();
+    const skill = list.find((s) => s.id === id);
     if (!skill) return { ok: false, reason: 'not-found' };
     const cloneDir = path.join(this.root, skill.repoId);
     const dirQ = pathQ(cloneDir);
@@ -436,7 +436,7 @@ class SkillsManager {
     const head = await headInfo(dirQ);
     const branch = head.branch || skill.branch;
     const commit = head.commit || skill.commit;
-    for (const s of cfg.skills || []) {
+    for (const s of list) {
       if (s.repoId !== skill.repoId) continue;
       const meta = readSkillMeta(this._skillDir(s), s.name);
       s.name = meta.name;
@@ -445,8 +445,8 @@ class SkillsManager {
       s.commit = commit;
       s.updateAvailable = false;
     }
-    config.save(cfg);
-    return { ok: true, skill: cfg.skills.find((s) => s.id === id) };
+    config.saveSkills(list);
+    return { ok: true, skill };
   }
 
   /* Drops just this entry (and its symlink); the shared clone is only
@@ -467,14 +467,14 @@ class SkillsManager {
       config.save(cfg);
       return { ok: true };
     }
-    const skill = (cfg.skills || []).find((s) => s.id === id);
+    const skill = config.loadSkills().find((s) => s.id === id);
     if (!skill) return { ok: false, reason: 'not-found' };
     await exec(`rm -f ~/.claude/skills/${shQuote(id)}`);
-    cfg.skills = (cfg.skills || []).filter((s) => s.id !== id);
-    if (!cfg.skills.some((s) => s.repoId === skill.repoId)) {
+    const left = config.loadSkills().filter((s) => s.id !== id);
+    if (!left.some((s) => s.repoId === skill.repoId)) {
       try { fs.rmSync(path.join(this.root, skill.repoId), { recursive: true, force: true }); } catch { /* ignore */ }
     }
-    config.save(cfg);
+    config.saveSkills(left);
     return { ok: true };
   }
 
@@ -483,14 +483,12 @@ class SkillsManager {
    * deleted once instead of racing remove()'s per-skill "last one out"
    * check. */
   async removeRepo(repoId) {
-    const cfg = config.load();
-    const toRemove = (cfg.skills || []).filter((s) => s.repoId === repoId);
+    const toRemove = config.loadSkills().filter((s) => s.repoId === repoId);
     if (!toRemove.length) return { ok: false, reason: 'not-found' };
     const rmCmd = toRemove.map((s) => `rm -f ~/.claude/skills/${shQuote(s.id)}`).join(' && ');
     await exec(rmCmd);
-    cfg.skills = (cfg.skills || []).filter((s) => s.repoId !== repoId);
+    config.saveSkills(config.loadSkills().filter((s) => s.repoId !== repoId));
     try { fs.rmSync(path.join(this.root, repoId), { recursive: true, force: true }); } catch { /* ignore */ }
-    config.save(cfg);
     return { ok: true };
   }
 

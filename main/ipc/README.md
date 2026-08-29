@@ -18,7 +18,9 @@ registerIpc({
 ```
 
 `index.js` also supplies `projectArchive` — archived tasks always cross IPC
-without their transcripts.
+without their transcripts. Live tasks never carry one either: transcripts are
+stored per task by `main/tasklogs.js` and fetched one id at a time over
+`task:log`.
 
 | File | Channels |
 |---|---|

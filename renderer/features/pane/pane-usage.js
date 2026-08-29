@@ -5,19 +5,61 @@
  * model and effort it is running on.
  */
 
+/* One ticker for every panel rather than one per pane, for the same reason as
+ * the waiting-chip ticker in pane.js: the panel's own figures move once a
+ * turn, and only the two clocks (time in this turn, the 5-hour share) need a
+ * beat at all. Each pane's tick also summed every *other* pane's token series
+ * to get the swarm total, so the per-second cost grew with the square of the
+ * swarm — with the panel on and ten agents open that was a hundred series
+ * walks a second to repaint numbers that had not changed. The total is now
+ * summed once per beat and shared, and every write below is compared before
+ * it lands. */
+let panelTimer = null;
+let swarmTotal = { at: 0, tokens: 0 };
+
+function swarmWindowTokens() {
+  const now = Date.now();
+  // the panes render within a beat of each other, so one sum serves them all
+  if (now - swarmTotal.at < 900) return swarmTotal.tokens;
+  let tokens = 0;
+  for (const pane of livePanes) tokens += pane.windowTokens();
+  swarmTotal = { at: now, tokens };
+  return tokens;
+}
+
+/* Runs while any panel is on screen, and is stopped the moment the option goes
+ * off or the last pane closes — a 1s wake-up for nothing is exactly what the
+ * per-beat cost note in CLAUDE.md warns about. */
+function syncPanelTicker() {
+  const wanted = showUsagePanel && livePanes.size > 0;
+  if (wanted && !panelTimer) {
+    panelTimer = setInterval(() => {
+      swarmWindowTokens(); // one sum, before the panes read it
+      for (const pane of livePanes) pane.renderUsagePanel();
+    }, 1000);
+  } else if (!wanted && panelTimer) {
+    clearInterval(panelTimer);
+    panelTimer = null;
+  }
+}
+Pane.syncUsagePanelTicker = syncPanelTicker;
+
+// the panel repaints on every beat, and an assignment costs a style recalc
+// whether or not the value actually changed — so nothing is written twice
+const setText = (el, text) => { const v = text == null ? '' : String(text); if (el.textContent !== v) el.textContent = v; };
+const setTip = (el, tip) => { if (el.dataset.tip !== tip) el.dataset.tip = tip; };
+const setShown = (el, on) => { const v = on ? '' : 'none'; if (el.style.display !== v) el.style.display = v; };
+
 Object.assign(Pane.prototype, {
   /* Show or hide the panel, and keep the terminal's row count honest — the
    * panel's rows are rows the terminal no longer has. */
   syncUsagePanel() {
     const was = this.usageEl.style.display !== 'none';
     this.usageEl.style.display = showUsagePanel ? '' : 'none';
-    clearInterval(this.usageTimer);
-    this.usageTimer = null;
-    if (showUsagePanel) {
-      this.renderUsagePanel();
-      // the turn timer and the 5h share both move on their own
-      this.usageTimer = setInterval(() => this.renderUsagePanel(), 1000);
-    }
+    // the turn timer and the 5h share both move on their own — on the one
+    // shared beat above, not a timer of this pane's own
+    syncPanelTicker();
+    if (showUsagePanel) this.renderUsagePanel();
     this.placeBusy();
     this.syncModelChip(); // the panel takes the model over from the header
 
@@ -55,15 +97,15 @@ Object.assign(Pane.prototype, {
     if (!u) {
       // no turn counted yet — either a brand-new agent or one just /clear'ed,
       // in which case last conversation's figures must not linger
-      this.usageCtxEl.textContent = 'waiting for the first turn…';
-      this.usageBarFillEl.style.width = '0%';
+      setText(this.usageCtxEl, 'waiting for the first turn…');
+      if (this.usageBarFillEl.style.width !== '0%') this.usageBarFillEl.style.width = '0%';
       this.usageEl.classList.remove('warn', 'hot');
-      this.usageCostEl.textContent = '';
-      this.usageCacheEl.textContent = '';
+      setText(this.usageCostEl, '');
+      setText(this.usageCacheEl, '');
       // an empty pill is a stray blob: the spend capsule goes with its figures
-      this.usageCostCapEl.style.display = 'none';
-      this.usageTurnsEl.textContent = '';
-      this.usageShareEl.style.display = 'none';
+      setShown(this.usageCostCapEl, false);
+      setText(this.usageTurnsEl, '');
+      setShown(this.usageShareEl, false);
       this.renderToolTrail();
       return;
     }
@@ -78,50 +120,50 @@ Object.assign(Pane.prototype, {
     }
     const limit = this.orCtx || (u.context > CONTEXT_WINDOW ? CONTEXT_WINDOW_LARGE : CONTEXT_WINDOW);
     const filled = Math.min(100, Math.round((u.context / limit) * 100));
-    this.usageBarFillEl.style.width = filled + '%';
+    const width = filled + '%';
+    if (this.usageBarFillEl.style.width !== width) this.usageBarFillEl.style.width = width;
     this.usageEl.classList.toggle('warn', filled >= 70 && filled < 90);
     this.usageEl.classList.toggle('hot', filled >= 90);
-    this.usageBarEl.dataset.tip = `Context in use: ${u.context.toLocaleString()} of ${fmtTokens(limit)} tokens — `
-      + (this.viaClean ? 'no auto-compaction here: /clear starts the conversation over' : 'Claude Code compacts the conversation as this fills');
-    this.usageCtxEl.textContent = `${fmtTokens(u.context)} / ${fmtTokens(limit)}`;
+    setTip(this.usageBarEl, `Context in use: ${u.context.toLocaleString()} of ${fmtTokens(limit)} tokens — `
+      + (this.viaClean ? 'no auto-compaction here: /clear starts the conversation over' : 'Claude Code compacts the conversation as this fills'));
+    setText(this.usageCtxEl, `${fmtTokens(u.context)} / ${fmtTokens(limit)}`);
 
-    this.usageCostCapEl.style.display = '';
-    this.usageCostEl.textContent = (u.partial ? '≈' : '') + fmtCost(u.cost);
-    this.usageCostEl.dataset.tip = 'Estimated spend for this agent at list prices — in '
+    setShown(this.usageCostCapEl, true);
+    setText(this.usageCostEl, (u.partial ? '≈' : '') + fmtCost(u.cost));
+    setTip(this.usageCostEl, 'Estimated spend for this agent at list prices — in '
       + fmtTokens(u.input) + ' · out ' + fmtTokens(u.output)
       + ' · cache read ' + fmtTokens(u.cacheRead) + ' · cache write ' + fmtTokens(u.cacheWrite)
-      + (u.partial ? ' (session was already long when SwarmEye started counting, so this is a floor)' : '');
+      + (u.partial ? ' (session was already long when SwarmEye started counting, so this is a floor)' : ''));
 
     const cached = u.cacheRead + u.cacheWrite + u.input;
     const hit = cached ? Math.round((u.cacheRead / cached) * 100) : 0;
-    this.usageCacheEl.textContent = hit + '% cached';
-    this.usageCacheEl.dataset.tip = 'Share of input served from the prompt cache at a tenth of the price — higher is cheaper';
+    setText(this.usageCacheEl, hit + '% cached');
+    setTip(this.usageCacheEl, 'Share of input served from the prompt cache at a tenth of the price — higher is cheaper');
     // the transcript's model is the same one ModelUpdate carries, but it can
     // arrive first on a reattach — take it when the chip is still blank
     if (!this.modelLabel && u.model) this.setModel(prettyModelName(u.model));
 
-    this.usageTurnsEl.textContent = u.turns + (u.turns === 1 ? ' turn' : ' turns');
+    setText(this.usageTurnsEl, u.turns + (u.turns === 1 ? ' turn' : ' turns'));
 
     const now = Date.now();
-    if (this.turnStartedAt) this.usageTimeEl.textContent = 'working ' + fmtDuration(now - this.turnStartedAt);
-    else if (this.waitingSince) this.usageTimeEl.textContent = 'waiting ' + fmtDuration(now - this.waitingSince);
-    else this.usageTimeEl.textContent = 'idle';
+    if (this.turnStartedAt) setText(this.usageTimeEl, 'working ' + fmtDuration(now - this.turnStartedAt));
+    else if (this.waitingSince) setText(this.usageTimeEl, 'waiting ' + fmtDuration(now - this.waitingSince));
+    else setText(this.usageTimeEl, 'idle');
 
     // this agent's slice of the 5-hour quota: its share of everything the
     // swarm burned this window, applied to the window's own percentage. The
     // API reports a percentage rather than tokens, so this is an estimate —
     // hence the ≈.
     const mine = this.windowTokens();
-    let swarm = 0;
-    for (const pane of livePanes) swarm += pane.windowTokens();
+    const swarm = swarmWindowTokens();
     const used = usageWindow && typeof usageWindow.usedPct === 'number' ? usageWindow.usedPct : null;
     if (used != null && swarm > 0 && !this.orSlug) {
       const share = (mine / swarm) * used;
-      this.usageShareEl.textContent = '≈' + (share < 1 ? share.toFixed(1) : Math.round(share)) + '% of 5h';
-      this.usageShareEl.dataset.tip = `This agent burned ${fmtTokens(mine)} of the swarm's ${fmtTokens(swarm)} tokens this session window, which is ${used}% used overall`;
-      this.usageShareEl.style.display = '';
+      setText(this.usageShareEl, '≈' + (share < 1 ? share.toFixed(1) : Math.round(share)) + '% of 5h');
+      setTip(this.usageShareEl, `This agent burned ${fmtTokens(mine)} of the swarm's ${fmtTokens(swarm)} tokens this session window, which is ${used}% used overall`);
+      setShown(this.usageShareEl, true);
     } else {
-      this.usageShareEl.style.display = 'none';
+      setShown(this.usageShareEl, false);
     }
 
     this.renderToolTrail();
@@ -133,13 +175,18 @@ Object.assign(Pane.prototype, {
      it rather than sit there blank. */
   renderToolTrail() {
     const el = this.usageToolsEl;
+    // rebuilt only when the trail itself moved: the panel's beat would
+    // otherwise re-create these spans every second for an unchanged row
+    const sig = this.toolTrail.join('\u0001');
+    if (sig === this.toolTrailSig) return;
+    this.toolTrailSig = sig;
     el.textContent = '';
-    el.style.display = this.toolTrail.length ? '' : 'none';
+    setShown(el, this.toolTrail.length > 0);
     this.toolTrail.forEach((name, i) => {
       if (i) el.append(elt('span', 'pane-usage-arrow', '→'));
       el.append(elt('span', i === this.toolTrail.length - 1 ? 'pane-usage-tool now' : 'pane-usage-tool', name));
     });
-    el.dataset.tip = 'Most recent tools this agent ran';
+    setTip(el, 'Most recent tools this agent ran');
   },
 
   /* ---- model chip ---- */
@@ -165,17 +212,17 @@ Object.assign(Pane.prototype, {
   syncModelChip() {
     const inPanel = this.usageEl.style.display !== 'none';
     const tip = this.modelTip + ' — click to switch, keeping the conversation';
-    this.llmEl.textContent = this.modelLabel;
-    this.llmEl.dataset.tip = tip;
-    this.llmEl.style.display = this.modelLabel && !inPanel ? '' : 'none';
-    this.usageModelEl.textContent = this.modelLabel;
-    this.usageModelEl.dataset.tip = tip;
-    this.usageModelEl.style.display = this.modelLabel ? '' : 'none';
-    this.effortEl.textContent = this.effortLabel;
-    this.effortEl.dataset.tip = this.effortTip;
-    this.effortEl.style.display = this.effortLabel && !inPanel ? '' : 'none';
-    this.usageEffortEl.textContent = this.effortLabel;
-    this.usageEffortEl.dataset.tip = this.effortTip;
-    this.usageEffortEl.style.display = this.effortLabel ? '' : 'none';
+    setText(this.llmEl, this.modelLabel);
+    setTip(this.llmEl, tip);
+    setShown(this.llmEl, !!this.modelLabel && !inPanel);
+    setText(this.usageModelEl, this.modelLabel);
+    setTip(this.usageModelEl, tip);
+    setShown(this.usageModelEl, !!this.modelLabel);
+    setText(this.effortEl, this.effortLabel);
+    setTip(this.effortEl, this.effortTip);
+    setShown(this.effortEl, !!this.effortLabel && !inPanel);
+    setText(this.usageEffortEl, this.effortLabel);
+    setTip(this.usageEffortEl, this.effortTip);
+    setShown(this.usageEffortEl, !!this.effortLabel);
   }
 });

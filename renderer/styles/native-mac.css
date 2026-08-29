@@ -186,7 +186,6 @@
 :root[data-native="on"] #kbd-shortcuts-pop,
 :root[data-native="on"] #palette-pop,
 :root[data-native="on"] #notif-panel,
-:root[data-native="on"] .gs-box,
 :root[data-native="on"] #board-category-pop,
 :root[data-native="on"] #rail-menu {
   border-radius: 12px;
@@ -226,10 +225,9 @@
   text-transform: none;
   border-radius: 6px;
 }
-/* …except + Agent and the search icon: both belong to the top bar's round
- * tray, and a 6px corner beside its circles reads as a stray control */
-:root[data-native="on"] #add-agent,
-:root[data-native="on"] #gsearch-btn { border-radius: 999px; }
+/* …except + Agent: it belongs to the top bar's round tray, and a 6px corner
+ * beside its circles reads as a stray control */
+:root[data-native="on"] #add-agent { border-radius: 999px; }
 
 /* ---------- controls ---------- */
 

@@ -17,7 +17,8 @@ const DEFAULTS = {
   tasks: [],
   // archivedTasks moved to archive.json (loadArchive below); the key may still
   // exist in an older config.json and is migrated out on first read
-  skills: [],
+  // skills moved to skills.json and openrouterCatalog to openrouter-catalog.json
+  // (loadSkills/loadCatalog below) — same reason, same one-time migration
   localActiveSkills: [], // ids of filesystem-discovered skills marked auto-invoke (see skills.js)
   localOrSkills: [], // ids of filesystem-discovered skills injected into clean OpenRouter agents
   autoUsageLimit: 85,
@@ -30,7 +31,6 @@ const DEFAULTS = {
   // session metadata, which is dropped the moment an agent exits.
   agentWorktrees: {},
   openrouterKey: '', // never crosses IPC — see providers.js
-  openrouterCatalog: null, // { fetchedAt, models: [{id,label,ctx,in,out,cr,cw}] }
   openrouterAlts: [], // up to 3 slugs `/model` offers alongside the launch model (providers.js)
   claudeTemplate: '', // path to the standard CLAUDE.md copied into each new workspace (main/template.js)
   // macOS "Native Apple style" (Options → Appearance): the renderer half is a
@@ -64,19 +64,83 @@ function load() {
       if (!Array.isArray(ws.categories)) ws.categories = [...DEFAULT_TASK_CATEGORIES];
     });
   }
+  hoistBlobs(cache); // cache is set first: hoisting save()s, and save() must not re-enter here
   return cache;
 }
 
 function save(cfg) {
   cache = cfg;
-  const file = FILE();
+  // a caller holding a load() reference taken before the one-time migration
+  // below must not write the moved blobs back in — they are owned by their own
+  // files from then on, and a resurrected key would be read as the newer copy
+  delete cfg.skills;
+  delete cfg.openrouterCatalog;
+  writeJson(FILE(), cfg);
+}
+
+// no pretty-print anywhere: these run on ordinary mutations and nothing but
+// this module reads the files
+function writeJson(file, value) {
   const tmp = file + '.tmp';
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  // no pretty-print: this runs on every task/session/workspace mutation and
-  // the file is read by nothing but this module
-  fs.writeFileSync(tmp, JSON.stringify(cfg), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify(value), 'utf8');
   fs.renameSync(tmp, file);
 }
+
+/* The two blobs that dwarfed everything else in config.json and change almost
+ * never: the OpenRouter model catalog (~45KB) and the installed-skill registry
+ * (~19KB). Left in config.json they were re-stringified and rewritten by every
+ * unrelated save — a window drag, a session's metadata, a task edit — so a
+ * 200-byte change cost a 68KB synchronous write on the main thread. Same split,
+ * and the same one-time migration, as archive.json below. */
+function sideBlob(fileName, empty) {
+  const FILE_ = () => path.join(app.getPath('userData'), fileName);
+  let blobCache;
+  let loaded = false;
+  return {
+    load() {
+      if (loaded) return blobCache;
+      load(); // whatever is still in config.json is hoisted out on that first read
+      try { blobCache = JSON.parse(fs.readFileSync(FILE_(), 'utf8')); } catch { blobCache = empty; }
+      loaded = true;
+      return blobCache;
+    },
+    save(value) {
+      blobCache = value;
+      loaded = true;
+      writeJson(FILE_(), value);
+    },
+  };
+}
+
+const catalogBlob = sideBlob('openrouter-catalog.json', null);
+const skillsBlob = sideBlob('skills.json', []);
+
+/* The one-time move out of a pre-split config.json, for every blob in the same
+ * pass — save() drops all of their keys, so hoisting them one at a time would
+ * let the first mover's save wipe the value the next one had not read yet. An
+ * existing split file always wins: once written it is the truth, whatever a
+ * stale key still says. */
+const HOISTED = [
+  ['openrouterCatalog', 'openrouter-catalog.json'],
+  ['skills', 'skills.json'],
+];
+
+function hoistBlobs(cfg) {
+  let moved = false;
+  for (const [key, fileName] of HOISTED) {
+    if (cfg[key] == null) continue;
+    moved = true;
+    const file = path.join(app.getPath('userData'), fileName);
+    if (!fs.existsSync(file)) writeJson(file, cfg[key]);
+  }
+  if (moved) save(cfg); // save() is what drops the legacy keys
+}
+
+const loadCatalog = () => catalogBlob.load();
+const saveCatalog = (cat) => catalogBlob.save(cat);
+const loadSkills = () => skillsBlob.load() || [];
+const saveSkills = (list) => skillsBlob.save(list);
 
 /* Archived tasks live in their own file: each can carry a ~300KB sessionLog
  * and the archive keeps 200 of them, which sized every config.json rewrite
@@ -108,11 +172,7 @@ function loadArchive() {
 
 function saveArchive(list) {
   archiveCache = list;
-  const file = ARCHIVE_FILE();
-  const tmp = file + '.tmp';
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(tmp, JSON.stringify(list), 'utf8');
-  fs.renameSync(tmp, file);
+  writeJson(ARCHIVE_FILE(), list);
 }
 
 /* Mutates the cache in place rather than replacing it: a caller that took a
@@ -123,4 +183,10 @@ function patch(partial) {
   save(Object.assign(load(), partial));
 }
 
-module.exports = { load, save, patch, loadArchive, saveArchive, DEFAULT_TASK_CATEGORIES };
+module.exports = {
+  load, save, patch,
+  loadArchive, saveArchive,
+  loadCatalog, saveCatalog,
+  loadSkills, saveSkills,
+  DEFAULT_TASK_CATEGORIES,
+};

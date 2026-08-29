@@ -19,7 +19,6 @@
   <link rel="stylesheet" href="features/board/board.css" />
   <link rel="stylesheet" href="features/skills/skills.css" />
   <link rel="stylesheet" href="features/update/update.css" />
-  <link rel="stylesheet" href="features/gsearch/gsearch.css" />
   <link rel="stylesheet" href="styles/chrome-clean.css" />
   <!-- these two took BOTH halves — app.css's and chrome-clean's — so they are
        self-contained and belong after it rather than before -->
@@ -55,11 +54,8 @@
     <span id="health-banner" class="topbar-chip chip-err" hidden>⚠ WSL unreachable</span>
     <button id="reattach-all" class="topbar-chip chip-amber" hidden data-tip="Reconnect all detached agents">⟳ Reattach all</button>
     <button id="update-pill" class="topbar-chip chip-accent" hidden></button>
-    <!-- one segmented cluster: five secondary actions, one border -->
+    <!-- one segmented cluster: the secondary actions, one border -->
     <div id="topbar-actions">
-      <button id="gsearch-btn" aria-label="Search across all agents" data-tip="Search across all agents (Ctrl+Shift+G)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-      </button>
       <button id="voice-btn" data-palette-keep aria-label="Speak to the app" data-tip="Hold to speak to the app — dictation fills the command palette (Ctrl+K) while you hold the button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
       </button>
@@ -414,13 +410,6 @@
 
   <div id="toast"></div>
 
-  <div id="gsearch" hidden>
-    <div class="gs-box">
-      <input id="gs-input" placeholder="search all agents…" spellcheck="false" />
-      <div id="gs-results"></div>
-    </div>
-  </div>
-
   <div id="msg-pop" hidden>
     <input id="msg-input" placeholder="@name your message… (@all broadcasts)" spellcheck="false" />
     <div id="msg-hint" class="msg-hint"></div>
@@ -707,7 +696,6 @@
     <div class="kbd-row"><span>Focus pane N (again: maximize)</span><kbd>Ctrl+Shift+1…9, 0</kbd></div>
     <div class="kbd-row"><span>Maximize / restore pane</span><kbd>Ctrl+Shift+M</kbd></div>
     <div class="kbd-row"><span>Search in pane</span><kbd>Ctrl+Shift+F</kbd></div>
-    <div class="kbd-row"><span>Search across all agents</span><kbd>Ctrl+Shift+G</kbd></div>
     <div class="kbd-row"><span>Message agents (@name / @all)</span><kbd>Ctrl+Shift+E</kbd></div>
     <div class="kbd-row"><span>Task board</span><kbd>Ctrl+Shift+B</kbd></div>
     <div class="kbd-row"><span>Font bigger / smaller / reset</span><kbd>Ctrl++ · Ctrl+− · Ctrl+0</kbd></div>

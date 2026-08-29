@@ -20,9 +20,9 @@ const registrars = [
   require('./system'),
 ];
 
-// archived tasks always cross IPC without their transcripts: each one can carry
-// a 300KB sessionLog and the archive holds 200 of them, so `hasSessionLog` is
-// all the renderer gets until task:archived-log is asked for one by id
+// archived tasks always cross IPC without their transcripts: a pre-2.7.0
+// archive.json still has them inline, and each one can carry 300KB, so
+// `hasSessionLog` is all the renderer gets until task:log is asked for one
 const projectArchive = (list) => list.map(({ sessionLog, ...t }) => (
   sessionLog ? { ...t, hasSessionLog: true } : t
 ));

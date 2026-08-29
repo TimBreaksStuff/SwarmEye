@@ -12,14 +12,19 @@ const providers = require('../providers');
 const coordinator = require('../coordinator');
 const orchestrator = require('../orchestrator');
 const worktree = require('../worktree');
+const tasklogs = require('../tasklogs');
 const path = require('path');
 const { MODELS, EFFORT_FLAGS } = require('../sessions');
 
 module.exports = function register(deps) {
   const { sendToWin, projectArchive } = deps;
 
+  // transcripts an older version stored on the task records themselves
+  tasklogs.migrate();
+
   // task board: queued todos for agents, started now or auto-scheduled by
   // the renderer once an agent slot and usage headroom are both available
+  // sessionLog is accepted but never stored on the record — see task:update
   const TASK_PATCH_KEYS = ['status', 'paneId', 'startedAt', 'completedAt', 'targetResetsAt', 'stopped', 'sessionLog', 'summary', 'priority', 'category'];
 
   ipcMain.handle('task:create', (e, { text, workspaceId, mode, startMode, model, effort, focus, closeOnComplete, priority, category, chain, repeat, nextRunAt, targetResetsAt, role }) => {
@@ -85,9 +90,16 @@ module.exports = function register(deps) {
     if (idx === -1) return { tasks };
     const safe = {};
     for (const k of TASK_PATCH_KEYS) if (patch && k in patch) safe[k] = patch[k];
-    // scrollback is already capped per-pane (8000 lines), but keep only the
-    // tail here too so one huge completed task can't bloat config.json
-    if (typeof safe.sessionLog === 'string') safe.sessionLog = safe.sessionLog.slice(-300000);
+    /* The transcript goes to its own file (main/tasklogs.js) and never onto
+     * the task record: it is up to 300KB, and config.json is rewritten
+     * synchronously by every unrelated mutation. The record keeps the flag the
+     * board draws its "view transcript" button from. Still tail-capped — the
+     * pane's scrollback is 20k lines, which is more than a popup can use. */
+    if (typeof safe.sessionLog === 'string') {
+      const log = safe.sessionLog.slice(-300000);
+      delete safe.sessionLog;
+      if (tasklogs.write(id, log)) safe.hasSessionLog = true;
+    }
     // the agent's closing message (main/hooks.js caps it too — this is the
     // second gate, since a renderer bug must not bloat every task record)
     if (typeof safe.summary === 'string') safe.summary = safe.summary.slice(0, 600);
@@ -101,7 +113,9 @@ module.exports = function register(deps) {
   });
 
   // removing a task from the board archives it (like workspace:remove above)
-  // so it can still be reviewed or permanently purged from the Archive view
+  // so it can still be reviewed or permanently purged from the Archive view.
+  // Its transcript stays where it is — an archived task reads the same file a
+  // live one does, so archiving moves a record, not megabytes.
   ipcMain.handle('task:delete', (e, id) => {
     const cfg = config.load();
     const task = (cfg.tasks || []).find((t) => t.id === id);
@@ -109,16 +123,23 @@ module.exports = function register(deps) {
     config.save(cfg);
     let archived = config.loadArchive();
     if (task) {
-      // capped so archive.json can't grow without bound
-      archived = [task, ...archived.filter((t) => t.id !== task.id)].slice(0, 200);
+      // capped so archive.json can't grow without bound — an entry pushed off
+      // the end takes its transcript file with it
+      const kept = [task, ...archived.filter((t) => t.id !== task.id)];
+      for (const gone of kept.slice(200)) tasklogs.drop(gone.id);
+      archived = kept.slice(0, 200);
       config.saveArchive(archived);
     }
     return { tasks: cfg.tasks, archivedTasks: projectArchive(archived) };
   });
 
-  // one archived task's transcript, on demand — config:get ships the archive
-  // without them (see the projection above)
-  ipcMain.handle('task:archived-log', (e, id) => {
+  /* One task's transcript, on demand — neither the board payload nor the
+   * archive one carries them (see the projection in ipc/index.js). Live and
+   * archived tasks read the same store; the archive entry itself is the
+   * fallback for transcripts a pre-2.7.0 version wrote into archive.json. */
+  ipcMain.handle('task:log', (e, id) => {
+    const log = tasklogs.read(id);
+    if (log) return { sessionLog: log };
     const t = config.loadArchive().find((x) => x.id === id);
     return { sessionLog: (t && t.sessionLog) || '' };
   });
@@ -126,10 +147,12 @@ module.exports = function register(deps) {
   ipcMain.handle('task:purge', (e, id) => {
     const archived = config.loadArchive().filter((t) => t.id !== id);
     config.saveArchive(archived);
+    tasklogs.drop(id);
     return { archivedTasks: projectArchive(archived) };
   });
 
   ipcMain.handle('task:purge-all', () => {
+    for (const t of config.loadArchive()) tasklogs.drop(t.id);
     config.saveArchive([]);
     return { archivedTasks: [] };
   });

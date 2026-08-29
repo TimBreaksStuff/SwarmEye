@@ -7,9 +7,10 @@
  * the app passes a model around; bare tier names ('opus') keep meaning
  * Claude. slugOf() is the one decoder.
  *
- * The key and the slimmed catalog live in config.json. The key never crosses
- * IPC: config:get ships the catalog only, and status() reports counts, not
- * key material. */
+ * The key lives in config.json; the slimmed catalog has its own file
+ * (main/config.js — it is 45KB that changes twice a month, and every config
+ * write was paying for it). The key never crosses IPC: config:get ships the
+ * catalog only, and status() reports counts, not key material. */
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -61,13 +62,14 @@ function setKey(key) {
 }
 
 function clearKey() {
-  config.patch({ openrouterKey: '', openrouterCatalog: null, openrouterAlts: [] });
+  config.patch({ openrouterKey: '', openrouterAlts: [] });
+  config.saveCatalog(null); // its own file since 2.7.0 — see main/config.js
   spendCache = { at: 0, data: null };
 }
 
 function status() {
   const cfg = config.load();
-  const cat = cfg.openrouterCatalog;
+  const cat = config.loadCatalog();
   return {
     configured: KEY_RE.test(cfg.openrouterKey || ''),
     models: cat ? cat.models.length : 0,
@@ -107,7 +109,7 @@ function setAlts(list) {
  * request is ever made; each one duplicates a concrete model in the list
  * anyway. */
 function catalog() {
-  const cat = config.load().openrouterCatalog;
+  const cat = config.loadCatalog();
   return cat ? cat.models.filter((m) => !m.id.startsWith('~')) : [];
 }
 
@@ -137,7 +139,7 @@ async function fetchCatalog() {
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
   if (!models.length) throw new Error('catalog came back empty');
-  config.patch({ openrouterCatalog: { fetchedAt: Date.now(), models } });
+  config.saveCatalog({ fetchedAt: Date.now(), models });
   return models.length;
 }
 

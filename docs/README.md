@@ -138,7 +138,7 @@ With ten panes across five workspaces, the rail plus `Tab` cycling is the bottle
 - **Workspaces** — select one. **New agent in \<workspace\>** spawns there without selecting it first.
 - **Tasks** still open, and **installed skills** — both open the screen that owns them.
 - **Views** — the grid, Task Board, Skills.
-- **Verbs** — Message agents, Search across all agents, Options & shortcuts.
+- **Verbs** — Message agents, Options & shortcuts.
 - **Acting on an agent** — **Restart \<name\>** and **Close \<name\>** per live agent, plus **Close N idle agents** in one row when any are idle. The palette entry *is* the deliberate act, so it fires straight away.
 - **Running a task** — **Run now · \<task\>** starts any queued task without finding its card.
 - **Themes** — one row per theme, so switching doesn't mean opening Options.
@@ -224,10 +224,6 @@ The monitor button in the top bar docks a browser to the right of the grid: URL 
 **It starts the dev server for you.** Opening the dock doesn't assume anything is already running: the main process probes the address this workspace last had up, then the usual dev ports (3000, 5173, 8080, 4200, 8000, 1420), and loads the first one that answers. Only if none do does it start the workspace's own dev server — `npm run dev`, or `start`, or `serve`, whichever `package.json` has first — in its own tmux session (`swarmeye_preview_<workspace>`) on the same tmux server as the agents. It then watches that pane for the address the server prints and loads it, which is what makes a Vite that hopped to the next free port still work. Probing before starting is the point: an agent that already ran the dev server in its pane keeps it, and the dock never launches a second copy. That session outlives the app like any agent's does; a workspace with no dev script, or a server that prints no address within ~15s, says so in the dock, and typing an address by hand always overrides all of this.
 
 It is deliberately **local-only**. The URL box refuses anything that isn't `localhost` / `127.0.0.1`, and the main process enforces the same rule twice more — at attach, and on the top-level document request of any navigation the page starts on its own — in the webview's own session partition, so nothing else in the app is filtered. A page that fails to load says so ("is the dev server running?") rather than showing a browser error page. Subresources are left alone: a local page can still pull a font or a script from wherever it normally would.
-
-### Search across all agents
-
-`Ctrl+Shift+G` (or `⌕` in the top bar) searches every agent's scrollback in every workspace. Click a match to jump — SwarmEye switches workspace if needed, scrolls to the line, and opens the in-pane search prefilled.
 
 ### Usage widget
 
@@ -611,7 +607,6 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 | `Ctrl+Shift+1…9`, `0` | Focus visible pane N (again: maximize) |
 | `Ctrl+Shift+M` | Maximize / restore focused pane |
 | `Ctrl+Shift+F` | Search in focused pane |
-| `Ctrl+Shift+G` | Search across all agents |
 | `Ctrl+Shift+E` | Message agents — `@name`, or `@all` to broadcast |
 | `Ctrl+Shift+B` | Task board |
 | `Ctrl +` / `Ctrl −` / `Ctrl 0` | Font size of the focused pane |

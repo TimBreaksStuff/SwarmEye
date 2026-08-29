@@ -81,11 +81,6 @@ import {
 } from './features/orchestrator/orchestrator.js';
 
 import { init as initUpdate } from './features/update/update.js';
-import {
-  init as initGlobalSearch,
-  toggle as toggleGlobalSearch,
-  popEl as gsearchEl,
-} from './features/gsearch/gsearch.js';
 import { init as initAddAgentMenu } from './features/addagent/addagent.js';
 import { check as checkUsageWarnings } from './features/usage/usage-warnings.js';
 
@@ -468,7 +463,6 @@ function handleShortcut(e) {
   }
   if (e.code === 'KeyM' && focused) { grid.toggleMax(focused); return true; }
   if (e.code === 'KeyF' && focused) { focused.toggleSearch(); return true; }
-  if (e.code === 'KeyG') { toggleGlobalSearch(gsearchEl.hidden); return true; }
   if (e.code === 'KeyB') { toggleBoard(boardEl.hidden); return true; }
   if (e.code === 'KeyE') { if (Messenger.isOpen()) Messenger.close(); else Messenger.open(); return true; }
 
@@ -493,7 +487,6 @@ const ESCAPABLE = [
   // outermost of the popovers: it opens over whatever view you were on, so it
   // has to go before anything it might be covering
   [() => document.getElementById('palette-pop'), () => Palette.close()],
-  [() => gsearchEl, () => toggleGlobalSearch(false)],
   [() => msgPopEl, () => Messenger.close()],
   [() => kbdShortcutsPop, () => { kbdShortcutsPop.hidden = true; }],
   [() => kbdPop, () => { kbdPop.hidden = true; }],
@@ -627,7 +620,10 @@ const paneHandlers = {
       task.status = 'completed';
       task.completedAt = Date.now();
       task.stopped = true;
+      // main files the transcript away under the task's id (main/tasklogs.js);
+      // the copy kept here is what the board's popup reads until a reload
       task.sessionLog = pane.getBufferText();
+      task.hasSessionLog = true;
       window.swarm.updateTask(task.id, { status: 'completed', completedAt: task.completedAt, stopped: true, sessionLog: task.sessionLog });
       renderBoard();
     }
@@ -686,7 +682,8 @@ const paneHandlers = {
       if (task) {
         task.status = 'completed';
         task.completedAt = Date.now();
-        task.sessionLog = pane.getBufferText();
+        task.sessionLog = pane.getBufferText(); // filed away by main — see onClose
+        task.hasSessionLog = true;
         window.swarm.updateTask(task.id, { status: 'completed', completedAt: task.completedAt, sessionLog: task.sessionLog });
         renderBoard();
         // a task's agent window closes with it unless the task opted out via
@@ -1181,7 +1178,6 @@ Palette.init({
     }
 
     out.push({ group: 'action', label: 'Message agents', hint: 'Ctrl+Shift+E', run: () => Messenger.open() });
-    out.push({ group: 'action', label: 'Search across all agents', hint: 'Ctrl+Shift+G', run: () => toggleGlobalSearch(true) });
     out.push({ group: 'action', label: 'Options & shortcuts', hint: 'gear', run: () => kbdHelpBtn.click() });
     return out;
   },
@@ -1219,7 +1215,6 @@ Messenger.init({
   },
 });
 
-initGlobalSearch({ state, focusedPane, toggleBoard, selectWorkspace });
 
 document.getElementById('add-workspace').addEventListener('click', addWorkspace);
 initAddAgentMenu({

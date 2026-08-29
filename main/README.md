@@ -14,7 +14,8 @@ the platform.
 |---|---|
 | `main.js` | window lifecycle, the monitors, crash/runstate logging |
 | `ipc/` | every `ipcMain` channel, one file per domain |
-| `config.js` | the single `config.json` — atomic writes, `DEFAULTS` backfill |
+| `config.js` | `config.json` and the blobs split out of it — atomic writes, `DEFAULTS` backfill |
+| `tasklogs.js` | one file per completed task's transcript, read on demand |
 | `sessions.js` | the tmux/PTY manager and every launch command |
 | `hooks.js` | agent state, tokens, cost, summaries — source of truth |
 | `providers.js` | OpenRouter key, catalog and slug decoding |

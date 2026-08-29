@@ -28,12 +28,14 @@ module.exports = function register(deps) {
       workspaces: cfg.workspaces,
       selectedWorkspaceId: cfg.selectedWorkspaceId,
       maxAgents: cfg.maxAgents,
+      // live tasks carry `hasSessionLog`, never the transcript itself — those
+      // live in their own files (main/tasklogs.js) and are read one at a time
       tasks: cfg.tasks,
-      /* Without its transcript: each archived task can carry a 300KB
-       * sessionLog and the archive holds 200 of them, so shipping them whole
-       * was a ~60MB structured clone on every boot for a popup almost nobody
-       * opens. `hasSessionLog` is enough to draw the button; the transcript
-       * itself comes from task:archived-log below when one is actually read. */
+      /* Without its transcript, for the same reason: each archived task can
+       * carry a 300KB sessionLog and the archive holds 200 of them, so shipping
+       * them whole was a ~60MB structured clone on every boot for a popup
+       * almost nobody opens. `hasSessionLog` is enough to draw the button; the
+       * transcript itself comes from task:log when one is actually read. */
       archivedTasks: projectArchive(config.loadArchive()),
       autoUsageLimit: cfg.autoUsageLimit,
       skipPermissions: cfg.skipPermissions,

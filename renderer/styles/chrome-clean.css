@@ -599,7 +599,6 @@
  * per-frame GPU cost: while any of these floats over streaming terminals the
  * compositor re-blurs its backdrop on every frame the panes repaint. They all
  * take the same opaque-surface treatment. */
-.gs-box,
 #msg-pop,
 .branch-menu,
 .app-tooltip,
