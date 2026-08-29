@@ -1,6 +1,6 @@
 /* Icon rail + top bar rendering: workspace tiles (drag to reorder, right-click
- * menu for rename/remove), the top bar's active-workspace context, usage
- * mini bars. Exposes window.Topbar. */
+ * menu to start agents there / rename / remove), the top bar's
+ * active-workspace context, usage mini bars. Exposes window.Topbar. */
 
 const Topbar = (() => {
   const workspacesEl = document.getElementById('workspaces');
@@ -12,7 +12,8 @@ const Topbar = (() => {
   const WS_DRAG = 'text/swarmeye-ws';
 
   /* the 57px rail only shows initials, so a tile's own controls have nowhere
-   * to live — right-clicking one opens this two-item menu instead */
+   * to live — right-clicking one opens this menu instead */
+  const ADD_CHIPS = 5; // how many agents the menu offers to start at once
   const menu = document.createElement('div');
   menu.id = 'rail-menu';
   menu.hidden = true;
@@ -20,6 +21,9 @@ const Topbar = (() => {
   let menuWsId = null;
   // what the rail last drew — see the guard in renderWorkspaces
   let railSig = null;
+  // the last updateAgentCap figures: how many chips the menu may still offer
+  let capLive = 0;
+  let capMax = 0;
 
   function hideMenu() {
     menu.hidden = true;
@@ -39,6 +43,29 @@ const Topbar = (() => {
   function showMenu(tile, ws, handlers) {
     menuWsId = ws.id;
     menu.innerHTML = '';
+
+    /* start agents in the workspace under the cursor rather than the selected
+     * one — onAddAgents switches to it first, because a launch always lands in
+     * the selected workspace. Chips past the free slots are disabled; the row
+     * carries the reason, since a disabled button fires no hover event of its
+     * own and the tooltip falls through to it. */
+    const free = Math.max(0, capMax - capLive);
+    menu.appendChild(elt('div', 'rail-menu-label', 'Add agents'));
+    const chips = elt('div', 'rail-menu-chips');
+    if (free < ADD_CHIPS) chips.dataset.tip = free
+      ? `Only ${free} slot${free === 1 ? '' : 's'} left under the agent cap`
+      : 'Agent cap reached';
+    for (let n = 1; n <= ADD_CHIPS; n++) {
+      const chip = elt('button', 'rail-menu-chip', String(n));
+      chip.disabled = n > free;
+      if (!chip.disabled) chip.dataset.tip = `Start ${n} agent${n === 1 ? '' : 's'} in ${ws.name}`;
+      chip.addEventListener('click', () => {
+        hideMenu();
+        handlers.onAddAgents(ws.id, n);
+      });
+      chips.appendChild(chip);
+    }
+    menu.append(chips, elt('div', 'rail-menu-sep'));
 
     const rename = elt('button', 'rail-menu-item', 'Rename');
     rename.addEventListener('click', () => {
@@ -77,7 +104,7 @@ const Topbar = (() => {
     // the nested agent rows move on every status flip, so they are reconciled
     // on every beat — outside the signature guard above (features/rail/wsagents)
     workspaces.forEach((ws) => {
-      WsAgents.sync(ws.id, (counts[ws.id] || {}).panes || [], handlers.onOpenAgent, handlers.onCloseAgent);
+      WsAgents.sync(ws.id, (counts[ws.id] || {}).panes || [], handlers.onOpenAgent);
     });
   }
 
@@ -440,6 +467,8 @@ const Topbar = (() => {
   // the count itself reads in the rail (per-workspace badges); all the top bar
   // still needs from it is whether the cap is reached
   function updateAgentCap(total, max) {
+    capLive = total;
+    capMax = max;
     const capped = total >= max;
     if (addAgentBtn.disabled !== capped) addAgentBtn.disabled = capped;
     const tip = capped

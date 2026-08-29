@@ -16,7 +16,7 @@ No accounts, no backend, no telemetry. SwarmEye rides your existing Claude Code 
 
 Recently solid:
 
-- **The rail's workspaces fold open into their agents** — an activity arc per row, a one-line summary of what each agent was asked to do, click to jump to its pane. Right-click a workspace to rename or remove it.
+- **The rail's workspaces fold open into their agents** — an activity arc per row, a one-line summary of what each agent was asked to do, click to jump to its pane. Right-click a workspace to start 1–5 agents straight into it, rename it or remove it.
 - **A smaller surface.** History, the Swarm View, the swarm map, the Activity popover, workspace notes, prompt history, the roles editor, the review popover, workspace colours, pinning and per-agent worktrees are gone.
 - **The preview dock reloads itself** 1.5 seconds after an agent in that workspace finishes a turn — untick `auto` beside the reload button to stop it.
 - **Scoping to an area works again.** SwarmEye's own `.swarmeye/areas.json` still listed screens that had been removed, so picking one of those confined an agent to nothing at all. If you keep an `areas.json` in your own repo, check it still names paths that exist — a renamed folder silently empties its area.

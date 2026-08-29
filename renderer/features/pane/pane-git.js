@@ -15,7 +15,10 @@ Object.assign(Pane.prototype, {
       return;
     }
     this.gitEl.style.display = '';
-    this.gitEl.textContent = '⎇ ' + info.branch;
+    // an icon rather than '⎇': the system font on a Mac has no glyph for it and
+    // draws a box, and the chip is the header's most-read chip
+    this.gitEl.innerHTML = Icons.markup('branch');
+    this.gitEl.append(elt('span', 'pane-git-name', info.branch));
     this.gitEl.classList.toggle('dirty', !!info.dirty);
     // dirty is null when the status check timed out — saying "clean" there is a lie
     this.gitEl.dataset.tip = (info.dirty === null

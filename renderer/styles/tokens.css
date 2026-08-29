@@ -42,6 +42,9 @@
 
   --tag: #a78bfa;
   --amber: #f5b544;
+  /* the one "this is going well" green: the cache-hit share in the usage
+     footer, and nothing else yet */
+  --ok: #4ade80;
   --err: #ff5a5a;
   --term-bg: #0c0e11;
   --pill-hover: rgba(214, 255, 75, 0.08);
@@ -99,6 +102,7 @@
 
   --tag: #7c3aed;
   --amber: #8f5c00;
+  --ok: #14712f;
   --err: #c62828;
   --term-bg: #ffffff;
   --entry-dot: #2563eb;

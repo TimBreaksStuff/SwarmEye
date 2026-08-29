@@ -62,15 +62,39 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  overflow: hidden;
 }
+/* the card's title bar — the same 7px accent square, UI-face name and flat
+ * divider the Skills card uses, so the two views read as one product */
 .board-head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
   gap: 12px;
-  min-height: 32px;
+  height: 58px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
 }
+.board-head-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.board-head-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* pushes what follows to the right edge — used in the form's chip row and
+ * its action row */
+.board-spacer { flex: 1; }
 .board-head .kbd-title {
   margin-bottom: 0;
   font-family: var(--font-mono);
@@ -92,6 +116,19 @@
   border-color: var(--accent);
 }
 #board-new-btn:hover { box-shadow: 0 0 14px -4px var(--accent-glow); background: var(--accent); color: var(--on-accent); }
+/* leaving the view is not an action: bare text beside the two framed buttons.
+ * Both selectors beat .pill on specificity, which is the only lever an
+ * area sheet loading before chrome-clean.css has. */
+#board-close-btn {
+  color: var(--text2);
+  background: transparent;
+  border-color: transparent;
+}
+#board-close-btn:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-color: transparent;
+}
 
 /* the board's two swap-in panels — the columns view and the archive view */
 #board-main,
@@ -104,38 +141,39 @@
 #board-main[hidden] { display: none; }
 
 .board-form-flex {
-  display: flex;
-  align-items: stretch;
-  gap: 14px;
-  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
 }
+/* the form and the scoreboard open and close together — without this the
+   closed state still drew a padded, bordered empty band */
+.board-form-flex:has(> #board-form[hidden]) { display: none; }
 #board-form {
-  width: 520px;
-  max-width: 100%;
-  background: color-mix(in srgb, var(--surface) 60%, transparent);
-  backdrop-filter: blur(14px);
+  min-width: 0;
+  background: var(--surface);
+  backdrop-filter: none;
   border: 1px solid var(--border2);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: 12px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  box-shadow: 0 26px 64px -30px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  gap: 14px;
+  box-shadow: none;
 }
 #board-form[hidden] { display: none; }
 #board-stats {
-  width: 200px;
-  max-width: 100%;
-  flex: none;
-  background: color-mix(in srgb, var(--surface) 60%, transparent);
-  backdrop-filter: blur(14px);
+  min-width: 0;
+  background: var(--surface);
+  backdrop-filter: none;
   border: 1px solid var(--border2);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: 12px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  box-shadow: 0 26px 64px -30px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  gap: 16px;
+  box-shadow: none;
 }
 #board-stats[hidden] { display: none; }
 .board-stats-title {
@@ -146,23 +184,30 @@
   letter-spacing: 0.05em;
   margin-bottom: 2px;
 }
+.board-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 12px;
+}
 .board-stats-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
 }
 .board-stats-n {
   font-family: var(--font-mono);
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
   color: var(--text);
-  min-width: 22px;
-  text-align: right;
 }
+/* the running total is the one number the panel is actually keeping */
+#board-stats-year { color: var(--accent-text); }
 .board-stats-label {
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
 }
 .board-stats-quip {
   margin-top: auto;
@@ -178,17 +223,25 @@
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--text);
-  background: color-mix(in srgb, var(--term-bg) 55%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  background: var(--term-bg);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 12px 13px;
   resize: vertical;
   outline: none;
   scrollbar-width: thin;
   scrollbar-color: var(--border3) transparent;
 }
 #board-form-text:focus,
-#board-form-chain:focus { border-color: var(--border-hover); }
+#board-form-chain:focus { border-color: var(--accent); }
+/* the task itself is prose, so it is set in the UI face and given the room to
+ * read as the one thing this form is about */
+#board-form-text {
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.6;
+  min-height: 82px;
+}
 /* the follow-up (chained tasks) box is secondary to the task text — same
  * surface, quieter type */
 #board-form-chain { font-size: 12px; color: var(--text2); }
@@ -211,33 +264,146 @@
 .board-form-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   flex-wrap: wrap;
 }
-.board-form-row-modes {
-  flex-wrap: nowrap;
-  gap: 10px;
+/* workspace + category ride above the form as two chips, the way the card
+ * they will become carries them */
+.board-form-chips select {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  height: 32px;
+  max-width: 220px;
+  color: var(--text);
+  background: var(--term-bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 0 9px;
 }
-.board-form-row select {
+
+/* ---------- one labelled field: a mono caption over the control ---------- */
+
+.board-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.board-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+/* the harness picker is only shown for OpenRouter models — board.js toggles
+   the <select>, so the caption above it has to follow it out */
+.board-field:has(> select[hidden]) { display: none; }
+.board-field-labelrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.board-field-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.board-field-hint {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.board-field select {
+  width: 100%;
+  height: 34px;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text);
-  background: color-mix(in srgb, var(--term-bg) 55%, transparent);
-  border: 1px solid var(--border3);
-  border-radius: 6px;
-  padding: 5px 8px;
+  background: var(--term-bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 0 9px;
 }
-.board-form-row select option { background: var(--term-bg); }
-.board-form-row input[type="radio"],
-.board-form-row input[type="checkbox"] { accent-color: var(--accent); }
-.board-form-row label {
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--text2);
+.board-form-chips select option,
+.board-field select option { background: var(--term-bg); }
+.board-form-chips select:focus,
+.board-field select:focus { outline: none; border-color: var(--accent); }
+
+/* ---------- the WHEN segmented control ----------
+ * still the four radios app.js reads, with the input itself taken out of the
+ * flow — keyboard and screen readers keep the radio group they had */
+.board-seg {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 3px;
+  background: var(--term-bg);
+  border: 1px solid var(--border2);
+  border-radius: 9px;
+}
+.board-seg label {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  color: var(--text2);
+  padding: 7px 12px;
+  border-radius: 6px;
   cursor: pointer;
+}
+.board-seg label:hover { color: var(--text); }
+.board-seg label:has(input:checked) {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.board-seg label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---------- the two option checkboxes, as toggle chips ---------- */
+.board-opts {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  min-height: 34px;
+}
+.board-toggle {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.board-toggle:hover { color: var(--text2); }
+.board-toggle:has(input:checked) {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border2));
+}
+.board-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* the real control, kept in the DOM and out of the layout */
+.board-seg input,
+.board-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 #board-form-category-manage,
 #board-form-mic {
@@ -254,6 +420,25 @@
 #board-form-category-manage:hover,
 #board-form-mic:hover { border-color: var(--border-hover); color: var(--text); }
 #board-form-mic svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
+/* both chip-row buttons stand 32px like the two selects beside them. The
+   descendant selector is deliberate: chrome-clean.css sizes the gear at 26x24
+   from a later sheet, and specificity is the only way past it from here. */
+.board-form-chips #board-form-category-manage,
+.board-form-chips #board-form-mic {
+  height: 32px;
+  border-radius: 8px;
+  border-color: var(--border2);
+}
+.board-form-chips #board-form-category-manage { width: 32px; }
+.board-form-chips #board-form-mic {
+  width: auto;
+  gap: 7px;
+  padding: 0 11px;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+}
 #board-form-mic.listening { color: var(--err); border-color: var(--err); }
 .board-form-hint {
   font-family: var(--font-mono);
@@ -262,7 +447,7 @@
 }
 .board-form-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
 }
 .board-form-actions button {
@@ -292,7 +477,9 @@
   box-shadow: 0 0 14px -4px var(--accent-glow);
 }
 
-/* the board's filter bar, the archive view's copy of it, and the Skills one */
+/* the board's filter bar, the archive view's copy of it, and the Skills one.
+ * On the board it is a band of the card, so it carries the card's padding and
+ * divider rather than a margin. */
 .board-filters,
 .skills-filters,
 .board-archive-filters {
@@ -300,6 +487,11 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+}
+.board-filters {
+  padding: 12px 16px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
 }
 .board-filters select,
 .board-archive-filters select {
@@ -318,6 +510,7 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 14px;
+  padding: 16px;
   overflow: hidden;
 }
 .board-col {
@@ -325,25 +518,25 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  background: var(--surface);
   border: 1px solid var(--border3);
   border-radius: 12px;
-  padding: 10px 12px;
 }
 .board-col-head {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text2);
-  padding-bottom: 8px;
+  padding: 13px 14px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
 }
-.board-col-icon { width: 15px; height: 15px; flex: none; }
+/* the status shape: an outline for what waits, a filled dot for what runs */
+.board-col-dot { width: 9px; height: 9px; flex: none; }
 .board-col-title { flex: 1; }
 .board-col-n { color: var(--muted); font-weight: 400; }
 .board-col-head .board-col-n { margin-left: auto; }
@@ -366,14 +559,30 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 12px 14px;
   scrollbar-width: thin;
   scrollbar-color: var(--border3) transparent;
 }
+/* an empty column is centred on a dashed placeholder tile, so four of them
+ * read as a board waiting for work rather than four broken panels */
 .board-col-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--muted);
-  padding: 8px 2px;
+  padding: 24px 8px;
+}
+.board-col-empty::before {
+  content: '';
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px dashed var(--border3);
 }
 
 .board-card {
@@ -602,6 +811,9 @@
 .board-del:hover { color: var(--err); }
 .board-del.armed { color: var(--err); border-color: var(--err); }
 
+#board-archive {
+  padding: 16px;
+}
 #board-archive[hidden] { display: none; }
 .board-archive-head {
   display: flex;
@@ -817,20 +1029,21 @@
 
 /* --- the board's four columns --- */
 .board-col {
-  border-radius: 10px;
+  border-radius: 12px;
   border-color: var(--border);
 }
 
 .board-col-head {
   font-family: var(--font-ui);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
   text-transform: none;
+  color: var(--text2);
 }
 
-/* the category colour moves off the container and onto the icon and the
- * count — four differently-outlined boxes read as four unrelated widgets */
+/* the category colour moves off the container and onto the status dot — four
+ * differently-outlined boxes read as four unrelated widgets */
 .board-col-cat-manual,
 .board-col-cat-scheduled,
 .board-col-cat-active,
@@ -844,15 +1057,41 @@
   border-bottom-color: var(--border);
 }
 
-.board-col-cat-manual .board-col-icon { color: var(--entry-dot); }
+/* only the column that is doing something is lit: the two waiting columns are
+ * outlines, the finished one a spent dot */
+.board-col-cat-manual .board-col-dot {
+  border-radius: 2px;
+  border: 1px solid var(--muted2);
+}
 
-.board-col-cat-scheduled .board-col-icon { color: var(--amber); }
+.board-col-cat-scheduled .board-col-dot {
+  border-radius: 50%;
+  border: 1px solid var(--muted);
+}
 
-.board-col-cat-active .board-col-icon { color: var(--accent-text); }
+.board-col-cat-active .board-col-dot {
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
 
-.board-col-cat-completed .board-col-icon { color: var(--tag); }
+.board-col-cat-completed .board-col-dot {
+  border-radius: 2px;
+  background: var(--muted2);
+}
 
 .board-col-n { font-family: var(--font-mono); font-size: 11px; }
+
+/* the columns are raised panels now, so a card on one has to sit back off it.
+ * Both selectors outrank chrome-clean.css's .board-card pair, which is the
+ * only way to reach them from a sheet that loads before it. */
+.board-col-list .board-card { background: var(--hover); }
+/* ...and hovering lifts the frame, not the fill — matching the fill would
+ * dissolve the card into the column it sits on */
+.board-col-list .board-card.jumpable:hover {
+  background: var(--hover);
+  border-color: var(--border3);
+}
 
 /* a category is a label, not a state — the priority chip beside it is the one
  * that earns a colour */

@@ -27,42 +27,6 @@ const WsAgents = (() => {
   // behind it changes, not on every beat
   const summaries = new Map();
 
-  /* ---- row context menu ----
-   * A row is a button with no room for controls of its own, so right-clicking
-   * one opens this single-item menu. Wears #rail-menu's styling (rail.css);
-   * one element for the whole rail, re-anchored on each open. */
-  const menu = document.createElement('div');
-  menu.id = 'ws-agent-menu';
-  menu.hidden = true;
-  document.body.appendChild(menu);
-
-  function hideMenu() { menu.hidden = true; }
-
-  document.addEventListener('mousedown', (e) => {
-    if (menu.hidden || menu.contains(e.target)) return;
-    hideMenu();
-  }, true);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !menu.hidden) hideMenu();
-  });
-
-  /* Closing from here kills the agent on one click — no arm-then-confirm like
-   * the pane's ✕, since opening a menu and picking the one item in it is
-   * already two deliberate clicks. */
-  function showMenu(x, y, sid, onClose) {
-    menu.innerHTML = '';
-    const close = elt('button', 'rail-menu-item rail-menu-danger', 'Close agent');
-    close.addEventListener('click', () => {
-      hideMenu();
-      onClose(sid);
-    });
-    menu.append(close);
-    menu.hidden = false;
-    // unhidden first: the menu has to be measured to stay inside the window
-    menu.style.left = Math.round(Math.min(x, window.innerWidth - menu.offsetWidth - 8)) + 'px';
-    menu.style.top = Math.round(Math.min(y, window.innerHeight - menu.offsetHeight - 8)) + 'px';
-  }
-
   /* ---- summary ----
    * The launch prompt, cut down to something that fits a 200px row. Not a
    * paraphrase: leading slash-commands and politeness go, the first few real
@@ -126,7 +90,7 @@ const WsAgents = (() => {
   /* ---- wiring ----
    * topbar.js rebuilds every tile at once, so the element registry is dropped
    * whole rather than diffed. The fold state above outlives it. */
-  function reset() { groups.clear(); hideMenu(); }
+  function reset() { groups.clear(); }
 
   /* Called while topbar.js builds a workspace tile: the caret goes in the
    * tile, the returned list becomes the tile's next sibling. */
@@ -164,7 +128,7 @@ const WsAgents = (() => {
   /* Reconciled in place rather than rebuilt: this runs on every status flip,
    * and wiping the rows would drop the one the cursor is resting on — Chromium
    * fires no mouseout for a removed node, so its tooltip would orphan. */
-  function sync(wsId, panes, onOpen, onClose) {
+  function sync(wsId, panes, onOpen) {
     const g = groups.get(wsId);
     if (!g) return;
     const { list } = g;
@@ -180,16 +144,11 @@ const WsAgents = (() => {
       row.addEventListener('click', () => {
         if (row.dataset.sid && row.__onOpen) row.__onOpen(row.dataset.sid);
       });
-      row.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        if (row.dataset.sid && row.__onClose) showMenu(e.clientX, e.clientY, row.dataset.sid, row.__onClose);
-      });
       list.appendChild(row);
     }
     panes.forEach((pane, i) => {
       const row = list.children[i];
       row.__onOpen = onOpen;
-      row.__onClose = onClose;
       const st = pane.exited ? 'exited'
         : pane.status === 'working' ? 'working'
         : pane.status === 'attention' ? 'attn'

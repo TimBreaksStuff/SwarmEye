@@ -59,6 +59,7 @@
   /* the "needs attention" amber, pushed yellow: the accent is orange now, and
    * a chip that matches the accent is a chip that stops standing out */
   --amber: #8a6d06;
+  --ok: #1a7f37;
   --err: #d70015;
   --term-bg: #ffffff;
   --pill-hover: rgba(194, 98, 10, 0.10);
@@ -98,6 +99,7 @@
   --tag: #bf5af2;
   /* pushed yellow, away from the orange accent — see the light block */
   --amber: #ffd60a;
+  --ok: #30d158;
   --err: #ff453a;
   --term-bg: #000000;
   --pill-hover: rgba(255, 159, 10, 0.16);
@@ -186,12 +188,30 @@
 :root[data-native="on"] #palette-pop,
 :root[data-native="on"] #notif-panel,
 :root[data-native="on"] .gs-box,
-:root[data-native="on"] #board-category-pop {
+:root[data-native="on"] #board-category-pop,
+:root[data-native="on"] #rail-menu {
   border-radius: 12px;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: saturate(180%) blur(24px);
   box-shadow: 0 16px 44px -12px rgba(0, 0, 0, 0.38);
+}
+
+/* the workspace menu is a Mac contextual menu here: the app's accent-tinted
+ * hairline goes back to the system one (the shared rule above), the count
+ * chips take the system accent on hover like a selected menu row, and Remove
+ * carries the system red rather than a tinted fill. */
+:root[data-native="on"] #rail-menu { padding: 5px; }
+:root[data-native="on"] .rail-menu-label {
+  padding: 6px 8px 5px;
+  color: var(--muted);
+  font-weight: 400;
+}
+:root[data-native="on"] .rail-menu-chip { border-radius: 6px; }
+:root[data-native="on"] .rail-menu-item { border-radius: 6px; }
+:root[data-native="on"] .rail-menu-danger:hover {
+  background: var(--err);
+  color: #fff;
 }
 
 /* the toolbar pills — mono, uppercase and letter-spaced is a terminal look,
@@ -207,7 +227,10 @@
   text-transform: none;
   border-radius: 6px;
 }
-:root[data-native="on"] #gsearch-btn { border-radius: 6px; }
+/* …except + Agent and the search icon: both belong to the top bar's round
+ * tray, and a 6px corner beside its circles reads as a stray control */
+:root[data-native="on"] #add-agent,
+:root[data-native="on"] #gsearch-btn { border-radius: 999px; }
 
 /* ---------- controls ---------- */
 

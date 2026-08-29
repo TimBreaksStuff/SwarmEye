@@ -13,6 +13,9 @@ Object.assign(Pane.prototype, {
     const status = this.status;
     this.dot.classList.toggle('idle', status === 'idle');
     this.dot.classList.toggle('attn', status === 'attention');
+    // the usage footer repeats the dot beside its clock, so it says the same
+    this.usageDotEl.classList.toggle('idle', status === 'idle');
+    this.usageDotEl.classList.toggle('attn', status === 'attention');
     this.el.classList.toggle('attn', status === 'attention');
     this.busyEl.style.display = status === 'working' ? '' : 'none';
     this.syncWaitChip();
@@ -263,10 +266,10 @@ Object.assign(Pane.prototype, {
       this.working = true;
       this.awaitingPrompt = false;
       this.noteTurnStart();
-      // "vibing..." from the first moment of the turn, not the first tool call
-      // — otherwise the equalizer runs wordless while the model is thinking,
-      // and a turn with no tool calls never gets a status at all
-      this.setStatusText('vibing...');
+      // no word for "working": the equalizer in the usage footer says it, and
+      // the tool trail beside it says which tool. The header status is kept
+      // for the two states motion cannot spell — a permission prompt and done.
+      this.setStatusText('');
       this.retireOpenCalls(); // a new turn retires whatever the last one left open
     } else if (event === 'PreToolUse') {
       this.working = true;
@@ -280,8 +283,8 @@ Object.assign(Pane.prototype, {
         this.syncRightsize();
         this.noteCall(tool, target);
       }
-      // one word for every tool; which tool it is reads in the status line
-      this.setStatusText('vibing...');
+      // still wordless mid-turn — the tool trail in the usage footer names it
+      this.setStatusText('');
     } else if (event === 'PostToolUse') {
       // between two calls is still mid-turn — the agent is working, not idle
       this.working = true;

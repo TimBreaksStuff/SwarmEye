@@ -98,7 +98,7 @@ The copy is the **focused pane** when it belongs to the selected workspace, othe
 
 Every agent SwarmEye spawns reports its real state through Claude Code's hook system, rather than SwarmEye guessing from output timing:
 
-- **Working** — the dot goes lime and the header reads `vibing...` next to a pulsing equalizer. Which tool it is on shows in the status line itself, and the last few it ran sit in the [cost & context panel](#cost--context-panel).
+- **Working** — the dot goes lime and a pulsing equalizer runs at the left edge of the [cost & context panel](#cost--context-panel), where the tool trail beside it names what the agent is on. No word in the header: the motion says it. With the panel switched off the equalizer sits in the header instead, so the signal is never lost with the row.
 - **Waiting on you** — a permission prompt or a question rings the whole pane frame in the theme's accent with a soft glow, shows the reason, and puts the age of the wait beside it (`waiting 4m`).
 - **Done** — the pane shows `done` and flags attention.
 

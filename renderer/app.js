@@ -179,15 +179,17 @@ function syncChromeNow() {
   Topbar.renderWorkspaces(state.workspaces, state.selectedWorkspaceId, counts, {
     onSelect: (id) => { toggleBoard(false); selectWorkspace(id); }, // a pill always means "show me the grid"
     onOpenAgent: notifHandlers.onOpen, // a fold-out agent row focuses its pane
-    // right-clicking that row offers Close agent — same kill path as the pane's ✕
-    onCloseAgent: (sid) => {
-      const pane = state.panes.get(sid);
-      if (pane) paneHandlers.onClose(pane);
-    },
 
     onRemove: removeWorkspace,
     onReorder: reorderWorkspaces,
     onRename: renameWorkspace,
+    // the rail menu's count chips. A launch always lands in the selected
+    // workspace, so switch to the right-clicked one first and await it.
+    onAddAgents: async (id, n) => {
+      toggleBoard(false);
+      await selectWorkspace(id);
+      spawnAgents(n);
+    },
   });
   Topbar.updateAgentCap(liveAgentCount(), maxAgents);
   emptyState.style.display = grid.panes.length ? 'none' : '';

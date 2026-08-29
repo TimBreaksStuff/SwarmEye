@@ -510,6 +510,11 @@
  * grid altogether, so a Claude launch keeps exactly the five it had */
 .launch-options.has-harness { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .launch-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+/* ...and this is what makes hiding one work: the rule above sets a display,
+ * which beats the [hidden] attribute's own. Without it the Harness field kept
+ * its place under the Claude provider — on screen, while fillModels had
+ * already decided it was hidden and getSettings ignored what it said. */
+.launch-field[hidden] { display: none; }
 /* Provider and Model name who is billed ("Anthropic Subscription: Sonnet"),
  * which one column ellipsizes away — see LAUNCH_FIELDS in launcher.js */
 .launch-field--wide { grid-column: span 2; }

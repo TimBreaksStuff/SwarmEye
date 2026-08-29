@@ -221,10 +221,12 @@
   user-select: text;
 }
 
-/* bottom panel: this agent's context fill, spend and burn (⌨ Options) */
+/* bottom panel: this agent's context fill, spend and burn (⌨ Options).
+   One row of pills — each capsule is one reading, grouped so the row can be
+   scanned in five stops rather than eleven. */
 .pane-usage {
   flex: none;
-  padding: 5px 10px 6px;
+  padding: 6px 8px 7px;
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--text) 2%, transparent);
   font-family: var(--font-mono);
@@ -233,20 +235,35 @@
   user-select: none;
 }
 
+/* it wraps rather than truncates: a pane in a 2x2 grid is half as wide as the
+   row wants, and a reading that silently disappears is worse than a second line */
 .pane-usage-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 5px;
   min-width: 0;
   white-space: nowrap;
 }
 
-.pane-usage-row > * { flex: none; }
+/* the capsule itself — filled, pill-round, one reading per pill */
+.pane-usage-cap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
 
-.pane-usage-sub {
-  margin-top: 3px;
-  opacity: 0.75;
-  overflow: hidden;
+/* the hairline inside the spend pill, between what it cost and what the cache
+   saved — one pill, two readings */
+.pane-usage-div {
+  width: 1px;
+  height: 11px;
+  flex: none;
+  background: color-mix(in srgb, var(--text) 18%, transparent);
 }
 
 .pane-usage-bar {
@@ -255,7 +272,7 @@
   flex: none;
   border-radius: 3px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--text) 12%, transparent);
+  background: color-mix(in srgb, var(--text) 16%, transparent);
 }
 
 .pane-usage-bar > i {
@@ -272,27 +289,61 @@
 .pane-usage.warn .pane-usage-bar > i { background: var(--amber); box-shadow: none; }
 .pane-usage.hot .pane-usage-bar > i { background: var(--err); box-shadow: none; }
 
-.pane-usage-cost { color: var(--text); }
+.pane-usage-ctx,
+.pane-usage-cost { color: var(--text2); }
+/* the cache share is the one reading that is good news when it is high */
+.pane-usage-cache { color: var(--ok); }
 
-.pane-usage-model,
-.pane-usage-tools {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* the turn pill: dot, clock, turns, share — read as one sentence, so the
+   parts after the dot are joined by middots rather than spaced apart */
+.pane-usage-run { gap: 5px; }
+.pane-usage-run > span + span::before {
+  content: '·';
+  margin-right: 5px;
+  color: var(--faint);
 }
+.pane-usage-run > .pane-usage-dot + span::before { content: none; }
+.pane-usage-dot { box-shadow: none; }
 
-/* effort + model, pinned to the right edge as one pair */
-.pane-usage-right {
+/* the row's right half: the trail and what the agent runs on, pushed to the
+   edge together and wrapping as one group */
+.pane-usage-end {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
   min-width: 0;
   margin-left: auto;
 }
 
-/* the model reads in the theme's own accent, the way the header chip did */
+.pane-usage-tools {
+  gap: 5px;
+  overflow: hidden;
+}
+.pane-usage-tool {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the newest call is the one the agent is in — the older two are context */
+.pane-usage-tool.now { color: var(--text2); }
+.pane-usage-arrow { color: var(--faint); }
+
+/* provider / effort / model: the only capsule drawn rather than filled, so the
+   row ends on an outline the way the design's does */
+.pane-usage-right {
+  gap: 7px;
+  background: none;
+  border: 1px solid var(--border2);
+  padding: 3px 9px;
+}
+
+/* the model is the loudest thing in its pill; effort and provider frame it */
 .pane-usage-model {
-  color: var(--text2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
   letter-spacing: 0.04em;
   cursor: pointer;
 }
@@ -303,15 +354,6 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
-}
-.pane-usage-tools {
-  flex: 1 1 auto;
-  text-align: right;
-}
-
-.pane-usage-spark {
-  letter-spacing: 0;
-  color: var(--text2);
 }
 
 .pane-dot {
@@ -691,7 +733,6 @@
 }
 .pane-git:hover { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
 .pane-git.dirty { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, transparent); background: color-mix(in srgb, var(--amber) 8%, transparent); }
-.pane-git.dirty::after { content: ' ●'; font-size: 8px; }
 
 /* branch dropdown opened from the git chip */
 .branch-menu {
@@ -924,118 +965,190 @@
 /* it was mono 10px uppercase --muted, quieter than every chip beside it */
 .pane-title {
   font-family: var(--font-ui);
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
   text-transform: none;
   color: var(--text);
 }
 
-/* --- one chip shape, three tones --- */
-/* neutral: what the agent is (task, role, effort, model) */
+/* --- one capsule shape, three tones --- */
+/* Every reading in the header is a pill, the way every reading in the usage
+   footer is: same fill, same radius, so a header carrying six chips still
+   reads as one row rather than six competing shapes. */
 .pane-task,
 .pane-role,
 .pane-effort,
 .pane-llm,
 .pane-git,
-.pane-badge {
+.pane-badge,
+.pane-status,
+.pane-wait,
+.pane-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
   color: var(--text2);
-  border: 1px solid var(--border2);
-  background: transparent;
-  border-radius: 6px;
-  padding: 2px 7px;
+  border: none;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border-radius: 999px;
+  padding: 4px 10px;
 }
 
-/* accent: the branch chip is the loudest of the clickable ones */
-.pane-git { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 35%, var(--border2)); }
+/* the branch chip: neutral like its neighbours, with the colour spent on the
+   dot that says whether the tree is dirty — the chip's own hue said the same
+   thing twice */
+.pane-git {
+  color: var(--text2);
+  cursor: pointer;
+}
+.pane-git svg { width: 12px; height: 12px; flex: none; color: var(--muted); }
+.pane-git-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pane-git::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  font-size: 0;
+}
+.pane-git.dirty { color: var(--text2); }
+.pane-git.dirty::after { background: var(--amber); }
+.pane-git:hover { background: color-mix(in srgb, var(--text) 11%, transparent); }
 
-.pane-git:hover { background: var(--hover); border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
+/* the role preset is the one neutral chip that names a choice, so it keeps the
+   accent it had — on the shared fill rather than its own outline */
+.pane-role { color: var(--accent-text); }
 
 /* the model chip opens the model picker — clickable, but it stays neutral:
    what the agent runs is not a call to action the way its branch is */
-.pane-llm { cursor: pointer; }
-
-.pane-llm:hover { background: var(--hover); border-color: var(--border); }
-
-.pane-git.dirty {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
-  background: color-mix(in srgb, var(--amber) 8%, transparent);
-}
+.pane-llm { display: inline-block; cursor: pointer; }
+.pane-llm:hover { background: color-mix(in srgb, var(--text) 11%, transparent); }
 
 /* state: the pane is not running the way it should be */
 .pane-badge {
   color: var(--err);
-  border-color: color-mix(in srgb, var(--err) 40%, var(--border2));
-  background: color-mix(in srgb, var(--err) 8%, transparent);
+  background: color-mix(in srgb, var(--err) 12%, transparent);
 }
 
 .pane.detached .pane-badge {
   color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
-  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
 }
 
+/* the hook status says what the agent is doing — sentences, not shouting */
+.pane-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  cursor: pointer;
+}
+
+/* blocked on you, and for how long: the one header pill that is a request */
+.pane-wait {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  cursor: pointer;
+}
+
+/* the area or folder a scoped agent may edit inside. Dashed, because a
+   boundary is drawn around the agent rather than owned by it — and unscoped is
+   the same pill with nothing in it but the folder. */
+.pane-scope {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text2);
+  background: none;
+  border: 1px dashed var(--border3);
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.pane-scope:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border3)); }
+.pane-scope.off {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  padding: 3px 6px;
+}
+.pane-scope.off svg { width: 12px; height: 12px; display: block; }
+
 /* the right-sizing offer: the one header control that changes what the agent
-   costs, so it reads as an action (accent, like the branch chip) rather than a
-   status. Armed, it commits to the colour of the tier it is moving to. */
+   costs, so it reads as an action (accent, outlined) rather than a status.
+   Armed, it commits to the colour of the tier it is moving to. */
 .pane-rightsize {
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 500;
   color: var(--accent-text);
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border2));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border2));
   background: transparent;
-  border-radius: 6px;
-  padding: 2px 7px;
+  border-radius: 999px;
+  padding: 3px 10px;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.pane-rightsize:hover { background: var(--hover); border-color: color-mix(in srgb, var(--accent) 55%, var(--border2)); }
+.pane-rightsize:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 .pane-rightsize.armed {
-  color: var(--bg);
+  color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);
 }
 
-/* the permission mode is a control, not a chip, but it reads on the same line */
+/* the permission mode: an outlined pill that names itself, with the native
+   select inside carrying the value and every behaviour it already had */
+.pane-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+}
+.pane-mode-pill:hover { border-color: var(--border-hover); }
+.pane-mode-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
 .pane-mode {
-  height: 22px;
+  height: 20px;
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
-  color: var(--text2);
-  border-color: var(--border2);
+  color: var(--text);
+  /* background-color only: `background` would drop the chevron image the base
+     rule paints, and the pill has no other affordance that it opens */
+  background-color: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 0 16px 0 0;
+  background-position: right 3px center;
 }
+.pane-mode:hover,
+.pane-mode:focus { border: none; outline: none; }
 
 /* a standing "stop editing" request that plan mode itself never took — amber
    rather than the plain control colour, because it is the one mode reading the
    footer would not tell you about */
-.pane-mode.asked {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 40%, var(--border2));
-  background: color-mix(in srgb, var(--amber) 8%, transparent);
+.pane-mode.asked { color: var(--amber); }
+.pane-mode-pill:has(.pane-mode.asked) {
+  border-color: color-mix(in srgb, var(--amber) 45%, var(--border2));
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
 }
-
-/* the hook status says what the agent is doing — sentences, not shouting */
-.pane-status {
-  font-family: var(--font-ui);
-  font-size: 11px;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--text2);
-  opacity: 1;
-  cursor: pointer;
-}
+.pane-mode-pill:has(.pane-mode:disabled) { opacity: 0.4; }
 
 /* --- one busy signal, not three --- */
 /* a pulsing dot, an equalizer and a status line all said "working" at once.
@@ -1047,55 +1160,74 @@
 
 /* --- the usage panel reads in the same voice --- */
 
-/* the panel's spelling of the model chip, same picker behind it */
-
-.pane-usage-model:hover { color: var(--text); }
+/* the panel's spelling of the model chip, same picker behind it. The model
+   already reads in --text, so the hover is the pill lighting up rather than
+   the word */
+.pane-usage-right:has(.pane-usage-model:hover) { border-color: var(--border-hover); }
 
 /* which upstream the agent runs on, quiet like the effort next to it — the
-   panel's right edge reads as one run, "Anthropic / HIGH / opus-5" */
+   pill reads "Anthropic HIGH Opus 5", the outline doing the joining that a
+   run of slashes used to */
 .pane-usage-provider { color: var(--muted); white-space: nowrap; }
 
-.pane-usage-right > span + span::before {
-  content: '/';
-  margin-right: 8px;
-  color: var(--border3);
-}
-
 /* --- the actions: one segmented cluster --- */
+/* a filled capsule holding round buttons, in three groups: what the agent
+   does, how big its text is, what happens to its window. A button lifts off
+   the fill on hover rather than tinting inside it. */
 .pane-actions {
   display: flex;
   align-items: center;
   flex: none;
-  gap: 0;
-  padding: 1px;
-  border: 1px solid var(--border2);
-  border-radius: 8px;
+  gap: 1px;
+  padding: 3px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.pane-actions-div {
+  width: 1px;
+  height: 13px;
+  flex: none;
+  margin: 0 3px;
+  background: color-mix(in srgb, var(--text) 16%, transparent);
 }
 
 .pane-actions .pane-btn {
   width: 24px;
-  height: 22px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  height: 24px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
   color: var(--text2);
   transition: color .15s, background .15s;
 }
 
-.pane-actions .pane-btn:hover { color: var(--text); background: var(--hover); border-color: transparent; }
+.pane-actions .pane-btn:hover {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
 
 .pane-actions .pane-btn svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
 
-.pane-actions .pane-btn.close:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
-
-.pane-actions .pane-btn.close.armed {
+/* hover warns, armed commits: the close button is the one control in the
+   header that ends something, and the two states have to be told apart */
+.pane-actions .pane-btn.close:hover {
   color: var(--err);
-  background: color-mix(in srgb, var(--err) 20%, transparent);
-  border-color: transparent;
+  background: color-mix(in srgb, var(--err) 14%, transparent);
+  box-shadow: none;
 }
 
-.pane-actions .pane-btn.mic.listening { color: var(--err); border-color: transparent; }
+.pane-actions .pane-btn.close.armed {
+  color: #fff;
+  background: var(--err);
+  box-shadow: none;
+}
 
-.pane-actions .pane-btn.mic.hands-free { color: var(--accent-text); border-color: transparent; }
+.pane-actions .pane-btn.mic.listening { color: var(--err); }
+
+.pane-actions .pane-btn.mic.hands-free { color: var(--accent-text); }
 
 /* answering a live permission prompt is the one thing worth its own weight,
  * so the pair stays outside the cluster */
@@ -1153,30 +1285,20 @@
 /* how long it has been blocked. Amber — "this needs a human" — and clickable,
    since the answer to reading it is almost always to go there. */
 .pane-wait {
-  font-family: var(--font-ui);
-  font-size: 11px;
-  font-weight: 500;
   color: var(--amber);
-  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--border2));
-  background: color-mix(in srgb, var(--amber) 8%, transparent);
-  border-radius: 6px;
-  padding: 2px 7px;
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
   white-space: nowrap;
   cursor: pointer;
 }
 
-.pane-wait:hover { background: color-mix(in srgb, var(--amber) 16%, transparent); }
+.pane-wait:hover { background: color-mix(in srgb, var(--amber) 20%, transparent); }
 
 /* --- subagents, and asking an agent to stop editing --- */
 /* a Task subagent is invisible in a terminal — its whole run is one line of its
    parent's output. The count is the signal. */
 .pane-sub {
-  font-family: var(--font-mono);
-  font-size: 11px;
   color: var(--tag);
-  border: 1px solid color-mix(in srgb, var(--tag) 35%, var(--border2));
-  border-radius: 6px;
-  padding: 2px 7px;
+  background: color-mix(in srgb, var(--tag) 12%, transparent);
   white-space: nowrap;
 }
 

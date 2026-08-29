@@ -50,7 +50,6 @@ const livePanes = new Set();
 const CONTEXT_WINDOW = 200000;
 const CONTEXT_WINDOW_LARGE = 1000000;
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
-const SPARK_CHARS = '▁▂▃▄▅▆▇█';
 const TOOL_TRAIL_MAX = 3;
 
 /* Claude Code's own Task subagents. They are invisible in a terminal — the
@@ -124,17 +123,6 @@ function fmtDuration(ms) {
   return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm';
 }
 
-/* One block character per turn, scaled to the biggest turn in the window —
- * a burn chart that costs nothing to draw and rescales with the font. */
-function sparkline(series) {
-  if (!series || !series.length) return '';
-  const peak = Math.max(...series.map((p) => p.tokens));
-  if (!peak) return '';
-  return series
-    .slice(-24)
-    .map((p) => SPARK_CHARS[Math.min(SPARK_CHARS.length - 1, Math.round((p.tokens / peak) * (SPARK_CHARS.length - 1)))])
-    .join('');
-}
 const IDLE_AFTER_MS = 2500;
 // output arriving this soon after a keystroke/mouse report is its echo, not
 // the agent working — typing or clicking must not light the busy indicator

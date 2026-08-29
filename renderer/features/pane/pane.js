@@ -34,7 +34,7 @@ class Pane {
     this.hookAlive = false; // true once Claude Code hook events flow — they replace the output-timing heuristics
     this.awaitingPrompt = false; // true while the agent is blocked on the user (Notification hook, cleared on the next turn)
     this.promptAnswerable = false; // true while a numbered yes/no menu is actually on screen — with awaitingPrompt, gates the ✓/✕ quick-respond buttons
-    this.statusText = ''; // what the hooks say the agent is doing right now ('vibing...' / the permission message / 'done')
+    this.statusText = ''; // what the hooks say the agent is doing right now (the permission message / 'done'; empty mid-turn)
     this.lastInputAt = 0; // last keystroke/mouse report — its echo must not read as agent activity
     this.idleTimer = null;
     this.bufferTextCache = null; // memoized getBufferText result
@@ -160,6 +160,11 @@ class Pane {
     this.modeSel.addEventListener('keydown', (e) => e.stopPropagation());
     this.modeSel.addEventListener('change', () => this.pickMode(this.modeSel.value));
 
+    /* the select alone reads "auto" with nothing to say what is auto — the pill
+     * around it carries the word, and the select keeps every behaviour it had */
+    this.modePillEl = elt('span', 'pane-mode-pill');
+    this.modePillEl.append(elt('span', 'pane-mode-label', 'mode'), this.modeSel);
+
     this.modeBusy = false;
     this.modeTimer = null;
     this.modeAskedShown = false;
@@ -182,7 +187,9 @@ class Pane {
     this.subEl = elt('span', 'pane-sub');
     this.subEl.style.display = 'none';
 
-    // equalizer-style busy indicator, shown only while the agent is working
+    // equalizer-style busy indicator, shown only while the agent is working.
+    // Lives at the left edge of the usage footer; placeBusy (pane-usage.js)
+    // moves it into the header when that footer is hidden.
     this.busyEl = elt('span', 'pane-busy');
     this.busyEl.style.display = 'none';
     for (let i = 0; i < 5; i++) {
@@ -315,16 +322,18 @@ class Pane {
       this.requestClose();
     });
 
-    // one bordered cluster, the way the top bar groups its secondary actions
+    // one cluster in three groups — what the agent does, how big its text is,
+    // what happens to its window — told apart by hairlines rather than gaps
     const actions = document.createElement('span');
     actions.className = 'pane-actions';
     actions.append(
-      this.btnClear, btnMic, btnFontDown, btnFontUp,
+      this.btnClear, btnMic, elt('span', 'pane-actions-div'),
+      btnFontDown, btnFontUp, elt('span', 'pane-actions-div'),
       btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
 
     header.append(
-      this.dot, this.taskEl, this.roleEl, this.effortEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.busyEl, this.waitEl, this.subEl, this.btnApprove, this.btnDeny, this.modeSel, this.rightsizeEl, this.badge, actions
+      this.dot, this.taskEl, this.roleEl, this.effortEl, this.llmEl, this.gitEl, this.titleEl, this.statusEl, this.waitEl, this.subEl, this.btnApprove, this.btnDeny, this.modePillEl, this.rightsizeEl, this.badge, actions
     );
     // its own statement rather than a slot in the append above: that line is
     // the header's whole running order and every pane feature edits it
@@ -363,16 +372,39 @@ class Pane {
     this.termEl = elt('div', 'pane-term');
 
     // bottom panel: what this agent has spent and how full its context is.
-    // Two rows — the meter, and the slower-moving detail under it — hidden
-    // entirely unless the option is on.
+    // One row of capsules, each pill one reading — it wraps to a second line
+    // rather than truncate when the pane is too narrow to hold them side by
+    // side. Hidden entirely unless the option is on.
     this.usageEl = elt('div', 'pane-usage');
     this.usageEl.style.display = 'none';
+
+    // context: the meter and the tokens it counts, in one pill
     this.usageBarEl = elt('span', 'pane-usage-bar');
     this.usageBarFillEl = document.createElement('i');
     this.usageBarEl.appendChild(this.usageBarFillEl);
     this.usageCtxEl = elt('span', 'pane-usage-ctx');
+    const capCtx = elt('span', 'pane-usage-cap');
+    capCtx.append(this.usageBarEl, this.usageCtxEl);
+
+    // spend: what it cost, and how much of the input the cache paid for
     this.usageCostEl = elt('span', 'pane-usage-cost');
     this.usageCacheEl = elt('span', 'pane-usage-cache');
+    this.usageCostCapEl = elt('span', 'pane-usage-cap');
+    this.usageCostCapEl.append(this.usageCostEl, elt('span', 'pane-usage-div'), this.usageCacheEl);
+
+    // the turn: the header dot's state repeated beside the clock it explains
+    // (pane-status syncStatus keeps both in step), then turns and the 5h share
+    this.usageDotEl = elt('span', 'pane-dot pane-usage-dot idle');
+    this.usageTurnsEl = document.createElement('span');
+    this.usageTimeEl = document.createElement('span');
+    this.usageShareEl = document.createElement('span');
+    const capRun = elt('span', 'pane-usage-cap pane-usage-run');
+    capRun.append(this.usageDotEl, this.usageTimeEl, this.usageTurnsEl, this.usageShareEl);
+
+    // the tool trail, opening the row's right half — the one place that says
+    // what the agent is doing right now, newest tool carrying the weight
+    this.usageToolsEl = elt('span', 'pane-usage-cap pane-usage-tools');
+
     // which upstream this agent talks to, left of the effort. Fixed at launch:
     // main persists meta.model for OpenRouter agents alone, so the 'or:' prefix
     // is the whole signal, and a restart builds a fresh Pane rather than
@@ -388,24 +420,23 @@ class Pane {
     this.usageEffortEl = elt('span', 'pane-usage-effort');
     this.usageModelEl = elt('span', 'pane-usage-model');
     this.usageModelEl.addEventListener('click', () => this.openModelPicker());
-    // provider / effort / model ride to the right edge together — one wrapper
-    // instead of an auto margin that would move whenever the effort label is
-    // hidden
-    const usageRight = elt('span', 'pane-usage-right');
+    // provider / effort / model ride the row's right edge as one outlined pill,
+    // the only capsule that is drawn rather than filled
+    const usageRight = elt('span', 'pane-usage-cap pane-usage-right');
     usageRight.append(this.usageProviderEl, this.usageEffortEl, this.usageModelEl);
-    const usageTop = elt('div', 'pane-usage-row');
-    usageTop.append(this.usageBarEl, this.usageCtxEl, this.usageCostEl, this.usageCacheEl, usageRight);
 
-    this.usageSparkEl = elt('span', 'pane-usage-spark');
-    this.usageTurnsEl = document.createElement('span');
-    this.usageTimeEl = document.createElement('span');
-    this.usageShareEl = document.createElement('span');
-    // the tool trail, under the model in the panel's own bottom right — the
-    // one place that says what the agent is doing right now
-    this.usageToolsEl = elt('span', 'pane-usage-tools');
-    const usageSub = elt('div', 'pane-usage-row pane-usage-sub');
-    usageSub.append(this.usageSparkEl, this.usageTurnsEl, this.usageTimeEl, this.usageShareEl, this.usageToolsEl);
-    this.usageEl.append(usageTop, usageSub);
+    // the row's two halves: the readings on the left, what the agent is running
+    // on the right. Grouped so the right half still sits right when the tool
+    // trail is empty and hidden.
+    const usageEnd = elt('span', 'pane-usage-end');
+    usageEnd.append(this.usageToolsEl, usageRight);
+    /* the equalizer opens the row, left of every reading — syncUsagePanel
+     * (placeBusy, pane-usage.js) parks it back in the header while the panel
+     * is switched off, so the busy signal is never lost with it */
+    this.usageRowEl = elt('div', 'pane-usage-row');
+    const usageRow = this.usageRowEl;
+    usageRow.append(capCtx, this.usageCostCapEl, capRun, usageEnd);
+    this.usageEl.append(usageRow);
 
     this.el.append(header, this.subheaderEl, this.searchEl, this.termEl, this.usageEl);
     this.syncInitialCommandHeader();

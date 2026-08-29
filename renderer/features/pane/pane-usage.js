@@ -1,12 +1,13 @@
 /* ---- Pane: the cost & context panel and the model/effort chips ----
  *
- * Split out of the one 2416-line pane.js. The two rows of panel behind the 'Show cost & context panel' option, plus
- * the header chips that name the model and effort it is running on.
+ * Split out of the one 2416-line pane.js. The row of capsules behind the
+ * 'Show cost & context panel' option, plus the header chips that name the
+ * model and effort it is running on.
  */
 
 Object.assign(Pane.prototype, {
-  /* Show or hide the panel, and keep the terminal's row count honest — two
-   * rows of panel are two rows the terminal no longer has. */
+  /* Show or hide the panel, and keep the terminal's row count honest — the
+   * panel's rows are rows the terminal no longer has. */
   syncUsagePanel() {
     const was = this.usageEl.style.display !== 'none';
     this.usageEl.style.display = showUsagePanel ? '' : 'none';
@@ -17,9 +18,20 @@ Object.assign(Pane.prototype, {
       // the turn timer and the 5h share both move on their own
       this.usageTimer = setInterval(() => this.renderUsagePanel(), 1000);
     }
+    this.placeBusy();
     this.syncModelChip(); // the panel takes the model over from the header
 
     if (showUsagePanel !== was && this.fit) this.refit();
+  },
+
+  /* The busy equalizer belongs to the panel's left edge, ahead of every
+   * reading. With the panel off there is no left edge to sit on, so it goes
+   * back to its old header slot rather than disappearing with the row. */
+  placeBusy() {
+    const home = showUsagePanel ? this.usageRowEl : this.statusEl.parentNode;
+    if (this.busyEl.parentNode === home && (!showUsagePanel || home.firstChild === this.busyEl)) return;
+    if (showUsagePanel) home.prepend(this.busyEl);
+    else home.insertBefore(this.busyEl, this.statusEl);
   },
 
   /* Tokens this agent burned inside the current 5-hour usage window. Also the
@@ -48,11 +60,11 @@ Object.assign(Pane.prototype, {
       this.usageEl.classList.remove('warn', 'hot');
       this.usageCostEl.textContent = '';
       this.usageCacheEl.textContent = '';
-      this.usageSparkEl.textContent = '';
+      // an empty pill is a stray blob: the spend capsule goes with its figures
+      this.usageCostCapEl.style.display = 'none';
       this.usageTurnsEl.textContent = '';
       this.usageShareEl.style.display = 'none';
-      this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : '';
-      this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran';
+      this.renderToolTrail();
       return;
     }
 
@@ -73,6 +85,7 @@ Object.assign(Pane.prototype, {
       + (this.viaClean ? 'no auto-compaction here: /clear starts the conversation over' : 'Claude Code compacts the conversation as this fills');
     this.usageCtxEl.textContent = `${fmtTokens(u.context)} / ${fmtTokens(limit)}`;
 
+    this.usageCostCapEl.style.display = '';
     this.usageCostEl.textContent = (u.partial ? '≈' : '') + fmtCost(u.cost);
     this.usageCostEl.dataset.tip = 'Estimated spend for this agent at list prices — in '
       + fmtTokens(u.input) + ' · out ' + fmtTokens(u.output)
@@ -87,11 +100,6 @@ Object.assign(Pane.prototype, {
     // arrive first on a reattach — take it when the chip is still blank
     if (!this.modelLabel && u.model) this.setModel(prettyModelName(u.model));
 
-    // the sparkline and the tool trail are the only two values in the row that
-    // don't say what they are — everything else carries its own unit
-    const spark = sparkline(u.series);
-    this.usageSparkEl.textContent = spark ? 'per turn ' + spark : '';
-    this.usageSparkEl.dataset.tip = 'Tokens per turn, most recent on the right';
     this.usageTurnsEl.textContent = u.turns + (u.turns === 1 ? ' turn' : ' turns');
 
     const now = Date.now();
@@ -116,8 +124,22 @@ Object.assign(Pane.prototype, {
       this.usageShareEl.style.display = 'none';
     }
 
-    this.usageToolsEl.textContent = this.toolTrail.length ? 'tools ' + this.toolTrail.join(' → ') : '';
-    this.usageToolsEl.dataset.tip = 'Most recent tools this agent ran';
+    this.renderToolTrail();
+  },
+
+  /* The tool trail as its own capsule: the tools in order, an arrow between
+     each pair, the newest one carrying the weight — it is the one the agent is
+     running right now. Empty until the first tool call, and the pill goes with
+     it rather than sit there blank. */
+  renderToolTrail() {
+    const el = this.usageToolsEl;
+    el.textContent = '';
+    el.style.display = this.toolTrail.length ? '' : 'none';
+    this.toolTrail.forEach((name, i) => {
+      if (i) el.append(elt('span', 'pane-usage-arrow', '→'));
+      el.append(elt('span', i === this.toolTrail.length - 1 ? 'pane-usage-tool now' : 'pane-usage-tool', name));
+    });
+    el.dataset.tip = 'Most recent tools this agent ran';
   },
 
   /* ---- model chip ---- */

@@ -80,13 +80,13 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
     </div>
-    <button id="add-agent" data-tip="Start a plain agent or a role preset in the selected workspace">+ Agent</button>
+    <button id="add-agent" data-tip="Start a plain agent or a role preset in the selected workspace"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 7h8"/><path d="M7 3v8"/></svg>Agent</button>
   </header>
 
   <div id="body-wrap">
     <aside id="leftbar">
     <div id="leftbar-surface">
-      <div class="u-title" id="usage-title">Anthropic Usage</div>
+      <div class="u-title" id="usage-title"><span>Anthropic</span></div>
       <div id="usage" data-tip="Claude usage — click to refresh">
         <div class="u-row" id="u-5h">
           <div class="u-head"><span class="u-label">Session</span><span class="u-pct" id="usage-5h-pct"></span><span class="u-in" id="usage-5h-in"></span></div>
@@ -98,7 +98,7 @@
         </div>
       </div>
       <!-- both hidden until an OpenRouter key is saved (topbar.js) -->
-      <div class="u-title" id="or-usage-title" hidden>OpenRouter Usage</div>
+      <div class="u-title" id="or-usage-title" hidden><span>OpenRouter</span></div>
       <div id="usage-or" hidden>
         <!-- today is a plain figure: a share of the credits bought says nothing -->
         <div class="u-row" id="u-or-today">
@@ -170,9 +170,12 @@
     <div id="board" hidden>
       <div class="board-box">
         <div class="board-head">
-          <div class="kbd-title">Task Board</div>
+          <div class="board-head-left">
+            <span class="board-head-dot"></span>
+            <div class="kbd-title">Task Board</div>
+          </div>
           <div class="board-head-actions">
-            <button id="board-new-btn" class="pill pill-primary">+ New Task</button>
+            <button id="board-new-btn" class="pill pill-primary">New task</button>
             <button id="board-archive-btn" class="pill" data-tip="View archived tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="4.5" rx="1.2"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M10 13h4"/></svg><span>Archive</span></button>
             <button id="board-close-btn" class="pill" data-tip="Close task board (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
           </div>
@@ -181,53 +184,93 @@
           <div class="board-form-flex">
           <div id="board-form" hidden>
             <textarea id="board-form-text" placeholder="Describe the task for the agent…" rows="3" data-tip="Ctrl+Enter to submit"></textarea>
-            <div class="board-form-row">
+            <div class="board-form-row board-form-chips">
               <select id="board-form-ws"></select>
               <select id="board-form-category" data-tip="Category"></select>
               <button id="board-form-category-manage" type="button" data-tip="Manage categories for this workspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M4.9 7.5l1.9 1.1M17.2 15.4l1.9 1.1M4.9 16.5l1.9-1.1M17.2 8.6l1.9-1.1"/></svg></button>
+              <span class="board-spacer"></span>
               <button id="board-form-mic" type="button" data-tip="Dictate task description (Ctrl+R)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
+                <span>dictate</span>
               </button>
             </div>
-            <div class="board-form-row board-form-row-modes">
-              <label><input type="radio" name="board-mode" value="now" checked /> start now</label>
-              <label><input type="radio" name="board-mode" value="auto" /> auto</label>
-              <label><input type="radio" name="board-mode" value="next-session" /> next session</label>
-              <label><input type="radio" name="board-mode" value="manual" /> manual</label>
+            <div class="board-field">
+              <span class="board-field-label">When</span>
+              <div class="board-seg">
+                <label><input type="radio" name="board-mode" value="now" checked /><span>start now</span></label>
+                <label><input type="radio" name="board-mode" value="auto" /><span>auto</span></label>
+                <label><input type="radio" name="board-mode" value="next-session" /><span>next session</span></label>
+                <label><input type="radio" name="board-mode" value="manual" /><span>manual</span></label>
+              </div>
             </div>
-            <div class="board-form-row">
-              <select id="board-form-startmode"></select>
-              <select id="board-form-model" data-tip="Model for this task"></select>
-              <select id="board-form-harness" data-tip="Which CLI runs the OpenRouter model: clean is our own minimal agent, opencode and pi are their own TUIs. pi gates nothing by design — it is always auto." hidden></select>
-              <select id="board-form-effort" data-tip="Claude reasoning effort for this task"></select>
-              <select id="board-form-priority" data-tip="Priority — auto mode starts higher-priority tasks first">
-                <option value="low">low priority</option>
-                <option value="medium" selected>medium priority</option>
-                <option value="high">high priority</option>
-                <option value="critical">critical priority</option>
-              </select>
-              <select id="board-form-repeat" data-tip="Repeat — when this task completes, its next run is queued one interval later">
-                <option value="none" selected>no repeat</option>
-                <option value="hourly">every hour</option>
-                <option value="daily">every day</option>
-                <option value="weekly">every week</option>
-              </select>
-              <label><input type="checkbox" id="board-form-focus" /> focus mode</label>
-              <label data-tip="Close this task's agent window automatically when the task completes"><input type="checkbox" id="board-form-closeonend" checked /> close on complete</label>
-              <span id="board-form-auto-hint" class="board-form-hint" hidden></span>
+            <div class="board-form-grid">
+              <div class="board-field">
+                <span class="board-field-label">Model</span>
+                <select id="board-form-model" data-tip="Model for this task"></select>
+              </div>
+              <div class="board-field">
+                <span class="board-field-label">Harness</span>
+                <select id="board-form-harness" data-tip="Which CLI runs the OpenRouter model: clean is our own minimal agent, opencode and pi are their own TUIs. pi gates nothing by design — it is always auto." hidden></select>
+              </div>
+              <div class="board-field">
+                <span class="board-field-label">Mode</span>
+                <select id="board-form-startmode"></select>
+              </div>
+              <div class="board-field">
+                <span class="board-field-label">Effort</span>
+                <select id="board-form-effort" data-tip="Claude reasoning effort for this task"></select>
+              </div>
             </div>
-            <textarea id="board-form-chain" rows="2" placeholder="When done, run these as follow-up agents — separate steps with a line containing ---" data-tip="Each step becomes a new task with these same settings once the previous one finishes"></textarea>
+            <div class="board-form-grid">
+              <div class="board-field">
+                <span class="board-field-label">Priority</span>
+                <select id="board-form-priority" data-tip="Priority — auto mode starts higher-priority tasks first">
+                  <option value="low">low priority</option>
+                  <option value="medium" selected>medium priority</option>
+                  <option value="high">high priority</option>
+                  <option value="critical">critical priority</option>
+                </select>
+              </div>
+              <div class="board-field">
+                <span class="board-field-label">Repeat</span>
+                <select id="board-form-repeat" data-tip="Repeat — when this task completes, its next run is queued one interval later">
+                  <option value="none" selected>no repeat</option>
+                  <option value="hourly">every hour</option>
+                  <option value="daily">every day</option>
+                  <option value="weekly">every week</option>
+                </select>
+              </div>
+              <div class="board-field">
+                <span class="board-field-label">Options</span>
+                <div class="board-opts">
+                  <label class="board-toggle"><input type="checkbox" id="board-form-focus" /><span>focus mode</span></label>
+                  <label class="board-toggle" data-tip="Close this task's agent window automatically when the task completes"><input type="checkbox" id="board-form-closeonend" checked /><span>close on complete</span></label>
+                </div>
+              </div>
+            </div>
+            <span id="board-form-auto-hint" class="board-form-hint" hidden></span>
+            <div class="board-field">
+              <div class="board-field-labelrow">
+                <span class="board-field-label">Follow-up agents</span>
+                <span class="board-field-hint">separate steps with a line containing ---</span>
+              </div>
+              <textarea id="board-form-chain" rows="2" placeholder="When done, run these as follow-up agents…" data-tip="Each step becomes a new task with these same settings once the previous one finishes"></textarea>
+            </div>
             <div class="board-form-actions">
-              <button id="board-form-cancel">cancel</button>
-              <button id="board-form-submit">add task</button>
+              <span class="board-form-hint board-form-kbd">Ctrl/⌘+Enter to add</span>
+              <span class="board-spacer"></span>
+              <button id="board-form-cancel">Cancel</button>
+              <button id="board-form-submit">Add task</button>
             </div>
           </div>
           <div id="board-stats" hidden>
             <div class="board-stats-title">Shipped</div>
-            <div class="board-stats-row"><span id="board-stats-today" class="board-stats-n">0</span><span class="board-stats-label">today</span></div>
-            <div class="board-stats-row"><span id="board-stats-week" class="board-stats-n">0</span><span class="board-stats-label">this week</span></div>
-            <div class="board-stats-row"><span id="board-stats-month" class="board-stats-n">0</span><span class="board-stats-label">this month</span></div>
-            <div class="board-stats-row"><span id="board-stats-year" class="board-stats-n">0</span><span class="board-stats-label">this year</span></div>
+            <div class="board-stats-grid">
+              <div class="board-stats-row"><span id="board-stats-today" class="board-stats-n">0</span><span class="board-stats-label">today</span></div>
+              <div class="board-stats-row"><span id="board-stats-week" class="board-stats-n">0</span><span class="board-stats-label">this week</span></div>
+              <div class="board-stats-row"><span id="board-stats-month" class="board-stats-n">0</span><span class="board-stats-label">this month</span></div>
+              <div class="board-stats-row"><span id="board-stats-year" class="board-stats-n">0</span><span class="board-stats-label">this year</span></div>
+            </div>
             <div id="board-stats-quip" class="board-stats-quip"></div>
           </div>
           </div>
@@ -236,19 +279,19 @@
           </div>
           <div id="board-cols">
             <div class="board-col board-col-cat-manual">
-              <div class="board-col-head"><svg class="board-col-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 18 12l-5 1.2L11 19 6 3.5Z"/></svg><span class="board-col-title">Manual</span><span id="board-count-manual" class="board-col-n"></span></div>
+              <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Manual</span><span id="board-count-manual" class="board-col-n"></span></div>
               <div id="board-col-manual" class="board-col-list"></div>
             </div>
             <div class="board-col board-col-cat-scheduled">
-              <div class="board-col-head"><svg class="board-col-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3.2 2"/></svg><span class="board-col-title">Scheduled</span><span id="board-count-pending" class="board-col-n"></span></div>
+              <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Scheduled</span><span id="board-count-pending" class="board-col-n"></span></div>
               <div id="board-col-pending" class="board-col-list"></div>
             </div>
             <div class="board-col board-col-cat-active">
-              <div class="board-col-head"><svg class="board-col-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 13h5.5L10 21l8-11h-5.5L13 3Z"/></svg><span class="board-col-title">Active</span><span id="board-count-active" class="board-col-n"></span></div>
+              <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Active</span><span id="board-count-active" class="board-col-n"></span></div>
               <div id="board-col-active" class="board-col-list"></div>
             </div>
             <div class="board-col board-col-cat-completed">
-              <div class="board-col-head"><svg class="board-col-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.3 2.4 2.4 4.6-5.4"/></svg><span class="board-col-title">Completed</span><span id="board-count-completed" class="board-col-n"></span></div>
+              <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Completed</span><span id="board-count-completed" class="board-col-n"></span></div>
               <div id="board-col-completed" class="board-col-list"></div>
             </div>
           </div>

@@ -371,34 +371,79 @@
   .sw-arc-spinner { animation-duration: 2.4s; }
 }
 
-/* right-click menu on a workspace tile: rename, remove */
-/* the workspace tile menu and the agent-row menu are the same box */
-#rail-menu, #ws-agent-menu {
+/* right-click menu on a workspace tile: add agents, rename, remove.
+   A card, not a list: the count chips are filled tiles in a five-up grid and
+   the rows below them are full-width targets, so the menu reads as one panel
+   rather than a stack of hairlines. */
+#rail-menu {
   position: fixed;
   z-index: 24;
-  min-width: 132px;
+  width: 200px;
   display: flex;
   flex-direction: column;
   background: color-mix(in srgb, var(--surface) 78%, transparent);
   backdrop-filter: blur(18px);
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
-  border-radius: 10px;
-  padding: 5px;
-  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 14px 36px -10px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-#rail-menu[hidden], #ws-agent-menu[hidden] { display: none; }
+#rail-menu[hidden] { display: none; }
 .rail-menu-item {
   background: none;
   border: none;
-  border-radius: 6px;
-  padding: 6px 10px;
+  border-radius: 7px;
+  padding: 8px;
   font-size: 12px;
   color: var(--text);
   text-align: left;
   cursor: pointer;
 }
 .rail-menu-item:hover { background: var(--hover); }
-.rail-menu-danger:hover { color: var(--err); }
+.rail-menu-danger { color: var(--err); }
+.rail-menu-danger:hover {
+  color: var(--err);
+  background: color-mix(in srgb, var(--err) 12%, transparent);
+}
+
+/* the "Add agents" row: a title over five count chips, then a hairline before
+   the rename/remove pair. The title is menu-titled rather than uppercase-
+   lettered — it names the block the chips belong to, it is not a section rule */
+.rail-menu-label {
+  padding: 7px 8px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+.rail-menu-chips {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  padding: 0 3px 8px;
+}
+.rail-menu-chip {
+  height: 28px;
+  padding: 0;
+  background: var(--hover);
+  border: none;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.rail-menu-chip:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.rail-menu-chip:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.rail-menu-sep {
+  height: 1px;
+  margin: 0 8px 3px;
+  background: var(--border);
+}
 
 /* rename in place: an input laid over the tile being renamed (topbar.js
    startRenameWorkspace), so it works in the collapsed rail too */
@@ -684,19 +729,22 @@
 
 #topbar .chip-accent:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 
-/* five secondary actions share one border, divided by hairlines */
+/* the secondary actions ride one rounded tray: a single fill, no dividers, and
+ * each button a circle that only appears under the cursor */
 #topbar-actions {
   display: flex;
   align-items: center;
+  gap: 2px;
   flex: none;
-  border: 1px solid var(--border2);
-  border-radius: 8px;
-  background: transparent;
+  padding: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--hover);
 }
 
 #topbar-actions > button {
-  width: 32px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   flex: none;
   display: flex;
   align-items: center;
@@ -704,25 +752,23 @@
   position: relative;
   padding: 0;
   border: 0;
-  border-left: 1px solid var(--border2);
-  border-radius: 0;
+  border-radius: 999px;
   background: transparent;
   backdrop-filter: none;
   color: var(--text2);
   cursor: pointer;
-  transition: color .15s, background .15s;
+  transition: color .12s, background .12s, box-shadow .12s;
 }
 
-#topbar-actions > button:first-child { border-left: 0; border-radius: 7px 0 0 7px; }
-
-#topbar-actions > button:last-child { border-radius: 0 7px 7px 0; }
-
+/* the hover chip is mixed towards --border2, the one token that always steps
+ * away from the tray in the same direction the theme calls "raised" — darker
+ * on a light tray, lighter on a dark one */
 #topbar-actions > button:hover,
 #topbar-actions > button.active {
   color: var(--text);
-  background: var(--hover);
-  border-color: var(--border2);
-  box-shadow: none;
+  background: color-mix(in srgb, var(--border2) 70%, var(--hover));
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 #topbar-actions > button svg { width: 15px; height: 15px; display: block; }
@@ -753,20 +799,26 @@
   outline-offset: 1px;
 }
 
-/* one primary action, rectangular */
+/* one primary action: an accent pill, its plus an icon rather than a glyph */
 #add-agent {
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
   font-family: var(--font-ui);
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
-  box-shadow: none;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
-#add-agent:hover:not(:disabled) { transform: none; box-shadow: none; filter: brightness(1.08); }
+#add-agent > svg { width: 13px; height: 13px; flex: none; display: block; }
+
+#add-agent:hover:not(:disabled) { transform: none; filter: brightness(1.08); }
 
 /* ============================ LEFT BAR ============================ */
 
@@ -793,16 +845,7 @@
 #leftbar.expanded .ws-head,
 #leftbar.hover-expanded .ws-head {
   order: 2;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin: 12px 14px 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--muted);
+  margin: 20px 14px 8px;
 }
 
 /* the list is only as tall as its workspaces — it shrinks and scrolls when
@@ -946,16 +989,35 @@
 
 #leftbar.expanded .u-title,
 #leftbar.hover-expanded .u-title {
-  display: block;
   order: 1;                      /* the rail's usage group — see the order map */
-  padding: 0 14px;
-  margin-top: 16px;
-  font-family: var(--font-ui);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  margin: 20px 14px 8px;
+}
+
+/* every section head in the expanded rail is one shape: a mono uppercase label
+ * followed by a hairline that runs out to the rail's edge */
+#leftbar.expanded .u-title,
+#leftbar.hover-expanded .u-title,
+#leftbar.expanded .ws-head,
+#leftbar.hover-expanded .ws-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .18em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+#leftbar.expanded .u-title::after,
+#leftbar.hover-expanded .u-title::after,
+#leftbar.expanded .ws-head::after,
+#leftbar.hover-expanded .ws-head::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border);
 }
 
 /* first thing in the rail, and the expanded surface has no padding of its own —

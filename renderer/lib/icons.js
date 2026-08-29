@@ -20,6 +20,7 @@ const Icons = (() => {
     right: '<path d="M9.5 5.5 16 12l-6.5 6.5"/>',
     chevron: '<path d="m6 9.5 6 6 6-6"/>',
     view: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7.5 9h9M7.5 12.5h9M7.5 16h5"/>',
+    branch: '<circle cx="7" cy="5.5" r="2.2"/><circle cx="7" cy="18.5" r="2.2"/><circle cx="17" cy="12" r="2.2"/><path d="M7 7.7v8.6"/><path d="M9.2 12h5.6"/>',
     folder: '<path d="M20 19.5a1.8 1.8 0 0 0 1.8-1.8V8.8A1.8 1.8 0 0 0 20 7h-7.3a1.8 1.8 0 0 1-1.5-.8L10.3 5a1.8 1.8 0 0 0-1.5-.8H4A1.8 1.8 0 0 0 2.2 6v11.7a1.8 1.8 0 0 0 1.8 1.8Z"/>',
   };
 

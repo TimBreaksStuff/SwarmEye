@@ -95,7 +95,7 @@ function toolFailed(payload) {
  * reattached from a previous run: its oldest turns then fall outside the
  * totals, which is what the `partial` flag tells the renderer. */
 const USAGE_MAX_READ = 4 * 1024 * 1024;
-const USAGE_SERIES_MAX = 60; // burn-sparkline points kept per session
+const USAGE_SERIES_MAX = 60; // per-turn token points kept per session
 
 /* How many already-counted message ids to remember per session. A message's
  * repeated lines are adjacent, so a small window is plenty — this only has to
