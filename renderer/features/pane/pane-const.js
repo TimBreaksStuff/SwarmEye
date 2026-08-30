@@ -50,7 +50,7 @@ export const livePanes = new Set();
 export const CONTEXT_WINDOW = 200000;
 export const CONTEXT_WINDOW_LARGE = 1000000;
 export const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
-const TOOL_TRAIL_MAX = 3;
+export const TOOL_TRAIL_MAX = 3;
 
 /* Claude Code's own Task subagents. They are invisible in a terminal — the
  * parent's pane is where all of their output lands — so the `Task` calls the
@@ -58,11 +58,11 @@ const TOOL_TRAIL_MAX = 3;
  * the header chip counts. Their own tool calls never reach us: a subagent runs
  * in its own context and fires no hooks of its own, so "what it is doing" is
  * not answerable, only "it is still running". */
-const SUBAGENTS_MAX = 20;
+export const SUBAGENTS_MAX = 20;
 
 /* Calls started but not yet reported back. Parallel tool use is normal, a lost
  * PostToolUse is not rare, and this only has to stay bounded. */
-const OPEN_CALLS_MAX = 24;
+export const OPEN_CALLS_MAX = 24;
 
 /* Asking a live agent to stop editing — the fallback behind picking `plan` in
  * the mode dropdown, for when the Shift+Tab cycle cannot land it. Deliberately
@@ -94,13 +94,13 @@ export function fmtWait(ms) {
  * The streak, not the turn count, is the signal: it resets the moment the
  * agent edits something, so an agent that reads for a while and then starts
  * building never gets the offer. */
-const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'NotebookRead', 'WebFetch', 'WebSearch']);
-const RIGHTSIZE_MIN_CALLS = 12;
+export const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'NotebookRead', 'WebFetch', 'WebSearch']);
+export const RIGHTSIZE_MIN_CALLS = 12;
 
 /* Roles that are Opus *because* they read and judge — a Reviewer or a Planner
  * doing nothing but reading is the job being done right, not a tier to save
  * on, so the streak says nothing about them. */
-const RIGHTSIZE_SKIP_ROLES = new Set(['reviewer', 'planner']);
+export const RIGHTSIZE_SKIP_ROLES = new Set(['reviewer', 'planner']);
 
 export function fmtTokens(n) {
   if (!n) return '0';

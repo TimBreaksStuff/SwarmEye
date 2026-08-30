@@ -15,8 +15,13 @@
  *   node scripts/check-imports.js        # exit 1 if anything is unresolved
  *
  * Two rules keep it honest:
- *   - it only reports a name some *other* module exports, so a typo'd global
- *     is not its business and it has nothing to guess about;
+ *   - it only reports a name some *other* module declares at its top level, so
+ *     a typo'd global is not its business and it has nothing to guess about.
+ *     Declares, not exports: `TOOL_TRAIL_MAX` and five more sat module-private
+ *     in pane-const.js while pane-status.js read them by bare name, and a
+ *     checker that only knew about exports called that file clean. Every
+ *     PreToolUse hook threw, so the tool trail never got trimmed and grew into
+ *     a row of arrows across the footer;
  *   - `strip()` below must understand regex literals. The first version did
  *     not, and `s.replace(/[`*_#>]/g, '')` — a regex holding a backtick — made
  *     it treat the whole rest of the file as one template string. Everything
@@ -170,11 +175,16 @@ for (const f of files) {
   tops[f] = top; locals[f] = loc; imported[f] = imp;
 }
 
-const exported = new Map();
+/* Where a name is declared at the top level of some module, and whether that
+ * declaration is exported. A name declared but *not* exported is the worse
+ * find of the two: the using module needs an import and the owning module
+ * needs an export, so nothing about it is one edit away from working. */
+const declared = new Map();
 for (const f of files) {
-  for (const m of src[f].matchAll(/^export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm)) {
-    if (!exported.has(m[1])) exported.set(m[1], []);
-    exported.get(m[1]).push(path.relative(ROOT, f));
+  for (const m of src[f].matchAll(/^(export\s+)?(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+    const [, exp, name] = m;
+    if (!declared.has(name)) declared.set(name, { exported: [], private: [] });
+    declared.get(name)[exp ? 'exported' : 'private'].push(path.relative(ROOT, f));
   }
 }
 
@@ -185,14 +195,20 @@ for (const f of files) {
   for (const m of s.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)/g)) {
     const n = m[1];
     if (GLOBALS.has(n) || locals[f].has(n) || tops[f].has(n) || imported[f].has(n)) continue;
-    if (!exported.has(n)) continue;
+    const home = declared.get(n);
+    if (!home) continue;
+    // a private declaration only counts as this file's missing name when it is
+    // some *other* file's: `tops[f]` above already cleared the file's own
+    const owners = home.exported.length ? home.exported : home.private;
+    if (!owners.length) continue;
     const rest = s.slice(m.index + n.length);
     if (/^\s*:/.test(rest) && !/^\s*::/.test(rest)) continue; // an object key, not a reference
     const line = s.slice(0, m.index).split('\n').length;
     const key = n + ':' + line;
     if (seen.has(key)) continue;
     seen.add(key);
-    console.log(`MISSING IMPORT  ${path.relative(ROOT, f)}:${line}  ${n}  <- ${exported.get(n).join(', ')}`);
+    const label = home.exported.length ? 'MISSING IMPORT ' : 'NOT EXPORTED   ';
+    console.log(`${label} ${path.relative(ROOT, f)}:${line}  ${n}  <- ${owners.join(', ')}`);
     bad++;
   }
 }

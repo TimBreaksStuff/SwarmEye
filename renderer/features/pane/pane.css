@@ -325,8 +325,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* the newest call is the one the agent is in — the older two are context */
-.pane-usage-tool.now { color: var(--text2); }
+/* the newest call is the one the agent is in — the older two are context.
+   It is also the one that must survive a narrow pane: every tool here is an
+   overflow:hidden flex item, so it may shrink to nothing while the arrows,
+   which have no overflow of their own, keep their full width. A footer left
+   showing a row of bare arrows is what that looks like. The older two give
+   way first; the tool being run right now does not shrink at all. */
+.pane-usage-tool.now { color: var(--text2); flex: none; }
 .pane-usage-arrow { color: var(--faint); }
 
 /* provider / effort / model: the only capsule drawn rather than filled, so the
