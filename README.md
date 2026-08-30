@@ -12,7 +12,7 @@ No accounts, no backend, no telemetry. SwarmEye rides your existing Claude Code 
 
 ## Status
 
-**3.0.0.** Windows (WSL) and macOS. Claude Code, plus OpenRouter through SwarmEye's own clean agent or [opencode](https://opencode.ai) / [pi](https://pi.dev).
+**3.0.1.** Windows (WSL) and macOS. Claude Code, plus OpenRouter through SwarmEye's own clean agent or [opencode](https://opencode.ai) / [pi](https://pi.dev).
 
 Recently solid:
 
