@@ -18,7 +18,7 @@ chooser.
 
 ## Public interface
 
-`window.Scope`. A classic script.
+`Scope`. An ES module.
 
 ## How to test
 

@@ -15,7 +15,7 @@ const statusEl = document.getElementById('update-status');
 const actionBtn = document.getElementById('update-action-btn');
 const checkBtn = document.getElementById('update-check-btn');
 
-let pending = null; // { version, releaseUrl } — set once a newer release is seen
+export let pending = null; // { version, releaseUrl } — set once a newer release is seen
 let appVersion = '';
 
 export function init(context) {

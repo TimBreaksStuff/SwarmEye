@@ -320,7 +320,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ws-agent-ind { flex: none; }
+/* The indicator is a fixed slot, not a shrink-wrapped box: the dot is 7px and
+ * the working equalizer is 18.5px, and a slot that resized on every status flip
+ * would walk every agent name sideways. Both live in the row and the status
+ * class picks one. */
+.ws-agent-ind {
+  flex: none;
+  width: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .ws-agent-dot {
   width: 7px;
   height: 7px;
@@ -347,29 +357,22 @@
   box-shadow: inset 0 0 0 1px var(--border3);
 }
 
-/* Arc activity spinner — the working indicator, from the design export.
- * Knobs: --sw-arc-size / -weight / -color / -track / -speed. */
-.sw-arc-spinner {
-  display: inline-block;
-  width: var(--sw-arc-size, 9px);
-  height: var(--sw-arc-size, 9px);
-  box-sizing: border-box;
-  border-radius: 50%;
-  border: var(--sw-arc-weight, 1.5px) solid var(--sw-arc-track, color-mix(in srgb, var(--accent) 18%, transparent));
-  border-top-color: var(--sw-arc-color, var(--accent));
-  animation: sw-arc var(--sw-arc-speed, 0.8s) linear infinite;
+/* Working: the shared busy equalizer (.sw-busy, styles/chrome-clean.css) — the
+ * same animation the pane header runs, at row scale. Every row carries both
+ * indicators; only the status class decides which one shows. */
+.ws-agent-ind .sw-busy {
+  display: none;
+  --sw-busy-w: 2.5px;
+  --sw-busy-gap: 1.5px;
+  --sw-busy-h: 8px;
 }
-@keyframes sw-arc { to { transform: rotate(360deg); } }
+.ws-agent-working .ws-agent-dot { display: none; }
+.ws-agent-working .ws-agent-ind .sw-busy { display: flex; }
 /* the pane header's soft bloom, at row scale */
-.ws-agent-working .sw-arc-spinner {
+.ws-agent-working .sw-busy {
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 45%, transparent));
 }
 .ws-agent-working { color: var(--accent-text); }
-/* reduced motion slows the arc rather than stopping it — the row still has to
- * read as active */
-@media (prefers-reduced-motion: reduce) {
-  .sw-arc-spinner { animation-duration: 2.4s; }
-}
 
 /* right-click menu on a workspace tile: add agents, rename, remove.
    A card, not a list: the count chips are filled tiles in a five-up grid and

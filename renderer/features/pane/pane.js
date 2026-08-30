@@ -1,4 +1,5 @@
-/* Pane: one terminal card (DOM + xterm + addons). Exposes window.Pane.
+/* Pane: one terminal card (DOM + xterm + addons). Import it from index.js,
+ * which is the copy with the three prototype mixins applied.
  *
  * Still a classic script, deliberately: other classic scripts read Pane's
  * statics (app.js constructs it; board.js, launcher.js, coordinator.js and
@@ -11,7 +12,27 @@
  * re-attached with Object.assign(Pane.prototype, ...) — load order in
  * index.html is what makes that work, so they come after this file. */
 
-class Pane {
+import { Confirm } from '../../lib/confirm.js';
+import { elt } from '../../lib/dom.js';
+import { Icons } from '../../lib/icons.js';
+import { toast } from '../../lib/toast.js';
+import { OpenRouterUI } from '../openrouter/openrouter.js';
+import { Speech } from '../speech/speech.js';
+import { ATLAS_CLEAR_MIN_MS, ATLAS_PAGE_LIMIT, AUTO_ACCEPT_DIALOGS, DICTATE_SUBMIT, DICTATE_SUBMIT_DELAY_MS, EFFORTS, MAX_WEBGL_PANES, MENU_OPTION_RE, MODELS, MODES, MODE_MARKERS, MODE_STEP_MS, MODE_TIP, NAME_MAX, READ_ONLY_ASK, READ_ONLY_LIFT, SHIFT_TAB, autoOrganize, droppedPaths, fmtDuration, icon, livePanes, prettyModelName, setAutoOrganize, setShowInitialCommand, setShowUsagePanel, setSkipPermissions, setUsageWindow, showInitialCommand, skipPermissions, webglPanes } from './pane-const.js';
+import { DEFAULT_FONT_SIZE, DEFAULT_FONT_WEIGHT, activeFontSize, activeFontWeight, activeMinContrast, activeMonoFont, activeXtermTheme, boldFor, getDefaultFontSize, getDefaultFontWeight, getMinContrast, getMonoFont, setDefaultFontSize, setDefaultFontWeight, setMonoFont, setXtermTheme } from './pane-theme.js';
+
+/* The glyph-atlas counters behind attachWebgl and redrawGlyphs. They are per
+ * swarm, not per pane: xterm hands every terminal sharing a font, theme and
+ * cell size the *same* texture atlas (acquireTextureAtlas), so pages one pane
+ * fills are pages every other pane draws from, and a clear anywhere is a clear
+ * everywhere. The limits they are measured against are in pane-const.js with
+ * the rest of the vocabulary; the counters are here because this is the only
+ * file that moves them. */
+let atlasPages = 0;
+let atlasClearedAt = 0;
+let atlasRebuild = 0; // rAF handle while a rebuild is already scheduled
+
+export class Pane {
   /**
    * @param {object} session {id, num, agentName, workspaceName, cwd, persistent, lastCommand}
    * @param {object} handlers {onClose, onMaximize, onResize, onRename,
@@ -53,6 +74,14 @@ class Pane {
     this.turnStartedAt = 0; // when the agent started working, 0 while it isn't
     this.waitingSince = 0; // when it started waiting on the user, 0 while it isn't
     this.toolTrailSig = null; // what renderToolTrail last drew (pane-usage.js)
+    /* on screen = this pane is in the grid the user is looking at. app.js
+     * keeps it honest (setOnScreen, from syncRendererReclaim). Two things
+     * read it: the settle-time scans below, which skip the header chips
+     * nobody can see, and main's pty batching, which slows down for the
+     * sessions behind it. */
+    this.onScreen = true;
+    this.chipsStale = false; // a scan was skipped while off screen — run it on the way back
+    this.lastFocusAt = session.createdAt || Date.now(); // renderer budget: least-recently-focused loses its context first
     livePanes.add(this);
 
     this.el = elt('section', 'pane');
@@ -186,14 +215,15 @@ class Pane {
     this.subEl = elt('span', 'pane-sub');
     this.subEl.style.display = 'none';
 
-    // equalizer-style busy indicator, shown only while the agent is working.
-    // Lives at the left edge of the usage footer; placeBusy (pane-usage.js)
-    // moves it into the header when that footer is hidden.
-    this.busyEl = elt('span', 'pane-busy');
+    // equalizer-style busy indicator, shown only while the agent is working —
+    // the shared .sw-busy component (styles/chrome-clean.css), the same one the
+    // rail's agent rows use. Lives at the left edge of the usage footer;
+    // placeBusy (pane-usage.js) moves it into the header when that is hidden.
+    this.busyEl = elt('span', 'sw-busy');
     this.busyEl.style.display = 'none';
     for (let i = 0; i < 5; i++) {
       const bar = document.createElement('span');
-      bar.className = 'pane-busy-bar';
+      bar.className = 'sw-busy-bar';
       bar.style.animationDelay = `${i * 0.1}s`;
       this.busyEl.appendChild(bar);
     }
@@ -242,7 +272,7 @@ class Pane {
     // open for the next prompt instead of closing, until a second double-click
     // (or anything else that stops dictation) ends it.
     let dictating = false;
-    const mic = window.Speech.wire(btnMic, {
+    const mic = Speech.wire(btnMic, {
       onStart: () => { dictating = true; },
       onEnd: () => { dictating = false; this.setHandsFree(false); },
       onDouble: () => {
@@ -677,11 +707,18 @@ class Pane {
    * at all for a pane whose output is modest. */
   attachWebgl() {
     if (this.webgl) return;
+    /* Over budget (MAX_WEBGL_PANES): stay on the DOM renderer rather than
+     * asking for a context Chromium would answer by killing someone else's.
+     * Marked dropped, so the reclaim pass in app.js can hand this pane a
+     * context the moment one is free. */
+    if (webglPanes.size >= MAX_WEBGL_PANES) { this.rendererDropped = true; return; }
     try {
       const webgl = new WebglAddon.WebglAddon();
       webgl.onContextLoss(() => {
         try { webgl.dispose(); } catch { /* already gone */ }
+        webglPanes.delete(this);
         this.webgl = null;
+        this.rendererDropped = true; // free to come back when the pass next runs
       });
       webgl.onAddTextureAtlasCanvas(() => {
         if (++atlasPages < ATLAS_PAGE_LIMIT) return;
@@ -692,6 +729,7 @@ class Pane {
       });
       this.term.loadAddon(webgl);
       this.webgl = webgl;
+      webglPanes.add(this);
     } catch { /* DOM renderer it is */ }
   }
 
@@ -852,7 +890,7 @@ class Pane {
     if (asking && !switched) {
       this.planAsked = true;
       this.say(READ_ONLY_ASK);
-      if (window.toast) toast(`could not set plan mode — asked ${this.session.agentName} to stop editing instead`);
+      toast(`could not set plan mode — asked ${this.session.agentName} to stop editing instead`);
     } else if (wasAsked && !asking) {
       this.say(READ_ONLY_LIFT); // the request stands until it is taken back in words
     }
@@ -893,7 +931,7 @@ class Pane {
           await new Promise((r) => setTimeout(r, MODE_STEP_MS));
           mode = this.detectMode();
         }
-        if (!quiet && window.toast) {
+        if (!quiet) {
           toast(target === 'bypass'
             ? 'auto mode is off in this agent — enable it in ⌨ Options, then restart the agent'
             : 'could not switch mode — is claude showing a dialog?');
@@ -1087,7 +1125,7 @@ class Pane {
     });
     if (!fired) {
       this.btnClose.dataset.tip = 'Click again to kill this agent';
-      if (window.toast) toast(`click ✕ again to kill ${this.session.agentName}`);
+      toast(`click ✕ again to kill ${this.session.agentName}`);
     }
   }
 
@@ -1103,8 +1141,7 @@ class Pane {
     const size = Math.max(8, Math.min(24, px));
     if (size === this.term.options.fontSize) return;
     this.term.options.fontSize = size;
-    activeFontSize = size;
-    localStorage.setItem('swarmeye.paneFontSize', String(size));
+    setDefaultFontSize(size); // pane-theme.js owns the value and its storage
     this.refit();
   }
 
@@ -1138,14 +1175,36 @@ class Pane {
     // keep the mode dropdown (and model chip) honest once output settles —
     // one shared buffer read feeds all four scans
     clearTimeout(this.modeTimer);
-    this.modeTimer = setTimeout(() => {
-      const lines = this.tailLines(30);
+    this.modeTimer = setTimeout(() => this.scanBuffer(), 500);
+  }
+
+  /* The settle-time buffer scan. One tail read feeds all of it (tailLines is
+   * the expensive part), but only two of the five have to run for a pane the
+   * user cannot see: auto-accept, because a dialog nobody clears leaves that
+   * agent blocked in a workspace nobody is looking at, and the prompt options,
+   * because the bell offers its ✓/✕ buttons from anywhere. The three header
+   * chips paint a pane that is off screen, so they wait for it to come back —
+   * setOnScreen runs the scan once on the way in. */
+  scanBuffer() {
+    const lines = this.tailLines(30);
+    if (this.onScreen) {
+      this.chipsStale = false;
       this.syncMode(lines);
       this.syncModelFromBuffer(lines);
       this.syncEffortFromBuffer(lines);
-      this.autoAcceptDialogs(lines);
-      this.refreshPromptOptions(lines);
-    }, 500);
+    } else {
+      this.chipsStale = true;
+    }
+    this.autoAcceptDialogs(lines);
+    this.refreshPromptOptions(lines);
+  }
+
+  /* app.js says which panes are in the grid on screen. Coming back with a
+   * scan owed catches the chips up in one pass. */
+  setOnScreen(on) {
+    if (on === this.onScreen) return;
+    this.onScreen = on;
+    if (on && this.chipsStale) this.scanBuffer();
   }
 
   /* detached = the attach client died but the agent lives on in tmux
@@ -1210,6 +1269,7 @@ class Pane {
   }
 
   focus() {
+    this.lastFocusAt = Date.now(); // the renderer budget spends its contexts on the panes worked in most recently
     document.querySelectorAll('.pane.focused').forEach((p) => p.classList.remove('focused'));
     this.el.classList.add('focused');
     this.clearAttention();
@@ -1227,6 +1287,7 @@ class Pane {
   dropRenderer() {
     if (!this.webgl) return;
     try { this.webgl.dispose(); } catch { /* crashy addon */ }
+    webglPanes.delete(this);
     this.webgl = null;
     this.rendererDropped = true;
   }
@@ -1250,6 +1311,7 @@ class Pane {
     // the webgl addon's dispose can throw (upstream bug) — detach it first
     // and never let any teardown error keep the pane element on screen
     try { if (this.webgl) this.webgl.dispose(); } catch { /* crashy addon */ }
+    webglPanes.delete(this); // the context this pane held is budget for another
     this.webgl = null;
     try { this.term.dispose(); } catch { /* must not block removal */ }
     this.el.remove();
@@ -1264,73 +1326,82 @@ setInterval(() => {
   for (const pane of livePanes) pane.syncWaitChip();
 }, 15000);
 
+/* Spend the page's WebGL contexts on the panes the user is actually working
+ * in. app.js calls this with the panes in the grid on screen, after every
+ * change to it; the off-screen reclaim there is the other half — this one
+ * only acts when the grid alone holds more panes than MAX_WEBGL_PANES.
+ *
+ * Rank is last-focused first, so the pane being typed in never loses its
+ * renderer to one three rows down that has not been touched all session.
+ * Losing it costs nothing but GPU acceleration: xterm falls straight back to
+ * the DOM renderer, buffer and pty untouched. */
+Pane.applyRendererBudget = (visible) => {
+  const ranked = [...visible].sort((a, b) => b.lastFocusAt - a.lastFocusAt);
+  const keep = ranked.slice(0, MAX_WEBGL_PANES);
+  const keepSet = new Set(keep);
+  // visible panes past the budget go first — they are the reason it is tight
+  for (const pane of ranked.slice(MAX_WEBGL_PANES)) pane.dropRenderer();
+  for (const pane of keep) {
+    if (pane.webgl || !pane.rendererDropped) continue;
+    if (webglPanes.size >= MAX_WEBGL_PANES) {
+      // take one back off whichever holder outside the keep set was worked in
+      // longest ago — an off-screen pane, or one this pass just demoted
+      const victim = [...webglPanes].filter((p) => !keepSet.has(p))
+        .sort((a, b) => a.lastFocusAt - b.lastFocusAt)[0];
+      if (!victim) break; // every context is held by a pane that outranks this one
+      victim.dropRenderer();
+    }
+    pane.restoreRenderer();
+  }
+};
+
 /* app.js calls this on theme switch — and on a "Theme background overlay"
  * flip, after setting the attribute, since that changes --term-bg and hence
  * the backdrop paneTheme reads. New panes pick the result up via the
  * constructor; existing terminals are restyled by the caller. */
-Pane.setXtermTheme = (name) => {
-  const base = XTERM_THEMES[name] || XTERM_THEMES.dark;
-  activeXtermTheme = paneTheme(base);
-  activeMinContrast = LIGHT_THEMES.has(name) ? MIN_CONTRAST : 1;
-  return activeXtermTheme;
-};
+Pane.setXtermTheme = setXtermTheme;
 /* the caller pushes this to already-open panes alongside the palette */
-Pane.getMinContrast = () => activeMinContrast;
+Pane.getMinContrast = getMinContrast;
 
 /* app.js's Options-panel "Agent pane text size" control reads/writes the same
  * default new panes start at (and that MOD+/- / the pane buttons update);
  * the caller is responsible for pushing the result to already-open panes */
 Pane.DEFAULT_FONT_SIZE = DEFAULT_FONT_SIZE;
-Pane.getDefaultFontSize = () => activeFontSize;
-Pane.setDefaultFontSize = (px) => {
-  const size = Math.max(8, Math.min(24, Math.round(px)));
-  activeFontSize = size;
-  localStorage.setItem('swarmeye.paneFontSize', String(size));
-  return size;
-};
+Pane.getDefaultFontSize = getDefaultFontSize;
+Pane.setDefaultFontSize = setDefaultFontSize;
 
 /* the macOS "Native Apple style" option's terminal half — new panes read the
  * result here, already-open ones are restyled by the caller (a font swap needs
  * a refit, since the cell size changes with it) */
-Pane.getMonoFont = () => activeMonoFont;
-Pane.setMonoFont = (native) => {
-  activeMonoFont = native ? NATIVE_MONO_FONT : DEFAULT_MONO_FONT;
-  return activeMonoFont;
-};
+Pane.getMonoFont = getMonoFont;
+Pane.setMonoFont = setMonoFont;
 
 /* and the same for "Agent pane text weight" — no keyboard path, so the option
  * is the only writer; the caller pushes the result to already-open panes */
 Pane.DEFAULT_FONT_WEIGHT = DEFAULT_FONT_WEIGHT;
-Pane.getDefaultFontWeight = () => activeFontWeight;
-Pane.setDefaultFontWeight = (weight) => {
-  const w = Math.max(300, Math.min(600, Math.round(weight / 100) * 100));
-  activeFontWeight = w;
-  localStorage.setItem('swarmeye.paneFontWeight', String(w));
-  return w;
-};
+Pane.getDefaultFontWeight = getDefaultFontWeight;
+Pane.setDefaultFontWeight = setDefaultFontWeight;
 
 /* app.js's Options-panel "Show last command in pane header" checkbox owns
  * persistence; this just flips the flag every pane's syncInitialCommandHeader
  * reads — the caller is responsible for re-syncing already-open panes */
-Pane.setShowInitialCommand = (on) => { showInitialCommand = !!on; };
+Pane.setShowInitialCommand = setShowInitialCommand;
 
 /* same pattern as setShowInitialCommand, for the → / ↓ split buttons */
-Pane.setAutoOrganize = (on) => { autoOrganize = !!on; };
+Pane.setAutoOrganize = setAutoOrganize;
 
 /* and again for "Default agent permissions: auto" — the only thing that reads
  * it here is autoAcceptDialogs, which must not stall on an IPC round trip in
  * the middle of a buffer scan */
-Pane.setSkipPermissions = (on) => { skipPermissions = !!on; };
+Pane.setSkipPermissions = setSkipPermissions;
 
 /* same pattern again, for the bottom cost & context panel — the caller
  * re-syncs already-open panes (which also refits their terminals) */
-Pane.setShowUsagePanel = (on) => { showUsagePanel = !!on; };
+Pane.setShowUsagePanel = setShowUsagePanel;
 
 /* app.js hands over each usage poll: the 5-hour window is what every pane's
  * "≈x% of 5h" share is measured against */
-Pane.setUsageWindow = (win) => {
-  usageWindow = win || null;
-};
+Pane.setUsageWindow = setUsageWindow;
 
 // exposed so the task board can build its starting-mode picker from the
 // same single source of truth as the per-pane mode dropdown
@@ -1339,4 +1410,3 @@ Pane.MODELS = MODELS;
 Pane.EFFORTS = EFFORTS;
 Pane.fmtDuration = fmtDuration;
 
-window.Pane = Pane;

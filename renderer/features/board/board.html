@@ -1,0 +1,182 @@
+<!-- renderer/features/board/board.html — the Task Board's markup.
+     Three blocks: the full-screen view, the category popover it opens, and
+     the transcript popup a finished task's card shows. They mount in three
+     different places in the shell, which is why they are three templates and
+     not one. -->
+
+<template data-mount="board">
+<div id="board" hidden>
+  <div class="board-box">
+    <div class="board-head">
+      <div class="board-head-left">
+        <span class="board-head-dot"></span>
+        <div class="kbd-title">Task Board</div>
+      </div>
+      <div class="board-head-actions">
+        <button id="board-new-btn" class="pill pill-primary">New task</button>
+        <button id="board-archive-btn" class="pill" data-tip="View archived tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="4.5" rx="1.2"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M10 13h4"/></svg><span>Archive</span></button>
+        <button id="board-close-btn" class="pill" data-tip="Close task board (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
+      </div>
+    </div>
+    <div id="board-main">
+      <div class="board-form-flex">
+      <div id="board-form" hidden>
+        <textarea id="board-form-text" placeholder="Describe the task for the agent…" rows="3" data-tip="Ctrl+Enter to submit"></textarea>
+        <div class="board-form-row board-form-chips">
+          <select id="board-form-ws"></select>
+          <select id="board-form-category" data-tip="Category"></select>
+          <button id="board-form-category-manage" type="button" data-tip="Manage categories for this workspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M4.9 7.5l1.9 1.1M17.2 15.4l1.9 1.1M4.9 16.5l1.9-1.1M17.2 8.6l1.9-1.1"/></svg></button>
+          <span class="board-spacer"></span>
+          <button id="board-form-mic" type="button" data-tip="Dictate task description (Ctrl+R)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
+            <span>dictate</span>
+          </button>
+        </div>
+        <div class="board-field">
+          <span class="board-field-label">When</span>
+          <div class="board-seg">
+            <label><input type="radio" name="board-mode" value="now" checked /><span>start now</span></label>
+            <label><input type="radio" name="board-mode" value="auto" /><span>auto</span></label>
+            <label><input type="radio" name="board-mode" value="next-session" /><span>next session</span></label>
+            <label><input type="radio" name="board-mode" value="manual" /><span>manual</span></label>
+          </div>
+        </div>
+        <div class="board-form-grid">
+          <div class="board-field">
+            <span class="board-field-label">Model</span>
+            <select id="board-form-model" data-tip="Model for this task"></select>
+          </div>
+          <div class="board-field">
+            <span class="board-field-label">Harness</span>
+            <select id="board-form-harness" data-tip="Which CLI runs the OpenRouter model: clean is our own minimal agent, opencode and pi are their own TUIs. pi gates nothing by design — it is always auto." hidden></select>
+          </div>
+          <div class="board-field">
+            <span class="board-field-label">Mode</span>
+            <select id="board-form-startmode"></select>
+          </div>
+          <div class="board-field">
+            <span class="board-field-label">Effort</span>
+            <select id="board-form-effort" data-tip="Claude reasoning effort for this task"></select>
+          </div>
+        </div>
+        <div class="board-form-grid">
+          <div class="board-field">
+            <span class="board-field-label">Priority</span>
+            <select id="board-form-priority" data-tip="Priority — auto mode starts higher-priority tasks first">
+              <option value="low">low priority</option>
+              <option value="medium" selected>medium priority</option>
+              <option value="high">high priority</option>
+              <option value="critical">critical priority</option>
+            </select>
+          </div>
+          <div class="board-field">
+            <span class="board-field-label">Repeat</span>
+            <select id="board-form-repeat" data-tip="Repeat — when this task completes, its next run is queued one interval later">
+              <option value="none" selected>no repeat</option>
+              <option value="hourly">every hour</option>
+              <option value="daily">every day</option>
+              <option value="weekly">every week</option>
+            </select>
+          </div>
+          <div class="board-field">
+            <span class="board-field-label">Options</span>
+            <div class="board-opts">
+              <label class="board-toggle"><input type="checkbox" id="board-form-focus" /><span>focus mode</span></label>
+              <label class="board-toggle" data-tip="Close this task's agent window automatically when the task completes"><input type="checkbox" id="board-form-closeonend" checked /><span>close on complete</span></label>
+            </div>
+          </div>
+        </div>
+        <span id="board-form-auto-hint" class="board-form-hint" hidden></span>
+        <div class="board-field">
+          <div class="board-field-labelrow">
+            <span class="board-field-label">Follow-up agents</span>
+            <span class="board-field-hint">separate steps with a line containing ---</span>
+          </div>
+          <textarea id="board-form-chain" rows="2" placeholder="When done, run these as follow-up agents…" data-tip="Each step becomes a new task with these same settings once the previous one finishes"></textarea>
+        </div>
+        <div class="board-form-actions">
+          <span class="board-form-hint board-form-kbd">Ctrl/⌘+Enter to add</span>
+          <span class="board-spacer"></span>
+          <button id="board-form-cancel">Cancel</button>
+          <button id="board-form-submit">Add task</button>
+        </div>
+      </div>
+      <div id="board-stats" hidden>
+        <div class="board-stats-title">Shipped</div>
+        <div class="board-stats-grid">
+          <div class="board-stats-row"><span id="board-stats-today" class="board-stats-n">0</span><span class="board-stats-label">today</span></div>
+          <div class="board-stats-row"><span id="board-stats-week" class="board-stats-n">0</span><span class="board-stats-label">this week</span></div>
+          <div class="board-stats-row"><span id="board-stats-month" class="board-stats-n">0</span><span class="board-stats-label">this month</span></div>
+          <div class="board-stats-row"><span id="board-stats-year" class="board-stats-n">0</span><span class="board-stats-label">this year</span></div>
+        </div>
+        <div id="board-stats-quip" class="board-stats-quip"></div>
+      </div>
+      </div>
+      <div class="board-filters">
+        <select id="board-category-filter" data-tip="Filter by category"></select>
+      </div>
+      <div id="board-cols">
+        <div class="board-col board-col-cat-manual">
+          <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Manual</span><span id="board-count-manual" class="board-col-n"></span></div>
+          <div id="board-col-manual" class="board-col-list"></div>
+        </div>
+        <div class="board-col board-col-cat-scheduled">
+          <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Scheduled</span><span id="board-count-pending" class="board-col-n"></span></div>
+          <div id="board-col-pending" class="board-col-list"></div>
+        </div>
+        <div class="board-col board-col-cat-active">
+          <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Active</span><span id="board-count-active" class="board-col-n"></span></div>
+          <div id="board-col-active" class="board-col-list"></div>
+        </div>
+        <div class="board-col board-col-cat-completed">
+          <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Completed</span><span id="board-count-completed" class="board-col-n"></span></div>
+          <div id="board-col-completed" class="board-col-list"></div>
+        </div>
+      </div>
+    </div>
+    <div id="board-archive" hidden>
+      <div class="board-archive-head">
+        <span class="board-archive-title">Archived <span id="board-archive-count" class="board-col-n"></span></span>
+        <button id="board-archive-delete-all" class="board-archive-delall" data-tip="Permanently delete all archived tasks (click twice)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.4 1.4 0 0 0 1.4 1.3h6.4a1.4 1.4 0 0 0 1.4-1.3l.9-12.5"/><path d="M10.4 10v6.5M13.6 10v6.5"/></svg><span>Delete all</span></button>
+      </div>
+      <div class="board-archive-filters">
+        <input id="board-archive-search" type="search" placeholder="search archived tasks…" spellcheck="false" />
+        <select id="board-archive-category-filter" data-tip="Filter by category"></select>
+        <select id="board-archive-priority-filter" data-tip="Filter by priority">
+          <option value="">all priorities</option>
+          <option value="critical">critical</option>
+          <option value="high">high</option>
+          <option value="medium">medium</option>
+          <option value="low">low</option>
+        </select>
+      </div>
+      <div id="board-archive-list" class="board-archive-list"></div>
+    </div>
+  </div>
+</div>
+</template>
+
+<template data-mount="board-category-pop">
+<div id="board-category-pop" hidden>
+  <div id="board-category-pop-title" class="kbd-title">Categories</div>
+  <div id="board-category-pop-list"></div>
+  <div class="board-category-pop-addrow">
+    <input id="board-category-pop-input" type="text" placeholder="new category…" maxlength="30" spellcheck="false" />
+    <button id="board-category-pop-add" type="button">+</button>
+  </div>
+</div>
+</template>
+
+<template data-mount="session-view">
+<div id="session-view" hidden>
+  <div id="session-view-box">
+    <div id="session-view-head">
+      <span id="session-view-title"></span>
+      <span class="spacer"></span>
+      <button id="session-view-export" data-tip="Save this transcript to a file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v11"/><path d="m7.8 10.6 4.2 4.2 4.2-4.2"/><path d="M4.5 17v2a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg></button>
+      <button id="session-view-close" data-tip="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg></button>
+    </div>
+    <pre id="session-view-body"></pre>
+  </div>
+</div>
+</template>

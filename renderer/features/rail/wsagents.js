@@ -7,9 +7,12 @@
  * (no model call, nothing injected into the agent — see CLAUDE.md).
  *
  * topbar.js owns the workspace tiles and calls in twice: attach() when it
- * rebuilds a tile, sync() on every chrome beat. Exposes window.WsAgents. */
+ * rebuilds a tile, sync() on every chrome beat. */
 
-const WsAgents = (() => {
+import { elt } from '../../lib/dom.js';
+import { Icons } from '../../lib/icons.js';
+
+export const WsAgents = (() => {
   const KEY = 'swarmeye.wsAgents'; // workspace ids the user folded *shut*
 
   // default is open, so only the closed ones need remembering
@@ -26,6 +29,23 @@ const WsAgents = (() => {
   // sessionId -> {src, text}: the summary is only recomputed when the prompt
   // behind it changes, not on every beat
   const summaries = new Map();
+
+  /* ---- the row's activity indicator ----
+   * Both indicators are built once and live in the row: the dot for idle,
+   * attention and exited, and the shared busy equalizer (.sw-busy — the same
+   * one the pane header runs) for working. rail.css shows whichever the row's
+   * status class calls for, so a status flip writes no DOM here. */
+  function indicator() {
+    const ind = elt('span', 'ws-agent-ind');
+    const busy = elt('span', 'sw-busy');
+    for (let i = 0; i < 5; i++) {
+      const bar = elt('span', 'sw-busy-bar');
+      bar.style.animationDelay = `${i * 0.1}s`;
+      busy.appendChild(bar);
+    }
+    ind.append(elt('span', 'ws-agent-dot'), busy);
+    return ind;
+  }
 
   /* ---- summary ----
    * The launch prompt, cut down to something that fits a 200px row. Not a
@@ -140,7 +160,7 @@ const WsAgents = (() => {
       const row = document.createElement('button');
       row.className = 'ws-agent';
       row.type = 'button';
-      row.append(elt('span', 'ws-agent-ind'), elt('span', 'ws-agent-name'));
+      row.append(indicator(), elt('span', 'ws-agent-name'));
       row.addEventListener('click', () => {
         if (row.dataset.sid && row.__onOpen) row.__onOpen(row.dataset.sid);
       });
@@ -163,13 +183,9 @@ const WsAgents = (() => {
       row.dataset.tip = pane.session.agentName;
       if (pane.initialCommandText) row.dataset.tipSecondary = pane.initialCommandText;
       else delete row.dataset.tipSecondary;
-      // the working indicator is the arc spinner; the rest are dots
-      row.children[0].className = 'ws-agent-ind' + (st === 'working' ? ' sw-arc-spinner' : ' ws-agent-dot');
       row.children[1].textContent = text;
     });
   }
 
   return { reset, attach, sync };
 })();
-
-window.WsAgents = WsAgents;

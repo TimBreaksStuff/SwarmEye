@@ -10,7 +10,11 @@ starts a lead agent that delegates to workers.
 
 ## Files
 
-`addagent.js`
+`addagent.js` · `addagent.css`
+
+The sheet is the role editor's one row adjustment, cut out of
+`styles/chrome-clean.css`. Slot 5, after chrome-clean.css: the menu is built
+from the shared branch-row shapes and this only nudges the row carrying a role.
 
 ## Public interface
 

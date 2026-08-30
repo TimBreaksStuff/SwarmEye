@@ -7,7 +7,9 @@
  * offline — audio never leaves the machine. Exposes window.Speech:
  * { wire(button, opts) }, which is how every mic button in the app is hooked
  * up. Only one dictation session runs app-wide at a time. */
-const Speech = (() => {
+import { toast } from '../../lib/toast.js';
+
+export const Speech = (() => {
   const supported = !!(window.swarm && window.swarm.speechStart && navigator.mediaDevices);
   let active = null; // { id, opts, stream, ctx }
   let nextId = 1;
@@ -184,4 +186,3 @@ const Speech = (() => {
 
   return { wire };
 })();
-window.Speech = Speech;

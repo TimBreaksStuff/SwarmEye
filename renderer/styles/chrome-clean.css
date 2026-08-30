@@ -8,87 +8,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* ---------- command palette ---------- */
-/* Sits high rather than centred — the list grows downward, and a box pinned to
-   the middle would walk up the screen as it filled. */
-#palette-pop {
-  position: fixed;
-  z-index: 70;
-  top: 84px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(680px, 92vw);
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-  overflow: hidden;
-}
-#palette-pop[hidden] { display: none; }
-#palette-input {
-  font-family: var(--font-ui);
-  font-size: 14px;
-  color: var(--text);
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  padding: 13px 16px;
-}
-#palette-input:focus-visible { outline: none; }
-#palette-list {
-  max-height: min(52vh, 460px);
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border3) transparent;
-}
-.palette-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  width: 100%;
-  padding: 7px 16px;
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  font-family: var(--font-ui);
-}
-.palette-row.sel { background: var(--hover); }
-.palette-row.sel .palette-label { color: var(--text); }
-/* the kind sits in a fixed column so the eye can scan one edge, not a ragged one */
-.palette-group {
-  flex: none;
-  width: 74px;
-  font-size: 10px;
-  color: var(--muted2);
-  text-transform: lowercase;
-}
-.palette-label {
-  flex: 1;
-  min-width: 0;
-  font-size: 12.5px;
-  color: var(--text2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.palette-hint {
-  flex: none;
-  max-width: 42%;
-  font-size: 10.5px;
-  color: var(--muted2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.palette-empty {
-  padding: 14px 16px;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--muted2);
-}
 
 /* ============================== VIEWS ==============================
  * The Task Board and Skills were built before the chrome went flat: capsule
@@ -350,256 +269,11 @@
   outline-offset: 1px;
 }
 
-/* ================= EMPTY WORKSPACE: LAUNCH CARD =================
- * From the `empty-launcher` design export, re-themed onto tokens: the export
- * hardcodes the dark theme's hex stroke, vignette and knocked-out text, which
- * would break Light. The honeycomb is a mask over --grid-line rather than a
- * coloured SVG, the same trick body::before uses, so it follows the theme and
- * can be switched off with it.
- *
- * #empty-state is pointer-events: none so the grid behind it stays reachable —
- * the card is the one thing in there you can click. */
-
-.empty-launcher {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  /* opaque: the app's own page-wide honeycomb runs behind this, and two hex
-   * fields at different scales read as moiré */
-  background: var(--bg);
-  pointer-events: auto;
-}
-.empty-launcher[hidden] { display: none; }
-.empty-launcher.busy { pointer-events: none; opacity: .6; }
-
-/* --- honeycomb field --- */
-.empty-launcher__hex,
-.empty-launcher__fade { position: absolute; inset: 0; pointer-events: none; }
-
-.empty-launcher__hex {
-  background: var(--grid-line);
-  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='112' height='64' viewBox='0 0 112 64'><path d='M28 1 L54 16 L54 46 L28 61 L2 46 L2 16 Z M84 1 L110 16 L110 46 L84 61 L58 46 L58 16 Z' fill='none' stroke='white' stroke-width='1.5'/></svg>");
-  -webkit-mask-size: 112px 64px;
-  -webkit-mask-repeat: repeat;
-}
-/* "Theme background overlay: off" hides the app's grid — hide this one too,
- * or the option only half applies */
-:root[data-theme-overlay="off"] .empty-launcher__hex { display: none; }
-
-/* vignette: the field fades toward the edges so focus lands on the card */
-.empty-launcher__fade {
-  background: radial-gradient(ellipse 62% 58% at 50% 50%,
-    transparent 0%,
-    color-mix(in srgb, var(--bg) 72%, transparent) 58%,
-    var(--bg) 100%);
-}
-
-/* --- card --- */
-.launcher-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 38px;
-  max-width: min(880px, 94%);
-  max-height: 100%;
-  overflow: auto;
-  padding: 62px 34px;
-  border: 1px solid var(--border2);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
-}
-
-.launcher-card__head {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-.launcher-card__title {
-  font-family: var(--font-mono);
-  font-size: clamp(20px, 2vw, 26px);
-  font-weight: 700;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  line-height: 1.15;
-  text-align: center;
-  /* --accent-text, not --accent: 1.35.1 re-picked this pair because raw
-   * --accent as text is 2.71:1 on the Light theme */
-  color: var(--accent-text);
-}
-.launcher-card__sub { font-size: 13px; color: var(--muted); }
-.launcher-card__rule { width: 100%; height: 1px; background: var(--border); }
-
-/* --- count tiles --- */
-.count-tiles {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px 6px;
-  max-width: 100%;
-  padding: 0 20px;
-}
-
-.count-tile {
-  position: relative;
-  width: clamp(72px, 7vw, 88px);
-  aspect-ratio: 1;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  border-radius: 14px;
-  background: var(--border2);
-  cursor: pointer;
-  outline: none;
-  transition: background .14s ease;
-}
-/* the inner face; the 2px ring of .count-tile shows as the border */
-.count-tile::before {
-  content: '';
-  position: absolute;
-  inset: 2px;
-  border-radius: 12px;
-  background: var(--surface);
-  transition: background .14s ease;
-}
-.count-tile__n {
-  position: relative;
-  font-family: var(--font-mono);
-  font-size: clamp(21px, 2vw, 26px);
-  font-weight: 600;
-  line-height: 1;
-  color: var(--text);
-}
-
-.count-tile:hover:not([disabled]):not([aria-checked="true"]) {
-  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
-}
-.count-tile:focus-visible {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
-}
-
-/* selected: solid accent, number knocked out */
-.count-tile[aria-checked="true"],
-.count-tile[aria-checked="true"]::before { background: var(--accent); }
-.count-tile[aria-checked="true"] .count-tile__n { color: var(--on-accent); }
-
-.count-tile[disabled] {
-  cursor: default;
-  opacity: .32;
-  background: color-mix(in srgb, var(--border) 60%, var(--surface));
-}
-.count-tile[disabled] .count-tile__n { color: var(--muted); }
-
-/* --- launch options --- */
-.launch-options {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 14px;
-}
-/* six while the OpenRouter Harness field is showing — hidden it leaves the
- * grid altogether, so a Claude launch keeps exactly the five it had */
-.launch-options.has-harness { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-.launch-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
-/* ...and this is what makes hiding one work: the rule above sets a display,
- * which beats the [hidden] attribute's own. Without it the Harness field kept
- * its place under the Claude provider — on screen, while fillModels had
- * already decided it was hidden and getSettings ignored what it said. */
-.launch-field[hidden] { display: none; }
-/* Provider and Model name who is billed ("Anthropic Subscription: Sonnet"),
- * which one column ellipsizes away — see LAUNCH_FIELDS in launcher.js */
-.launch-field--wide { grid-column: span 2; }
-.launch-field__label {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: .16em;
-  text-transform: uppercase;
-  color: var(--text2);
-  white-space: nowrap;
-}
-/* a native <select> wearing the export's button-and-chevron face — the
- * .pane-mode treatment, so the keyboard and screen-reader behaviour is the
- * platform's rather than something reimplemented here */
-.launch-field__select {
-  width: 100%;
-  height: 36px;
-  padding: 0 26px 0 11px;
-  border: 1px solid var(--border2);
-  border-radius: 9px;
-  background-color: var(--hover);
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: 12.5px;
-  font-weight: 500;
-  text-align: left;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12'><path d='M2 4.5l4 4 4-4' fill='none' stroke='%238b919a' stroke-width='1.8' stroke-linecap='round'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 9px center;
-  transition: border-color .15s, background-color .15s;
-}
-.launch-field__select:hover { border-color: var(--border-hover); }
-.launch-field__select:disabled { opacity: .45; cursor: not-allowed; }
-.launch-field__select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-.launch-field__select option { background: var(--surface); color: var(--text); }
-
-/* --- footer --- */
-.launcher-card__foot {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.launcher-card__go {
-  height: 36px;
-  padding: 0 18px;
-  border: none;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-family: var(--font-ui);
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.launcher-card__go:hover:not(:disabled) { filter: brightness(1.08); }
-.launcher-card__go:disabled { opacity: .45; cursor: not-allowed; }
-.launcher-card__go:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* the fields hold their row to 720px, then fold two-up — .has-harness is the
- * more specific selector, so it has to be named again to be overridden */
-@media (max-width: 720px) {
-  .launch-options, .launch-options.has-harness { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .launcher-card { padding: 40px 22px; gap: 28px; }
-}
-
 /* ---- flat popovers, the stragglers ----
  * chrome-clean is "no glass or blur", and backdrop-filter is also a real
  * per-frame GPU cost: while any of these floats over streaming terminals the
  * compositor re-blurs its backdrop on every frame the panes repaint. They all
  * take the same opaque-surface treatment. */
-#msg-pop,
 .branch-menu,
 .app-tooltip,
 #rail-menu,
@@ -607,123 +281,31 @@
   background: var(--surface);
   backdrop-filter: none;
 }
-
-/* --- the role editor --- */
-/* clear of the resize grip */
-/* the rows under a label are indented past it, so the label reads as the head
- * of its group rather than another row */
-.agent-kind-menu .branch-item { padding-left: 20px; }
-.msg-mention.sel { background: var(--hover); color: var(--accent-text); }
-
-/* ---- OpenRouter key row (Options → Setup) ----
- * The one text input in the options panel; .opt-ctl button's 24x24 stepper
- * box would clip the worded Save button, same escape as #update-check-btn. */
-#or-key-input {
-  box-sizing: border-box;
-  width: 150px;
-  height: 24px;
-  padding: 0 8px;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border2);
-  border-radius: 6px;
-  font: inherit;
-  font-size: 11px;
-}
-#or-key-input::placeholder { color: var(--muted); }
-#or-key-save {
-  width: auto;
-  height: auto;
-  padding: 5px 10px;
-  font-size: 11px;
-}
-#or-status {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* errors get a full-width line under the row instead of ellipsizing into the
- * sliver of space beside the input ("⚠ that d…") */
-#or-error {
-  padding: 2px 2px 6px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--err);
-}
-
-/* the models `/model` offers inside an agent — the slugs are wider than the
- * options panel's control column, so the picks wrap onto their own line under
- * the row (same escape #or-error takes) and only the ＋ stays in the row */
-#or-alts-list {
+/* ---------- busy equalizer ---------- */
+/* The one "this agent is working" animation, shared by the pane header and the
+ * rail's agent rows so both read as the same thing. Five bars, each a beat
+ * behind the last (the caller sets the per-bar animation-delay); the custom
+ * properties are the only knobs — a caller resizes it, never restyles it. */
+.sw-busy {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 2px 8px;
+  gap: var(--sw-busy-gap, 3px);
+  height: var(--sw-busy-h, 9px);
+  align-items: flex-end;
+  flex: none;
 }
-.or-alt-chip {
-  padding: 3px 8px;
-  border: 1px solid var(--border3);
-  border-radius: 6px;
-  background: var(--hover);
-  color: var(--text2);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 1.5;
-  cursor: pointer;
+.sw-busy-bar {
+  width: var(--sw-busy-w, 4.5px);
+  height: 100%;
+  background: var(--sw-busy-color, var(--accent));
+  border-radius: 1px;
+  animation: sw-busy-block var(--sw-busy-speed, 0.9s) ease-in-out infinite;
 }
-.or-alt-chip:hover { color: var(--accent-text); border-color: var(--accent); }
-
-/* the + Agent menu's OpenRouter model picker — .branch-menu chrome with a
- * filter on top; the catalog is ~300 rows, so the list scrolls, not the menu */
-.or-model-menu { max-height: 60vh; overflow: hidden; }
-.or-model-menu .branch-new-input { flex: none; }
-.or-model-list {
-  overflow-y: auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  margin-top: 4px;
+@keyframes sw-busy-block {
+  0%, 60%, 100% { opacity: 0.18; transform: scaleY(0.4); }
+  20% { opacity: 1; transform: scaleY(1); }
 }
-.or-model-list .branch-item { flex: none; }
-.or-model-none { padding: 5px 9px; color: var(--muted); }
-
-/* Ctrl+N's Claude-or-OpenRouter question — .branch-menu chrome with a
-   remember checkbox under the two provider rows */
-.or-provider-remember {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 9px 3px;
-  margin-top: 3px;
-  border-top: 1px solid var(--border2);
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
+/* reduced motion slows the bars rather than stopping them — the row still has
+ * to read as active */
+@media (prefers-reduced-motion: reduce) {
+  .sw-busy-bar { animation-duration: 2.4s; }
 }
-.or-provider-remember input { margin: 0; }
-
-/* Harness toggle above the catalog filter: which CLI the picked model runs
- * in. One chip shape in two tones, like the rest of the chrome — the active
- * one takes the accent, the others stay quiet. */
-.or-harness-row {
-  display: flex;
-  gap: 4px;
-  padding: 6px 9px 3px;
-}
-.or-harness {
-  flex: 1;
-  padding: 3px 6px;
-  border: 1px solid var(--border2);
-  border-radius: 6px;
-  background: var(--hover);
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
-}
-.or-harness:hover { color: var(--text); border-color: var(--border3); }
-.or-harness.on {
-  border-color: var(--accent);
-  color: var(--accent-text);
-}
-.or-harness:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

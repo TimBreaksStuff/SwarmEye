@@ -5,6 +5,11 @@
  * model and effort it is running on.
  */
 
+import { elt } from '../../lib/dom.js';
+import { OpenRouterUI } from '../openrouter/openrouter.js';
+import { CONTEXT_WINDOW, CONTEXT_WINDOW_LARGE, FIVE_HOURS_MS, fmtCost, fmtDuration, fmtTokens, livePanes, prettyModelName, showUsagePanel, usageWindow } from './pane-const.js';
+import { Pane } from './pane.js';
+
 /* One ticker for every panel rather than one per pane, for the same reason as
  * the waiting-chip ticker in pane.js: the panel's own figures move once a
  * turn, and only the two clocks (time in this turn, the 5-hour share) need a
@@ -114,7 +119,7 @@ Object.assign(Pane.prototype, {
     // is what the launch env caps the agent at), so the meter uses it rather
     // than the Claude 200k/1M guess. Looked up until it lands: config:get can
     // arrive after a restored pane was built.
-    if (!this.orCtx && this.orSlug && window.OpenRouterUI) {
+    if (!this.orCtx && this.orSlug) {
       const known = OpenRouterUI.models.find((m) => m.id === this.orSlug);
       if (known && known.ctx > 0) this.orCtx = known.ctx;
     }

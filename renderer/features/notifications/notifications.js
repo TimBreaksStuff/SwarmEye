@@ -10,6 +10,10 @@
  * things it needs through its own ctx), so there is no cycle to trip over.
  */
 
+import { dragWidth, placePop } from '../../lib/dom.js';
+import { Topbar } from '../rail/topbar.js';
+import { Sounds } from '../sounds/sounds.js';
+
 import { kbdPop, kbdShortcutsPop, desktopNotifs, notifSpeech } from '../settings/settings.js';
 
 export const notifPopEl = document.getElementById('notif-pop');

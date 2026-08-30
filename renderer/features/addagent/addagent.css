@@ -1,0 +1,9 @@
+/* renderer/features/addagent/addagent.css — the + Agent menu's role editor.
+ *
+ * Slot 5, after chrome-clean.css: the menu is built from the shared branch-row
+ * shapes and this only adjusts the one that carries a role. */
+/* --- the role editor --- */
+/* clear of the resize grip */
+/* the rows under a label are indented past it, so the label reads as the head
+ * of its group rather than another row */
+.agent-kind-menu .branch-item { padding-left: 20px; }

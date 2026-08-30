@@ -9,7 +9,7 @@
  * should do) and handed over through `getItems`, rebuilt on every open so a
  * closed agent or a finished task is never offered. Exposes window.Palette. */
 
-const Palette = (() => {
+export const Palette = (() => {
   const popEl = document.getElementById('palette-pop');
   const inputEl = document.getElementById('palette-input');
   const listEl = document.getElementById('palette-list');
@@ -140,5 +140,3 @@ const Palette = (() => {
 
   return { init, open, close, setQuery, toggle: () => (popEl.hidden ? open() : close()), isOpen: () => !popEl.hidden };
 })();
-
-window.Palette = Palette;

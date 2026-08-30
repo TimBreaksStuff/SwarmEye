@@ -10,7 +10,12 @@
  * about skill state. Exposes the global `Skills` (read directly by app.js,
  * not via window — see Board.js for the same pattern). */
 
-const Skills = (() => {
+import { Confirm } from '../../lib/confirm.js';
+import { elt } from '../../lib/dom.js';
+import { Icons } from '../../lib/icons.js';
+import { toast } from '../../lib/toast.js';
+
+export const Skills = (() => {
   const listEl = document.getElementById('skills-list');
   const emptyEl = document.getElementById('skills-empty');
   const addBtn = document.getElementById('skills-add-btn');

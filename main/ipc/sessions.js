@@ -12,10 +12,10 @@ const agentScope = require('../scope');
 const worktree = require('../worktree');
 const path = require('path');
 const fs = require('fs');
-const { MODELS, EFFORT_FLAGS } = require('../sessions');
+const { MODEL_FLAGS, EFFORT_FLAGS, MODELS, EFFORTS, pairsOf } = require('../models');
 
 module.exports = function register(deps) {
-  const { ptys, usage, ptysReady, hooks, skills, debugLog, sendToWin } = deps;
+  const { ptys, usage, ptysReady, hooks, skills, debugLog, sendToWin, setVisibleSessions } = deps;
 
   /* What became of an agent's worktree when its pane closed (main/worktree.js).
    * A push rather than a return value, because the same answer has to reach the
@@ -59,6 +59,15 @@ module.exports = function register(deps) {
   // The prompt itself stays in main: it is only ever appended at launch, and
   // the renderer has nothing to do with it.
   ipcMain.handle('roles:list', () => roles.list().map(({ key, label, model }) => ({ key, label, model })));
+
+  /* Same arrangement as roles: main/models.js owns the table, the renderer is
+   * handed [value, label] pairs and builds every model and effort select from
+   * them. The renderer used to keep its own copy of both lists, so a new tier
+   * was two edits in two processes with the labels only in one of them. */
+  ipcMain.handle('models:list', () => ({
+    models: pairsOf(MODELS),
+    efforts: pairsOf(EFFORTS),
+  }));
   /* A scope is a permission boundary, so everything about it fails loudly: a
    * path that is no longer there, or a harness with no permission layer to
    * deny with (clean/opencode/pi answer to no settings file), refuses the
@@ -187,7 +196,7 @@ module.exports = function register(deps) {
         // flag — plus the third-party harnesses, which the board does not
         // offer but a pane restart must not silently drop: an unlisted value
         // comes back as a plain Claude agent nobody asked for
-        model: (MODELS.includes(payload.model) || providers.slugOf(payload.model)
+        model: (MODEL_FLAGS.includes(payload.model) || providers.slugOf(payload.model)
           || providers.cleanSlugOf(payload.model) || providers.isForeign(payload.model)) ? payload.model : undefined,
         continueFrom,
         resumeId,
@@ -258,6 +267,10 @@ module.exports = function register(deps) {
 
   ipcMain.on('session:write', (e, { id, data }) => ptys.write(id, data));
   ipcMain.on('session:resize', (e, { id, cols, rows }) => ptys.resize(id, cols, rows));
+  /* which agents are in the grid on screen. Purely a pacing hint: main batches
+   * an off-screen session's output at a quarter-second instead of 16ms, since
+   * xterm doesn't draw a terminal nobody can see (see queuePtyData). */
+  ipcMain.on('sessions:visible', (e, ids) => setVisibleSessions(ids));
   ipcMain.handle('session:kill', async (e, { id }) => {
     // kill() throws when the shell never answered — the agent is still alive
     // in tmux and its metadata kept, so it reattaches on the next launch.

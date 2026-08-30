@@ -2,7 +2,10 @@
  * menu to start agents there / rename / remove), the top bar's
  * active-workspace context, usage mini bars. Exposes window.Topbar. */
 
-const Topbar = (() => {
+import { elt } from '../../lib/dom.js';
+import { WsAgents } from './wsagents.js';
+
+export const Topbar = (() => {
   const workspacesEl = document.getElementById('workspaces');
   const addAgentBtn = document.getElementById('add-agent');
   const usageEl = document.getElementById('usage');
@@ -258,14 +261,37 @@ const Topbar = (() => {
     return `${Math.floor(m / 1440)}d`;
   }
 
-  // a coalesced row says how many times it fired
-  function notifText(n) {
-    return n.count > 1 ? `${n.text} ×${n.count}` : n.text;
+  /* Which day a row belongs under. The list is newest-first, so these come out
+   * in order; a bucket is titled by how far back it is, not by its date, until
+   * a week out where a weekday name stops being unambiguous. */
+  function notifDay(t) {
+    const midnight = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const days = Math.round((midnight(new Date()) - midnight(new Date(t))) / 86400000);
+    if (days <= 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return new Date(t).toLocaleDateString([], { weekday: 'long' });
+    return new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
-  // per-row dismiss — splices exactly this row without clearing the rest
-  function notifDismissButton(n, handlers) {
-    const x = elt('button', 'notif-dismiss', '✕');
+  /* Newest day first, and inside a day the order it was handed (answerable
+   * prompts float up there — see renderNotifs). Bucketing by day rather than
+   * by first appearance keeps a three-day-old permission prompt from dragging
+   * its whole date above Today. */
+  function notifGroups(notifs) {
+    const by = new Map();
+    for (const n of notifs) {
+      const label = notifDay(n.time);
+      if (!by.has(label)) by.set(label, { label, newest: n.time, rows: [] });
+      const g = by.get(label);
+      g.rows.push(n);
+      if (n.time > g.newest) g.newest = n.time;
+    }
+    return [...by.values()].sort((a, b) => b.newest - a.newest);
+  }
+
+  /* per-row dismiss — splices exactly this row without clearing the rest */
+  function notifDismissLink(n, handlers) {
+    const x = elt('button', 'notif-link', 'Dismiss');
     x.dataset.tip = 'Dismiss this notification';
     x.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -299,62 +325,73 @@ const Topbar = (() => {
     return wrap;
   }
 
-  /* the one per-notification action: jump to the pane it came from. */
-  function notifActionButtons(n, handlers) {
-    const wrap = elt('div', 'notif-acts');
+  const notifEmpty = () => elt('div', 'notif-empty', 'nothing yet — agent events land here');
 
-    const go = elt('button', 'notif-act', '↗ Agent');
+  /* One row, for either list that shows notifications — a timeline entry: a
+   * gutter carrying the kind's dot and the thread down to the next row, then
+   * the event, its prompt and its two actions. The bell's popover keeps it to
+   * one line each; the docked panel (`full`) adds the model, the permission
+   * mode, how long the agent had been running and the absolute timestamp, and
+   * lets the prompt wrap. Same skeleton either way, so a change to a row is
+   * one edit.
+   *
+   * `last` drops the connector: a thread hanging off the final row of a day
+   * points at nothing. */
+  function notifRow(n, handlers, full, last) {
+    const row = elt('div', 'notif-item' + (full ? ' full' : '') + (last ? ' last' : ''));
+    row.dataset.tip = 'Jump to this agent';
+    row.addEventListener('click', () => handlers.onOpen(n.paneId));
+
+    const rail = elt('div', 'notif-rail');
+    rail.append(elt('span', 'notif-dot ' + n.kind), elt('span', 'notif-thread')); // done | wait | exit | detach
+
+    const body = elt('div', 'notif-item-body');
+
+    const head = elt('div', 'notif-line');
+    head.append(elt('span', 'notif-agent', n.agent), elt('span', 'notif-what', n.text));
+    if (n.count > 1) head.appendChild(elt('span', 'notif-count', `×${n.count}`));
+    head.appendChild(elt('span', 'notif-gap'));
+    const time = elt('span', 'notif-time', fmtAgo(n.time));
+    time.dataset.tip = fmtFull(n.time);
+    head.appendChild(time);
+    body.appendChild(head);
+
+    body.appendChild(elt('div', 'notif-meta', n.ws));
+    if (full) {
+      // model / permission mode / how-long-it-had-been-running when the event
+      // fired ("no start time recorded" is not the same as "0m") / when
+      const ran = n.createdAt && n.time >= n.createdAt ? n.time - n.createdAt : null;
+      const meta = [n.model || 'default model', n.mode ? `${n.mode} mode` : null,
+        ran == null ? null : `running ${fmtDur(ran)}`, fmtFull(n.time)].filter(Boolean);
+      body.appendChild(elt('div', 'notif-meta', meta.join(' · ')));
+    }
+    if (n.cmd) body.appendChild(elt('div', 'notif-prompt', n.cmd));
+
+    const acts = elt('div', 'notif-acts');
+    if (n.kind === 'wait' && n.canRespond) acts.appendChild(notifRespondButtons(n, handlers));
+    const go = elt('button', 'notif-link go', 'Open agent');
     go.dataset.tip = 'Jump to this agent';
     go.addEventListener('click', (e) => {
       e.stopPropagation();
       handlers.onOpen(n.paneId);
     });
+    acts.append(go, notifDismissLink(n, handlers));
+    body.appendChild(acts);
 
-    wrap.append(go);
-    return wrap;
+    row.append(rail, body);
+    return row;
   }
 
-  const notifEmpty = () => elt('div', 'notif-empty', 'nothing yet — agent events land here');
-
-  /* One row, for either list that shows notifications: the bell's popover
-   * (compact — a relative time on the right) and the docked panel (`full`:
-   * model, permission mode and runtime under the text, with an absolute
-   * timestamp). Same skeleton either way, so a change to a row is one edit. */
-  function notifRow(n, handlers, full) {
-    const cls = full ? 'notif-panel-' : 'notif-';
-    const row = elt('div', full ? 'notif-panel-row' : 'notif-row');
-    row.dataset.tip = 'Jump to this agent';
-    row.addEventListener('click', () => handlers.onOpen(n.paneId));
-
-    const dot = elt('span', 'notif-dot ' + n.kind); // done | wait | exit | detach
-    const body = elt('div', 'notif-body');
-    body.append(elt('div', cls + 'who', `${n.agent} · ${n.ws}`),
-      elt('div', cls + 'what', notifText(n)));
-    if (n.cmd) {
-      // same accent-bar + mono-text treatment as the pane's initial-command row
-      const cmd = elt('div', 'notif-cmd');
-      cmd.append(elt('span', 'pane-subheader-bar'), elt('span', cls + 'what', n.cmd));
-      body.appendChild(cmd);
+  /* The whole timeline — day headings and the rows under them — appended to
+   * whichever list asked for it. */
+  function notifTimeline(host, notifs, handlers, full) {
+    for (const g of notifGroups(notifs)) {
+      const group = elt('div', 'notif-group');
+      group.appendChild(elt('div', 'notif-group-label', g.label));
+      g.rows.forEach((n, i) => group.appendChild(
+        notifRow(n, handlers, full, i === g.rows.length - 1)));
+      host.appendChild(group);
     }
-    if (full) {
-      // model / permission mode / how-long-it-had-been-running when the event
-      // fired ("no start time recorded" is not the same as "0m")
-      const ran = n.createdAt && n.time >= n.createdAt ? n.time - n.createdAt : null;
-      const meta = [n.model || 'default model', n.mode ? `${n.mode} mode` : null,
-        ran == null ? null : `running ${fmtDur(ran)}`].filter(Boolean);
-      body.append(elt('div', 'notif-panel-meta', meta.join(' · ')),
-        elt('div', 'notif-panel-time', fmtFull(n.time)));
-    }
-    body.appendChild(notifActionButtons(n, handlers));
-    row.append(dot, body);
-    if (!full) {
-      const time = elt('span', 'notif-time', fmtAgo(n.time));
-      time.dataset.tip = fmtFull(n.time);
-      row.appendChild(time);
-    }
-    if (n.kind === 'wait' && n.canRespond) row.append(notifRespondButtons(n, handlers));
-    row.append(notifDismissButton(n, handlers));
-    return row;
   }
 
   function renderNotifications(notifs, unread, handlers) {
@@ -376,24 +413,24 @@ const Topbar = (() => {
     title.className = 'kbd-title';
     title.textContent = 'Notifications';
     head.appendChild(title);
-    const expand = elt('button', 'notif-clear', 'details ▸');
+    const acts = elt('div', 'notif-head-acts');
+    const expand = elt('button', 'notif-link', 'Details');
     expand.dataset.tip = 'Open the full notification panel';
     expand.addEventListener('click', (e) => {
       e.stopPropagation();
       handlers.onExpand();
     });
-    head.appendChild(expand);
+    acts.appendChild(expand);
     if (notifs.length) {
-      const clear = document.createElement('button');
-      clear.className = 'notif-clear';
-      clear.textContent = 'clear';
+      const clear = elt('button', 'notif-link', 'Clear all');
       clear.dataset.tip = 'Empty this list';
       clear.addEventListener('click', (e) => {
         e.stopPropagation();
         handlers.onClear();
       });
-      head.appendChild(clear);
+      acts.appendChild(clear);
     }
+    head.appendChild(acts);
     notifPop.appendChild(head);
 
     if (!notifs.length) {
@@ -401,7 +438,7 @@ const Topbar = (() => {
       return;
     }
 
-    for (const n of notifs) notifPop.appendChild(notifRow(n, handlers, false));
+    notifTimeline(notifPop, notifs, handlers, false);
   }
 
   /* notification panel: right-side docked view (same slot pattern as the
@@ -461,7 +498,7 @@ const Topbar = (() => {
       return;
     }
 
-    for (const n of shown) notifPanelList.appendChild(notifRow(n, handlers, true));
+    notifTimeline(notifPanelList, shown, handlers, true);
   }
 
   // the count itself reads in the rail (per-workspace badges); all the top bar
@@ -624,5 +661,3 @@ const Topbar = (() => {
 
   return { renderWorkspaces, renderNotifications, renderNotifPanel, updateAgentCap, renderUsage, setUsageSection, fmtIn };
 })();
-
-window.Topbar = Topbar;

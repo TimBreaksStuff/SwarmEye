@@ -1,0 +1,56 @@
+/* renderer/lib/tooltip.css — the look of the one shared hover tooltip that
+ * lib/tooltip.js puts on the page. It lives here rather than in an area's
+ * sheet because no area owns it: the static data-tip hints come from every
+ * corner of the app and the pane title's dynamic prompt tip reuses the same
+ * element, which is the whole point of having one.
+ *
+ * Loads at slot 3 straight after pane.css, where these rules used to sit, so
+ * the flat-popover override chrome-clean.css puts on .app-tooltip at slot 4
+ * still lands after them. */
+/* shared floating tooltip look — used for both the static data-tip hints
+ * (tooltip.js) and the pane title's dynamic initial-prompt tip (pane.js) so
+ * every hover popup in the app renders identically */
+.app-tooltip {
+  position: fixed;
+  z-index: 25;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(18px);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
+  border-radius: 10px;
+  padding: 8px 12px;
+  max-width: 420px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.7);
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+}
+
+/* split tooltip: primary label, a vertical rule, then secondary text — the
+ * rail's agent rows use it to pair the agent name with its last input */
+/* :not([hidden]) so this display rule can't outrank the UA `[hidden]{display:none}`
+ * that hide() relies on — without it, an open split tooltip never dismisses */
+.app-tooltip.split:not([hidden]) {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  max-width: 520px;
+}
+.app-tooltip .app-tooltip-primary {
+  align-self: center;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.app-tooltip .app-tooltip-sep {
+  flex: none;
+  width: 1px;
+  background: color-mix(in srgb, var(--accent) 30%, var(--border3));
+}
+.app-tooltip .app-tooltip-secondary {
+  align-self: center;
+  min-width: 0;
+  color: var(--text2);
+}

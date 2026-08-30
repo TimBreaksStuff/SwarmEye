@@ -14,7 +14,7 @@ places the new one beside its parent; maximising one hides the rest.
 
 `new GridController(container)` — `add`, `remove`, `replace`, `setPanes`,
 `insertSplit`, `movePane`, `toggleMax`, `setMaximized`, `relayout`,
-`setGutter`, `setAutoOrganize`, `saveLayout`. A classic script.
+`setGutter`, `setAutoOrganize`, `saveLayout`. An ES module.
 
 ## How to test
 

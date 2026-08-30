@@ -1,11 +1,50 @@
 /* App state + wiring. The grid shows only the selected workspace's agents;
  * agents in other workspaces keep running hidden.
  *
- * This is the one module script in the renderer — everything else is still a
- * classic <script>, which is why the globals below (Pane, Board, Topbar, …)
- * resolve without an import. Classic scripts all run before any module does,
- * so a feature converted to a real module can still read them; the reverse is
- * not true, which is why app.js is the file being converted first. */
+ * Every feature is a module and every edge below is an import. There is no
+ * load order to keep any more: boot.js is the entry, every edge is an import,
+ * and what each file needs it says at the top of itself. */
+
+/* The features that were classic scripts until this sweep. They published a
+ * global and app.js read it; now they export and app.js imports, which is the
+ * only reason index.html no longer carries a hand-sorted <script> list. */
+import { Pane } from './features/pane/index.js';
+import { Board } from './features/board/board.js';
+import { GridController } from './features/grid/grid.js';
+import { Topbar } from './features/rail/topbar.js';
+import { Launcher } from './features/launcher/launcher.js';
+import { Preview } from './features/preview/preview.js';
+import { Palette } from './features/palette/palette.js';
+import { Skills } from './features/skills/skills.js';
+import { Coordinator } from './features/coordinator/coordinator.js';
+import { Sounds } from './features/sounds/sounds.js';
+import { Speech } from './features/speech/speech.js';
+import { OpenRouterUI } from './features/openrouter/openrouter.js';
+import { toast } from './lib/toast.js';
+
+/* The two areas lifted out of this file. Workspaces owns the list and what is
+ * done to it; shortcuts owns the keyboard map and the Escape chain. Both take
+ * the state and the verbs they need from here, because this is still where
+ * the state and the agent lifecycle live. */
+import {
+  init as initWorkspaces,
+  selectWorkspace,
+  killSessionChecked,
+  removeWorkspace,
+  renameWorkspace,
+  reorderWorkspaces,
+  cycleWorkspace,
+} from './features/workspaces/workspaces.js';
+import {
+  init as initShortcuts,
+  focusedPane,
+  isShortcut,
+} from './features/shortcuts/shortcuts.js';
+
+/* Wired by being loaded: the hover tooltip's delegated listeners and the
+ * rail's drag-to-resize grip. Neither exports anything. */
+import './lib/tooltip.js';
+import './features/rail/railgrip.js';
 
 import {
   init as initSettings,
@@ -18,10 +57,6 @@ import {
   // live bindings: settings owns these values and reassigns them, and every
   // read below sees the current one
   maxAgents,
-  autoUsageLimit,
-  taskSummaries,
-  desktopNotifs,
-  notifSpeech,
   notifSound,
 } from './features/settings/settings.js';
 
@@ -41,31 +76,24 @@ import {
 import {
   init as initScheduler,
   setUsageSnapshot,
-  // the launch-sequence bookkeeping app.js's session lifecycle adds to and
-  // clears — exported by reference, so no setter is needed
-  pendingTaskStarts,
-  skillInjectAttempted,
-  awaitingTaskTurn,
-  manualStartRun,
-  manualLaunchOpts,
-  sessionStarted,
-  TASK_INJECT_SETTLE_MS,
+  // the launch sequence, as verbs. The scheduler owns what a just-created
+  // session still owes; this file only reports what happened to it.
+  forgetSession,
+  noteManualLaunch,
+  noteSessionStarted,
+  noteAgentTurn,
+  isStartingUp,
   TASK_INJECT_FALLBACK_MS,
-  TASK_SUBMIT_DELAY_MS,
-  TASK_MODEL_SETTLE_MS,
-  waitForInjectionsToSettle,
   startManualSession,
   renderBoard,
   renderArchive,
   runScheduler,
   effortFlagValue,
   startTask,
-  tryInjectPrompt,
   applyTaskSummary,
   startChain,
   startRepeat,
   noteStartFailure,
-  boardHandlers,
 } from './features/scheduler/scheduler.js';
 
 import {
@@ -89,8 +117,6 @@ const gridWrapEl = document.getElementById('grid-wrap');
 const emptyState = document.getElementById('empty-state');
 Launcher.init(emptyState, emptyState.querySelector('.big'), emptyState.querySelector('.empty-hint'),
   (n, settings) => spawnAgents(n, settings));
-const toastEl = document.getElementById('toast');
-
 const state = {
   workspaces: [],
   selectedWorkspaceId: null,
@@ -104,22 +130,8 @@ const state = {
 // pty output that arrives before its pane exists
 const pendingOutput = new Map();
 
-let toastTimer = null;
-function toast(msg) {
-  toastEl.textContent = msg;
-  toastEl.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
-}
-/* Same reason as modHeld below: skills.js and speech.js call this by
- * name, and pane.js guards every call with `window.toast` — so since app.js
- * became a module they have been throwing and the panes have been silently
- * swallowing their toasts. */
-window.toast = toast;
-
-/* Same reason again: main.js's SWARMEYE_TEST dump read `state` and `grid` off
- * the global scope, and both became module-locals in the split — it has been
- * logging `state is not defined` ever since. It asks through this instead. */
+/* main.js's SWARMEYE_TEST dump used to read `state` and `grid` off the global
+ * scope; both are module-locals. It asks through this instead. */
 window.__swarmTestState = () => ({
   total: state.panes.size,
   visible: grid.panes.length,
@@ -225,10 +237,12 @@ const reclaimTimers = new Map(); // sessionId -> pending drop
 function syncRendererReclaim() {
   const visible = new Set(grid.panes.map((p) => p.session.id));
   for (const [id, pane] of state.panes) {
+    // the pane's own half of "nobody is looking at this": it skips the header
+    // chips of a scan while off screen, and catches them up on the way back
+    pane.setOnScreen(visible.has(id));
     const timer = reclaimTimers.get(id);
     if (visible.has(id)) {
       if (timer) { clearTimeout(timer); reclaimTimers.delete(id); }
-      pane.restoreRenderer();
     } else if (!timer && !pane.rendererDropped) {
       reclaimTimers.set(id, setTimeout(() => {
         reclaimTimers.delete(id);
@@ -241,277 +255,16 @@ function syncRendererReclaim() {
   for (const [id, timer] of reclaimTimers) {
     if (!state.panes.has(id)) { clearTimeout(timer); reclaimTimers.delete(id); }
   }
+  // ...and the other half: a single workspace can hold more panes than the
+  // page has WebGL contexts, which the reclaim above never sees
+  Pane.applyRendererBudget(grid.panes);
+  /* main batches a session's pty output before it crosses IPC; the ones
+   * behind the grid get the slow batch (see queuePtyData). Pushed from here
+   * because this is the one place that knows which panes are on screen. */
+  window.swarm.setVisibleSessions([...visible]);
 }
 
-async function selectWorkspace(id) {
-  if (id === state.selectedWorkspaceId) return;
-  state.selectedWorkspaceId = id;
-  await window.swarm.selectWorkspace(id);
-  Preview.setWorkspace(id); // each workspace remembers its own preview address
-  syncGrid();
-  syncChrome();
-}
 
-/* main refuses the kill when it can't reach tmux (the agent would be left
- * running invisibly) — the pane is already gone from the UI by then, so all
- * that's left to do is say so; the kept metadata reattaches it next launch */
-function killSessionChecked(id) {
-  window.swarm.killSession(id).then((res) => {
-    if (res && !res.ok) toast('could not reach tmux — that agent is still running and will reattach on the next launch');
-  });
-}
-
-/* removing a workspace kills its agents — armed through the app-wide Confirm
- * like every other destructive control, so an armed pane ✕ and an armed
- * workspace ✕ can never be live at once */
-async function removeWorkspace(id, btn) {
-  const agents = panesForWs(id);
-  if (agents.length && btn) {
-    const fired = Confirm.armOrFire(btn, 'ws-remove:' + id, () => doRemoveWorkspace(id));
-    if (!fired) {
-      const running = agents.filter((p) => !p.exited || p.detached).length;
-      toast(running
-        ? `this workspace has ${running} running agent${running > 1 ? 's' : ''} — click ✕ again to remove it and kill them`
-        : 'click ✕ again to remove this workspace and its exited panes');
-    }
-    return;
-  }
-  doRemoveWorkspace(id, agents);
-}
-
-// the armed path re-reads the panes when it finally fires, seconds later
-async function doRemoveWorkspace(id, agents = panesForWs(id)) {
-  for (const pane of agents) {
-    // detached panes read as exited but their tmux agent is still running —
-    // kill those too, or removing the workspace would orphan live agents
-    if (!pane.exited || pane.detached) killSessionChecked(pane.session.id);
-    if (state.lastFocused === pane) state.lastFocused = null;
-    state.panes.delete(pane.session.id);
-    grid.remove(pane); // disposes; no-op removal if the pane wasn't visible
-  }
-
-  const res = await window.swarm.removeWorkspace(id);
-  state.workspaces = res.workspaces;
-  state.selectedWorkspaceId = res.selectedWorkspaceId;
-  syncGrid();
-  syncChrome();
-  toast('workspace removed');
-}
-
-async function renameWorkspace(id, name) {
-  const ws = state.workspaces.find((w) => w.id === id);
-  if (ws) ws.name = name; // optimistic; syncChrome() below repaints the pill
-  await window.swarm.renameWorkspace(id, name);
-  syncChrome();
-}
-
-/* drag-reorder: move dragId before/after targetId, persist the new order */
-function reorderWorkspaces(dragId, targetId, before) {
-  const list = state.workspaces;
-  const from = list.findIndex((w) => w.id === dragId);
-  if (from === -1) return;
-  const [moved] = list.splice(from, 1);
-  let to = list.findIndex((w) => w.id === targetId);
-  if (to === -1) { list.splice(from, 0, moved); return; }
-  if (!before) to += 1;
-  list.splice(to, 0, moved);
-  syncChrome();
-  window.swarm.reorderWorkspaces(list.map((w) => w.id));
-}
-
-async function addWorkspace() {
-  const res = await window.swarm.addWorkspace();
-  if (res.canceled) return;
-  state.workspaces = res.workspaces;
-  if (res.selectedWorkspaceId) state.selectedWorkspaceId = res.selectedWorkspaceId;
-  // the standard CLAUDE.md, if one is set and the folder had none of its own —
-  // worth saying out loud, since it wrote a file into the user's repo
-  if (res.template && res.template.copied) toast('CLAUDE.md added from your standard');
-  syncGrid();
-  syncChrome();
-}
-
-function cycleWorkspace(dir) {
-  // the rail's own order — Ctrl+Tab must walk what's on screen
-  const list = state.workspaces;
-  const n = list.length;
-  if (n < 2) return;
-  const i = list.findIndex((w) => w.id === state.selectedWorkspaceId);
-  const next = list[((i === -1 ? 0 : i) + dir + n) % n];
-  selectWorkspace(next.id);
-}
-
-function focusedPane() {
-  return state.lastFocused && grid.panes.includes(state.lastFocused)
-    ? state.lastFocused
-    : grid.panes[0] || null;
-}
-
-function cycleAgent(dir) {
-  const n = grid.panes.length;
-  if (!n) return;
-  const cur = focusedPane();
-  const i = grid.panes.indexOf(cur);
-  grid.panes[((i === -1 ? 0 : i) + dir + n) % n].focus();
-}
-
-/* ---- shortcuts ----
- * MOD is Ctrl on Windows and Cmd on macOS (where Ctrl works too).
- *
- * Tab                  next agent in this workspace
- *                      (Shift+Tab and Ctrl+I pass through to the terminal:
- *                       claude uses Shift+Tab, Ctrl+I types a literal tab)
- * Ctrl+Tab / +Shift    next / previous workspace — Ctrl on both platforms,
- *                      since Cmd+Tab is the macOS app switcher
- * MOD+'+' / '-' / 0    font size of the focused pane (bigger/smaller/reset)
- * MOD+N                new agent
- * MOD+M                new agent copying the active one
- * MOD+.                focus the agent that has been blocked longest, then
- *                      the next one down on the press after that
- * MOD+X                close focused agent (again within 5s: confirm kill)
- * MOD+T                task board, new-task form (dashboard)
- * MOD+R                dictate — mic in the focused pane, or the task-board
- *                      form's mic if the board is open
- * MOD+Shift+1..9,0     focus visible pane N (again: toggle maximize)
- * MOD+Shift+M          maximize/restore focused pane
- * MOD+Shift+F          search in focused pane
- * MOD+Shift+G          search across all agents
- * MOD+Shift+B          task board
- *
- * Terminals get the pure predicate (via attachCustomKeyEventHandler) so
- * xterm ignores these keys; execution happens exactly once, in the
- * document-level keydown listener the event bubbles up to. */
-const IS_MAC = window.swarm.isMac;
-
-/* Windows must not treat the Windows key as the modifier — Chromium reports
- * it as metaKey, so accepting metaKey there would make Win+N spawn an agent. */
-function modHeld(e) {
-  return IS_MAC ? (e.metaKey || e.ctrlKey) : e.ctrlKey;
-}
-/* board.js, launcher.js and coordinator.js are classic
- * scripts and call this by name: it was a global until app.js became a module,
- * and their listeners have been throwing ReferenceError on every keydown since.
- * A classic script cannot import from a module, so the predicate stays defined
- * here — the one modifier rule — and is published for them. */
-window.modHeld = modHeld;
-
-function isShortcut(e) {
-  if (e.type !== 'keydown' || e.altKey) return false;
-  if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.shiftKey) return true;
-  if (e.key === 'Tab') return e.ctrlKey && !e.metaKey;
-  if (!modHeld(e)) return false;
-  if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') return true;
-  if (e.key === '0' && !e.shiftKey) return true;
-  if (e.code === 'KeyN' && !e.shiftKey) return true;
-  if (e.code === 'KeyM' && !e.shiftKey) return true;
-  if (e.code === 'KeyX' && !e.shiftKey) return true;
-  if (e.code === 'KeyT' && !e.shiftKey) return true;
-  if (e.code === 'KeyR' && !e.shiftKey) return true;
-  if (e.code === 'KeyK' && !e.shiftKey) return true;
-  if (e.code === 'Period' && !e.shiftKey) return true;
-  if (!e.shiftKey) return false;
-  return e.code === 'KeyM' || e.code === 'KeyF' || e.code === 'KeyG' || e.code === 'KeyB'
-    || e.code === 'KeyS' || e.code === 'KeyE' || /^Digit\d$/.test(e.code);
-}
-
-/* MOD+. — the attention queue. Running many agents *is* answering whoever is
- * blocked, and that loop used to start with a visual scan of every pane for a
- * dot that had changed colour. Oldest wait first; pressing it again moves down
- * the queue, since the queue is re-derived on every press (a pane that started
- * waiting, or stopped, simply changes where the next press lands). */
-async function focusLongestWaiting() {
-  const waiting = [...state.panes.values()]
-    .filter((p) => !p.exited && p.awaitingPrompt && p.waitingSince > 0)
-    .sort((a, b) => a.waitingSince - b.waitingSince);
-  if (!waiting.length) { toast('nobody is waiting'); return; }
-  // -1 (nothing focused, or the focused pane is not in the queue) lands on the
-  // oldest; the oldest itself lands on the next one down
-  const at = waiting.indexOf(focusedPane());
-  const pane = waiting[(at + 1) % waiting.length];
-  toggleBoard(false);
-  if (pane.session.workspaceId !== state.selectedWorkspaceId) {
-    await selectWorkspace(pane.session.workspaceId);
-  }
-  pane.focus();
-}
-
-function handleShortcut(e) {
-  if (!isShortcut(e)) return false;
-
-  if (e.key === 'Tab') {
-    if (e.ctrlKey) cycleWorkspace(e.shiftKey ? -1 : 1);
-    else cycleAgent(1);
-    return true;
-  }
-
-  const focused = focusedPane();
-
-  if (e.key === '+' || e.key === '=') { if (focused) focused.setFontSize(focused.term.options.fontSize + 1); return true; }
-  if (e.key === '-' || e.key === '_') { if (focused) focused.setFontSize(focused.term.options.fontSize - 1); return true; }
-  if (e.key === '0' && !e.shiftKey) { if (focused) focused.setFontSize(Pane.DEFAULT_FONT_SIZE); return true; }
-
-  if (e.code === 'Period' && !e.shiftKey) { focusLongestWaiting(); return true; }
-  if (e.code === 'KeyK' && !e.shiftKey) { Palette.toggle(); return true; }
-  if (e.code === 'KeyN' && !e.shiftKey) { newAgentShortcut(); return true; }
-  if (e.code === 'KeyM' && !e.shiftKey) { cloneActiveAgent(); return true; }
-  if (e.code === 'KeyX' && !e.shiftKey) { if (focused) focused.requestClose(); return true; }
-  if (e.code === 'KeyT' && !e.shiftKey) { toggleBoard(true); return true; }
-  if (e.code === 'KeyR' && !e.shiftKey) {
-    if (!boardEl.hidden && Board.isFormOpen()) Board.toggleDictation();
-    else if (focused) focused.toggleDictation();
-    return true;
-  }
-  if (e.code === 'KeyM' && focused) { grid.toggleMax(focused); return true; }
-  if (e.code === 'KeyF' && focused) { focused.toggleSearch(); return true; }
-  if (e.code === 'KeyB') { toggleBoard(boardEl.hidden); return true; }
-  if (e.code === 'KeyE') { if (Messenger.isOpen()) Messenger.close(); else Messenger.open(); return true; }
-
-  const m = /^Digit(\d)$/.exec(e.code);
-  if (m) {
-    const n = m[1] === '0' ? 10 : Number(m[1]);
-    const pane = grid.panes[n - 1];
-    if (pane) {
-      if (pane === focused && pane.el.classList.contains('focused')) grid.toggleMax(pane);
-      else pane.focus();
-    }
-    return true;
-  }
-  return false;
-}
-
-/* Escape closes the innermost thing that is open — order matters, so this is
- * a list rather than a set: the first open one wins and nothing below it
- * sees the key. Elements are looked up lazily; several are declared further
- * down this file. */
-const ESCAPABLE = [
-  // outermost of the popovers: it opens over whatever view you were on, so it
-  // has to go before anything it might be covering
-  [() => document.getElementById('palette-pop'), () => Palette.close()],
-  [() => msgPopEl, () => Messenger.close()],
-  [() => kbdShortcutsPop, () => { kbdShortcutsPop.hidden = true; }],
-  [() => kbdPop, () => { kbdPop.hidden = true; }],
-  [() => document.getElementById('coord-modal'), () => Coordinator.close()],
-  [() => orchPopEl, () => closeOrchestratorCard()],
-  [() => notifPopEl, () => closeNotifPop()],
-  [() => notifPanelEl, () => { notifPanelEl.hidden = true; }],
-  [() => sessionViewEl, () => Board.closeSessionView()],
-  // the board's category-manage popover is a top-level element, so closing the
-  // board would otherwise leave it floating over the agent grid with live
-  // handlers — it has to be reachable before the board itself
-  [() => document.getElementById('board-category-pop'),
-    () => { document.getElementById('board-category-pop').hidden = true; }],
-  [() => boardEl, () => toggleBoard(false)],
-  [() => skillsEl, () => toggleSkills(false)],
-];
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    for (const [el, close] of ESCAPABLE) {
-      if (!el().hidden) { close(); return; }
-    }
-  }
-  if (handleShortcut(e)) e.preventDefault();
-});
 
 /* the ⌨ options popover and its shortcuts submenu are wired in
  * features/settings/settings.js — kbdPop/kbdShortcutsPop are imported above
@@ -677,7 +430,7 @@ const paneHandlers = {
       }
       // a Stop that lands before the task's prompt is in (or before its turn
       // has started) belongs to a startup injection, not to the task
-      const injecting = pendingTaskStarts.has(pane.session.id) || awaitingTaskTurn.has(pane.session.id);
+      const injecting = isStartingUp(pane.session.id);
       const task = injecting ? null : state.tasks.find((t) => t.paneId === pane.session.id && t.status === 'active');
       if (task) {
         task.status = 'completed';
@@ -853,7 +606,7 @@ async function addAgent({ refPane, direction, role, keepView, launch, claudeOnly
     toast(res.reason === 'cap' ? `limit of ${maxAgents} sessions reached` : 'could not start session: ' + res.reason);
     return;
   }
-  if (launch) manualLaunchOpts.set(res.session.id, launch);
+  if (launch) noteManualLaunch(res.session.id, launch);
   if (!keepView) toggleBoard(false);
   const pane = mountPane(res.session, { refPane, direction });
   // not for OpenRouter models: main drops --effort there, so the chip would lie
@@ -954,12 +707,7 @@ window.swarm.onSessionExit(({ id, exitCode, detached }) => {
     syncChrome();
   }
   pendingOutput.delete(id);
-  pendingTaskStarts.delete(id);
-  awaitingTaskTurn.delete(id);
-  skillInjectAttempted.delete(id);
-  manualStartRun.delete(id);
-  manualLaunchOpts.delete(id);
-  sessionStarted.delete(id);
+  forgetSession(id);
   if (orphanedTask) {
     orphanedTask.status = 'pending';
     orphanedTask.paneId = null;
@@ -984,21 +732,12 @@ window.swarm.onSessionState((payload) => {
   // the task's own turn has begun — from here a Stop is its completion. Every
   // event but Stop (and SessionStart, which precedes the prompt) says the
   // agent is live on the prompt we just sent it.
-  if (['UserPromptSubmit', 'PreToolUse', 'Notification'].includes(payload.event)) awaitingTaskTurn.delete(payload.id);
+  if (['UserPromptSubmit', 'PreToolUse', 'Notification'].includes(payload.event)) noteAgentTurn(payload.id);
   // SessionStart = claude's CLI is up — the readiness signal for injecting
   // active skills (every session) and a task's initial prompt (task
   // sessions only; see tryInjectPrompt's and tryInjectSkills's own fallback
   // timers too, for sessions whose hooks never fire)
-  if (payload.event === 'SessionStart') {
-    sessionStarted.add(payload.id); // claude's CLI is up: it reads keys from here on
-    if (pendingTaskStarts.has(payload.id)) {
-      // tryInjectPrompt injects the skills itself first — scheduling both here
-      // would type the task text into the middle of a half-entered /command
-      setTimeout(() => tryInjectPrompt(payload.id), TASK_INJECT_SETTLE_MS);
-    } else {
-      setTimeout(() => startManualSession(payload.id), TASK_INJECT_SETTLE_MS);
-    }
-  }
+  if (payload.event === 'SessionStart') noteSessionStarted(payload.id);
 });
 
 /* Every pane reads its workspace's git entry (main/git.js) — unless it has a
@@ -1038,24 +777,56 @@ window.swarm.onUsageUpdate((snapshot) => {
   runScheduler();
 });
 
-/* index.html spells every shortcut the Windows way. On macOS the modifier is
- * Cmd, and the labels use the glyphs users expect there. Two labels stay Ctrl
- * on both platforms and opt out with data-keep-ctrl: Ctrl+Tab (Cmd+Tab is the
- * macOS app switcher) and Ctrl+I (a literal tab byte for the terminal). */
-function localizeShortcutLabels() {
-  if (!IS_MAC) return;
-  const toMac = (t) => t.replace(/Ctrl\+Shift\+/g, '⌘⇧').replace(/Ctrl\+/g, '⌘');
-  for (const el of document.querySelectorAll('kbd:not([data-keep-ctrl])')) {
-    el.textContent = toMac(el.textContent);
-  }
-  for (const el of document.querySelectorAll('[data-tip], [aria-label]')) {
-    if (el.hasAttribute('data-keep-ctrl')) continue;
-    if (el.dataset.tip) el.dataset.tip = toMac(el.dataset.tip);
-    const label = el.getAttribute('aria-label');
-    if (label) el.setAttribute('aria-label', toMac(label));
-  }
-}
-localizeShortcutLabels();
+/* Escape closes the innermost thing that is open — order matters, so this is
+ * a list rather than a set: the first open one wins and nothing below it sees
+ * the key. Elements are looked up lazily, since several are declared further
+ * down this file. features/shortcuts/ drives it; it is built here because
+ * every entry names another area's element and that area's close function,
+ * and this is the one file that already imports all of them. */
+const ESCAPABLE = [
+  // outermost of the popovers: it opens over whatever view you were on, so it
+  // has to go before anything it might be covering
+  [() => document.getElementById('palette-pop'), () => Palette.close()],
+  [() => kbdShortcutsPop, () => { kbdShortcutsPop.hidden = true; }],
+  [() => kbdPop, () => { kbdPop.hidden = true; }],
+  [() => document.getElementById('coord-modal'), () => Coordinator.close()],
+  [() => orchPopEl, () => closeOrchestratorCard()],
+  [() => notifPopEl, () => closeNotifPop()],
+  [() => notifPanelEl, () => { notifPanelEl.hidden = true; }],
+  [() => sessionViewEl, () => Board.closeSessionView()],
+  // the board's category-manage popover is a top-level element, so closing the
+  // board would otherwise leave it floating over the agent grid with live
+  // handlers — it has to be reachable before the board itself
+  [() => document.getElementById('board-category-pop'),
+    () => { document.getElementById('board-category-pop').hidden = true; }],
+  [() => boardEl, () => toggleBoard(false)],
+  [() => skillsEl, () => toggleSkills(false)],
+];
+
+/* Both areas that came out of this file. They are wired here, this late,
+ * because everything they close over — the board and skills elements, the two
+ * view toggles, the agent shortcuts — is declared above and would still be in
+ * its temporal dead zone anywhere earlier. */
+initWorkspaces({
+  state,
+  grid,
+  syncGrid,
+  syncChrome,
+  panesForWs,
+});
+
+initShortcuts({
+  state,
+  grid,
+  boardEl,
+  escapable: ESCAPABLE,
+  toggleBoard,
+  toggleSkills,
+  selectWorkspace,
+  cycleWorkspace,
+  newAgentShortcut,
+  cloneActiveAgent,
+});
 
 /* ---- WSL health + detached agents ---- */
 
@@ -1077,13 +848,6 @@ reattachAllBtn.addEventListener('click', async () => {
 });
 
 initUpdate({ toast, openOptions: () => kbdHelpBtn.click() });
-
-/* ---- messages between agents ----
- * One line, addressed with @name (several names allowed) or @all, written
- * straight into those sessions. The two-write channel is the same one a task's
- * prompt goes down — text, a beat, then Enter — so Claude's input box sees a
- * real keystroke instead of a pasted chunk with a newline in it. */
-const msgPopEl = document.getElementById('msg-pop');
 
 /* Everything the palette (Ctrl+K) can reach. Built fresh on every open — a
  * closed agent or a finished task must never still be offered — and kept here
@@ -1177,7 +941,6 @@ Palette.init({
       out.push({ group: 'theme', label: dot.dataset.tip, hint: 'switch theme', run: () => applyTheme(dot.dataset.theme) });
     }
 
-    out.push({ group: 'action', label: 'Message agents', hint: 'Ctrl+Shift+E', run: () => Messenger.open() });
     out.push({ group: 'action', label: 'Options & shortcuts', hint: 'gear', run: () => kbdHelpBtn.click() });
     return out;
   },
@@ -1189,34 +952,14 @@ Palette.init({
  * Enter. Push-to-talk rather than a toggle: an app-wide mic left open listens
  * to the room. Interim results are shown as they arrive; the top match is never
  * run for you, since a mishearing would otherwise spawn or close an agent. */
-window.Speech.wire(document.getElementById('voice-btn'), {
+Speech.wire(document.getElementById('voice-btn'), {
   interim: true,
   hold: true, // push-to-talk — open only while the button is held down
   onStart: () => Palette.open(),
   onResult: (text) => Palette.setQuery(text),
 });
 
-Messenger.init({
-  toast,
-  // the @ picker offers files from the selected workspace — a message can be
-  // addressed across workspaces, but the file you are pointing at is in the
-  // one you are looking at
-  workspaceId: () => state.selectedWorkspaceId,
-  listAgents: () => [...state.panes.values()]
-    .filter((p) => !p.exited)
-    .map((p) => ({ id: p.session.id, name: p.session.agentName, ws: p.session.workspaceName })),
-  async send(ids, text) {
-    for (const id of ids) {
-      window.swarm.writeSession(id, text);
-      await new Promise((r) => setTimeout(r, TASK_SUBMIT_DELAY_MS));
-      window.swarm.writeSession(id, '\r');
-    }
-    toast(`message sent to ${ids.length} agent${ids.length === 1 ? '' : 's'}`);
-  },
-});
 
-
-document.getElementById('add-workspace').addEventListener('click', addWorkspace);
 initAddAgentMenu({
   toast,
   addAgent,

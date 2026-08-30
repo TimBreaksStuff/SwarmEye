@@ -4,6 +4,14 @@
  * it, and the restart-on-another-model menu.
  */
 
+import { dismissPop, elt, placePop } from '../../lib/dom.js';
+import { Icons } from '../../lib/icons.js';
+import { toast } from '../../lib/toast.js';
+import { OpenRouterUI } from '../openrouter/openrouter.js';
+import { Scope } from '../scope/scope.js';
+import { MODELS } from './pane-const.js';
+import { Pane } from './pane.js';
+
 Object.assign(Pane.prototype, {
   /* ---- git context chip ---- */
 
@@ -114,7 +122,7 @@ Object.assign(Pane.prototype, {
    * env carries (main/providers.js). */
   openModelPicker() {
     if (this.detached) return; // a restart would reattach, ignoring the pick
-    if (!window.OpenRouterUI || !OpenRouterUI.models.length) {
+    if (!OpenRouterUI.models.length) {
       toast('add an OpenRouter key in ⌨ Options to switch models');
       return;
     }

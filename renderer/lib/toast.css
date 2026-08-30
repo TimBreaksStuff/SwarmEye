@@ -1,0 +1,26 @@
+/* renderer/lib/toast.css — the look of the line lib/toast.js raises.
+ *
+ * Sat in pane.css, which never owned it. Loads at slot 3 next to
+ * lib/tooltip.css, where those rules were, so nothing above or below it moved.
+ */
+/* toast */
+#toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  background: var(--surface);
+  border: 1px solid var(--err);
+  border-radius: 100px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  padding: 9px 18px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  z-index: 10;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

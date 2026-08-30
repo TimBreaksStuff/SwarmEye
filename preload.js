@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('swarm', {
   // macOS "Native Apple style": main only needs it to pick the window frame at
   // the next launch, which relaunchApp is what triggers
   setNativeStyle: (on) => ipcRenderer.invoke('config:set-native-style', on),
+  setReduceTransparency: (on) => ipcRenderer.invoke('config:set-reduce-transparency', on),
   relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   // the standard CLAUDE.md copied into every workspace folder as it is added;
   // the current path arrives with config:get, these two change it
@@ -47,8 +48,10 @@ contextBridge.exposeInMainWorld('swarm', {
   listWorkspaceFiles: (id) => ipcRenderer.invoke('workspace:files', id),
   // the areas a workspace's .swarmeye/areas.json carves it into, for scoping
   listAreas: (id) => ipcRenderer.invoke('areas:read', id),
-  attachImage: (dataUrl) => ipcRenderer.invoke('attach:image', dataUrl),
   listRoles: () => ipcRenderer.invoke('roles:list'),
+  // main/models.js owns the model and effort tables; boot.js fetches them
+  // before the first feature module builds a select from them
+  listModels: () => ipcRenderer.invoke('models:list'),
   restartSession: (payload) => ipcRenderer.invoke('session:restart', payload),
   reattachSession: (id, cols, rows) => ipcRenderer.invoke('session:reattach', { id, cols, rows }),
   renameSession: (id, name) => ipcRenderer.invoke('session:rename', { id, name }),
@@ -96,6 +99,8 @@ contextBridge.exposeInMainWorld('swarm', {
   onTtsInstallProgress: (cb) => ipcRenderer.on('tts:install-progress', (e, p) => cb(p)),
   ttsSpeak: (text) => ipcRenderer.invoke('tts:speak', text),
 
+  // the agents in the grid on screen — main paces their pty batches faster
+  setVisibleSessions: (ids) => ipcRenderer.send('sessions:visible', ids),
   onSessionData: (cb) => ipcRenderer.on('session:data', (e, p) => cb(p)),
   onSessionExit: (cb) => ipcRenderer.on('session:exit', (e, p) => cb(p)),
   onSessionState: (cb) => ipcRenderer.on('session:state', (e, p) => cb(p)),

@@ -1,0 +1,87 @@
+/* renderer/features/palette/palette.css — the Ctrl+K command palette.
+ *
+ * Loads at slot 3 with the other area sheets, but unlike them it carries the
+ * palette's *whole* look: nothing in app.css ever styled a palette, so there
+ * is no chrome-clean half to sit after. Its variants live on in the two
+ * style sheets that load last, native-mac.css and reduce-transparency.css. */
+/* ---------- command palette ---------- */
+/* Sits high rather than centred — the list grows downward, and a box pinned to
+   the middle would walk up the screen as it filled. */
+#palette-pop {
+  position: fixed;
+  z-index: 70;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(680px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+#palette-pop[hidden] { display: none; }
+#palette-input {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 13px 16px;
+}
+#palette-input:focus-visible { outline: none; }
+#palette-list {
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border3) transparent;
+}
+.palette-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 16px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+.palette-row.sel { background: var(--hover); }
+.palette-row.sel .palette-label { color: var(--text); }
+/* the kind sits in a fixed column so the eye can scan one edge, not a ragged one */
+.palette-group {
+  flex: none;
+  width: 74px;
+  font-size: 10px;
+  color: var(--muted2);
+  text-transform: lowercase;
+}
+.palette-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-hint {
+  flex: none;
+  max-width: 42%;
+  font-size: 10.5px;
+  color: var(--muted2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-empty {
+  padding: 14px 16px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted2);
+}

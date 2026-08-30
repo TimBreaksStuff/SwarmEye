@@ -1,0 +1,272 @@
+<!-- renderer/features/settings/settings.html — the ⌨ Options popover and its
+     keyboard-shortcuts submenu. 260 lines of it, all of which used to sit in
+     index.html.
+
+     The OpenRouter setup row lives in here too, inside Options → Setup. It is
+     part of the Options panel; openrouter.js only wires the controls. -->
+
+<template data-mount="kbd-pop">
+<div id="kbd-pop" hidden>
+  <div class="kbd-head">
+    <div class="kbd-title">Options</div>
+    <button id="options-reset-btn" data-tip="Restore every option below to its default value (click twice)">↺ Reset</button>
+  </div>
+  <details class="kbd-sect" open><summary>Appearance</summary>
+  <div class="kbd-row kbd-opt"><span>Small left menu</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="leftbar-small-toggle" data-tip="Collapses the left menu to icons only, hover to preview the expanded view (workspace names and usage gauges).">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Anthropic usage in the left menu</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="anthropic-usage-toggle" data-tip="Shows the Anthropic Usage section at the top of the left menu — the Session and Weekly bars from Claude's usage API. Off hides the section in both menu sizes.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>OpenRouter usage in the left menu</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="openrouter-usage-toggle" data-tip="Shows the OpenRouter Usage section below it — today's spend and the credits you have left. Needs a saved OpenRouter key; without one the section stays hidden whatever this says.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Menu bar size</span>
+    <span class="opt-ctl">
+      <button id="ui-font-down" data-tip="Smaller menu bar">−</button>
+      <span id="ui-font-val">100%</span>
+      <button id="ui-font-up" data-tip="Larger menu bar">+</button>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Task board, Skills &amp; Options text size</span>
+    <span class="opt-ctl">
+      <button id="board-font-down" data-tip="Smaller text">−</button>
+      <span id="board-font-val">100%</span>
+      <button id="board-font-up" data-tip="Larger text">+</button>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Agent pane text size</span>
+    <span class="opt-ctl">
+      <button id="agent-font-down" data-tip="Smaller text">−</button>
+      <span id="agent-font-val">13px</span>
+      <button id="agent-font-up" data-tip="Larger text">+</button>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Agent pane text weight</span>
+    <span class="opt-ctl">
+      <button id="agent-weight-down" data-tip="Thinner agent text">−</button>
+      <span id="agent-weight-val">Normal</span>
+      <button id="agent-weight-up" data-tip="Thicker agent text — the light themes draw dark on light, which reads thinner">+</button>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt" id="native-style-row" hidden><span>Native Apple style</span>
+    <span class="opt-ctl">
+      <button id="native-style-restart" hidden data-tip="Relaunch SwarmEye now to apply the window frame">Restart</button>
+      <input type="checkbox" id="native-style-toggle" data-tip="macOS look: the system font in the chrome and in agent panes, macOS greys, corner radii and controls, and a light/dark theme that follows System Settings. The window frame — traffic lights inside the top bar, a translucent sidebar — needs a restart.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Reduce transparency</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="reduce-transparency-toggle" data-tip="Flattens every translucent surface. Matters most under Native Apple style, whose window material and popover blur are re-computed on each frame the agent panes repaint — worth ticking on a big swarm or a slow GPU. The default chrome is already flat, so there it only guards against blur added later.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Theme background overlay</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="theme-overlay-toggle" data-tip="On: the theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, agent panes — stays the default dark shade; only the theme's colours (borders, text, accents, terminal) follow the theme.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt kbd-opt-theme"><span>Colour theme</span>
+    <span class="opt-ctl" id="theme-opts">
+      <button class="theme-dot" data-theme="dark" data-tip="Dark"></button>
+      <button class="theme-dot" data-theme="orange" data-tip="Orange"></button>
+      <button class="theme-dot" data-theme="light" data-tip="Light"></button>
+      <button class="theme-dot" data-theme="blue" data-tip="Light Blue"></button>
+      <button class="theme-dot" data-theme="neoblue" data-tip="Light Neoblue"></button>
+      <button class="theme-dot" data-theme="purple" data-tip="Light Purple"></button>
+      <button class="theme-dot" data-theme="teal" data-tip="Light Teal"></button>
+      <button class="theme-dot" data-theme="rose" data-tip="Light Rose"></button>
+      <button class="theme-dot" data-theme="violet" data-tip="Light Violet"></button>
+      <button class="theme-dot" data-theme="sky" data-tip="Light Sky"></button>
+      <button class="theme-dot" data-theme="indigo" data-tip="Light Indigo"></button>
+      <button class="theme-dot" data-theme="fuchsia" data-tip="Light Fuchsia"></button>
+      <button class="theme-dot" data-theme="emerald" data-tip="Light Emerald"></button>
+      <button class="theme-dot" data-theme="amber" data-tip="Light Amber"></button>
+      <button class="theme-dot" data-theme="slate" data-tip="Light Slate"></button>
+    </span>
+  </div>
+  </details>
+
+  <details class="kbd-sect"><summary>Agents &amp; panes</summary>
+  <div class="kbd-row kbd-opt"><span>Max simultaneous agents</span>
+    <span class="opt-ctl">
+      <button id="max-agents-down" data-tip="Allow fewer agents">−</button>
+      <span id="max-agents-val">10</span>
+      <button id="max-agents-up" data-tip="Allow more agents (up to 30)">+</button>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Auto-start usage limit</span>
+    <span class="opt-ctl">
+      <button id="auto-limit-down" data-tip="Lower the auto-start usage ceiling">−</button>
+      <span id="auto-limit-val">85%</span>
+      <button id="auto-limit-up" data-tip="Raise the auto-start usage ceiling">+</button>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Allow auto mode (bypass permissions)</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="skip-permissions-toggle" data-tip="Launches new and restarted agents with --allow-dangerously-skip-permissions so claude's Shift+Tab mode cycle includes auto mode without activating it. Existing running agents need a restart to pick this up.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Isolate agents in git worktrees</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="worktrees-toggle" data-tip="Every agent launched from now on gets its own git worktree and branch off the workspace's current branch, so a swarm can edit the same repo without fighting over files. Closing its pane commits whatever it left and merges that branch back; a merge that can't be made safely leaves the branch for you. Workspaces that aren't git repos are unaffected.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Show last command in pane header</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="show-initial-cmd-toggle" data-tip="Shows a second header row under every pane's title with the most recently submitted command — a task's launch prompt until you type a new line, which then takes over.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Show cost &amp; context panel</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="usage-panel-toggle" data-tip="Adds a panel to the bottom of every Claude pane: how full its context window is, what it has spent, cache hit rate, tokens per turn, how long the current turn has run, its share of the 5-hour limit and the last tools it used. Costs two rows of terminal height per pane.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Auto-organize agent windows</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="auto-organize-toggle" data-tip="On: new agents are laid out automatically. Off: place agents yourself with each pane's → and ↓ buttons.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Space between agent panes</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="agent-padding-toggle" data-tip="On: panes have a small gap and draggable divider between them, with room around the edges. Off: panes sit flush against each other and the window edges with no gap.">
+    </span>
+  </div>
+  </details>
+
+  <details class="kbd-sect"><summary>Defaults for new tasks</summary>
+  <div class="kbd-row kbd-opt"><span>Default agent permissions</span>
+    <span class="opt-ctl">
+      <select id="default-startmode-sel" data-tip="Preset new tasks' starting Claude permission mode"></select>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Default model</span>
+    <span class="opt-ctl">
+      <select id="default-model-sel" data-tip="Claude model for new agents and new tasks alike"></select>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>New agent shortcut</span>
+    <span class="opt-ctl">
+      <select id="newagent-provider-sel" data-tip="What Ctrl+N launches: ask each time whether the new agent runs on Claude or an OpenRouter model, or always use one of them. Only asked once an OpenRouter key is saved (Setup below) — without one, Ctrl+N launches Claude directly.">
+        <option value="ask">ask every time</option>
+        <option value="claude">Anthropic Subscription</option>
+        <option value="openrouter">OpenRouter</option>
+      </select>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Default task effort</span>
+    <span class="opt-ctl">
+      <select id="default-effort-sel"></select>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Default focus mode</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="default-focus-toggle" data-tip="Preset new tasks with focus mode enabled">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Task summary on completion</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="task-summary-toggle" data-tip="Puts the agent's closing message on the task card when a task finishes, read from its own transcript — so the Completed column says what came of a task without opening its transcript.">
+    </span>
+  </div>
+  </details>
+
+  <details class="kbd-sect"><summary>Notifications</summary>
+  <div class="kbd-row kbd-opt"><span>Desktop notifications</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="desktop-notif-toggle" data-tip="Raises a real OS notification — naming the agent and what it did — when an agent finishes a turn or needs you while the SwarmEye window isn't focused. Clicking it brings the window back.">
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Notification sound</span>
+    <span class="opt-ctl">
+      <select id="notif-sound-sel" data-tip="Played when an agent finishes its turn"></select>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Spoken notifications</span>
+    <span class="opt-ctl">
+      <input type="checkbox" id="voice-notif-toggle" data-tip="Says out loud which agent just finished — and the first sentence of its closing message, once that has landed — for turns that end while you aren't watching that pane. Needs the voice engine below.">
+    </span>
+  </div>
+  </details>
+
+  <details class="kbd-sect"><summary>Setup</summary>
+  <div class="kbd-row kbd-opt"><span>SwarmEye version</span>
+    <span class="opt-ctl">
+      <span id="update-status" class="stt-status"></span>
+      <button id="update-check-btn" data-tip="Ask GitHub now whether a newer SwarmEye has been released, instead of waiting for the six-hourly check">Check</button>
+      <button id="update-action-btn" hidden></button>
+    </span>
+  </div>
+  <div class="kbd-row kbd-opt"><span>Dictation engine</span>
+    <span class="opt-ctl">
+      <span id="stt-status" class="stt-status">checking…</span>
+      <button id="stt-install-btn" data-tip="Downloads a local Whisper model (~465 MB, into WSL on Windows) — runs fully offline, nothing is uploaded">Install</button>
+    </span>
+  </div>
+  <pre id="stt-log" hidden></pre>
+  <div class="kbd-row kbd-opt"><span>Voice engine</span>
+    <span class="opt-ctl">
+      <span id="tts-status" class="stt-status">checking…</span>
+      <button id="tts-install-btn" data-tip="Downloads the Piper speech engine and one voice (~110 MB, into WSL on Windows) — runs fully offline, nothing is uploaded">Install</button>
+    </span>
+  </div>
+  <pre id="tts-log" hidden></pre>
+  <div class="kbd-row kbd-opt"><span>OpenRouter API key</span>
+    <span class="opt-ctl">
+      <span id="or-status" class="stt-status"></span>
+      <input type="password" id="or-key-input" placeholder="sk-or-v1-…" data-tip="Lets agents run any OpenRouter model (Kimi, Qwen, GLM, GPT, …) — pick them in the model selects once the key is saved. Stored locally; those agents' conversations go only to OpenRouter.">
+      <button id="or-key-save" data-tip="Save the key and fetch the model catalog">Save</button>
+      <button id="or-key-refresh" data-tip="Re-fetch the model catalog" hidden>↻</button>
+      <button id="or-key-clear" data-tip="Forget the key and the cached catalog (click twice)" hidden>✕</button>
+    </span>
+  </div>
+  <div id="or-error" hidden></div>
+  <div class="kbd-row kbd-opt" id="or-alts-row" hidden><span>Models an agent can switch to</span>
+    <span class="opt-ctl">
+      <button id="or-alts-add" data-tip="Up to three more models that /model offers inside an OpenRouter agent, next to the one it was launched with — Claude Code's picker has room for four. Applies to agents started afterwards.">＋</button>
+    </span>
+  </div>
+  <div id="or-alts-list" hidden></div>
+  <div class="kbd-row kbd-opt"><span>Standard CLAUDE.md</span>
+    <span class="opt-ctl">
+      <span id="claude-template-path" class="stt-status">none</span>
+      <button id="claude-template-pick" data-tip="Pick one markdown file to serve as the standard CLAUDE.md. Every folder you add as a workspace from then on gets a copy of it, unless it already has a CLAUDE.md of its own — which is never overwritten. Claude Code reads the file by itself; OpenRouter agents are given it too.">Choose</button>
+      <button id="claude-template-clear" data-tip="Stop copying a standard CLAUDE.md into new workspaces" hidden>✕</button>
+    </span>
+  </div>
+  </details>
+
+  <button type="button" id="kbd-shortcuts-btn" class="kbd-row kbd-opt kbd-submenu-btn kbd-title-mid">
+    <span>Keyboard shortcuts</span><span class="kbd-submenu-arrow">›</span>
+  </button>
+</div>
+</template>
+
+<template data-mount="kbd-shortcuts-pop">
+<div id="kbd-shortcuts-pop" hidden>
+  <div class="kbd-head">
+    <div class="kbd-title">Keyboard shortcuts</div>
+  </div>
+  <div class="kbd-row"><span>Next agent in workspace</span><kbd>Tab</kbd></div>
+  <div class="kbd-row"><span>Next / previous workspace</span><kbd data-keep-ctrl>Ctrl+Tab · Ctrl+Shift+Tab</kbd></div>
+  <div class="kbd-row"><span>Command palette — jump to anything</span><kbd>Ctrl+K</kbd></div>
+  <div class="kbd-row"><span>New agent</span><kbd>Ctrl+N</kbd></div>
+  <div class="kbd-row"><span>New agent copying the active one</span><kbd>Ctrl+M</kbd></div>
+  <div class="kbd-row"><span>Go to whoever has waited longest (again: next)</span><kbd>Ctrl+.</kbd></div>
+  <div class="kbd-row"><span>Close focused agent (again: confirm kill)</span><kbd>Ctrl+X</kbd></div>
+  <div class="kbd-row"><span>New task (dashboard)</span><kbd>Ctrl+T</kbd></div>
+  <div class="kbd-row"><span>Dictate (pane or task-board mic)</span><kbd>Ctrl+R</kbd></div>
+  <div class="kbd-row"><span>Focus pane N (again: maximize)</span><kbd>Ctrl+Shift+1…9, 0</kbd></div>
+  <div class="kbd-row"><span>Maximize / restore pane</span><kbd>Ctrl+Shift+M</kbd></div>
+  <div class="kbd-row"><span>Search in pane</span><kbd>Ctrl+Shift+F</kbd></div>
+  <div class="kbd-row"><span>Task board</span><kbd>Ctrl+Shift+B</kbd></div>
+  <div class="kbd-row"><span>Font bigger / smaller / reset</span><kbd>Ctrl++ · Ctrl+− · Ctrl+0</kbd></div>
+  <div class="kbd-row"><span>Type a literal tab in terminal</span><kbd data-keep-ctrl>Ctrl+I</kbd></div>
+  <div class="kbd-row"><span>Close search / this panel</span><kbd>Esc</kbd></div>
+</div>
+</template>

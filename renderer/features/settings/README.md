@@ -12,7 +12,11 @@ which is why it is linked *after* `chrome-clean.css` rather than before.
 
 ## Files
 
-`settings.js`, `settings.css`
+`settings.js`, `settings.css` · `settings.html`
+
+The markup was in `renderer/index.html`. It is here now, as
+`<template data-mount="…">` sections that `lib/fragments.js` puts into the
+shell before any module runs.
 
 ## Public interface
 

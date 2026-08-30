@@ -9,26 +9,26 @@
 // "Show last command in pane header" option in ⌨ Options — off by default;
 // app.js owns persistence, this just gates whether syncInitialCommandHeader
 // reveals the row it fills in on every pane
-let showInitialCommand = false;
+export let showInitialCommand = false;
 
 // "Auto-organize agent windows" option in ⌨ Options — on by default; when off,
 // the → / ↓ split buttons are how the user places new agents themselves, so
 // they only make sense to show while auto-organize is off
-let autoOrganize = true;
+export let autoOrganize = true;
 
 // "Default agent permissions: auto" option in ⌨ Options — mirrored here by
 // app.js, which owns it, rather than read back over IPC: autoAcceptDialogs is
 // the only consumer and it used to pull the whole config across the boundary
 // to answer one boolean
-let skipPermissions = false;
+export let skipPermissions = false;
 
 // longest agent name a rename can produce — the header row has one line of
 // room, and anything longer only ever showed as ellipsis
-const NAME_MAX = 20;
+export const NAME_MAX = 20;
 
 // every header glyph is drawn the same way — one stroke weight, one grid, so a
 // pane header reads as one row of icons rather than mono arrows beside SVGs
-const icon = (paths) =>
+export const icon = (paths) =>
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" '
   + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
 
@@ -36,20 +36,20 @@ const icon = (paths) =>
 
 // "Show cost & context panel" option in ⌨ Options — off by default, since the
 // panel costs every pane two rows of terminal height
-let showUsagePanel = false;
+export let showUsagePanel = false;
 // newest 5-hour usage window ({usedPct, resetsAt}), pushed by app.js — the
 // denominator for each agent's share of the quota
-let usageWindow = null;
+export let usageWindow = null;
 // every pane currently alive, so one pane's share can be measured against
 // what the whole swarm burned in the same window
-const livePanes = new Set();
+export const livePanes = new Set();
 
 // Claude Code compacts against a 200k window; a session that ever reports a
 // bigger prompt than that is plainly running on the 1M one, so the meter
 // re-scales itself instead of guessing per model id.
-const CONTEXT_WINDOW = 200000;
-const CONTEXT_WINDOW_LARGE = 1000000;
-const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+export const CONTEXT_WINDOW = 200000;
+export const CONTEXT_WINDOW_LARGE = 1000000;
+export const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const TOOL_TRAIL_MAX = 3;
 
 /* Claude Code's own Task subagents. They are invisible in a terminal — the
@@ -69,14 +69,14 @@ const OPEN_CALLS_MAX = 24;
  * plain English sent as a normal message: SwarmEye cannot *enforce* read-only
  * without per-tool permissions, which agents only pick up at launch, so this
  * is a request — and the dropdown says so rather than implying a lock. */
-const READ_ONLY_ASK =
+export const READ_ONLY_ASK =
   'Please stop editing for now: do not use Edit, Write, MultiEdit or NotebookEdit, '
   + 'and do not run any command that changes files. Read and report only, until I say otherwise.';
-const READ_ONLY_LIFT = 'You can edit files again — the read-only request is lifted.';
+export const READ_ONLY_LIFT = 'You can edit files again — the read-only request is lifted.';
 
 /* How long the agent has been blocked, in the coarsest unit that is still true:
  * the question this answers is "40 seconds or 40 minutes", never the seconds. */
-function fmtWait(ms) {
+export function fmtWait(ms) {
   const min = Math.floor(ms / 60000);
   if (min < 1) return '<1m';
   if (min < 60) return min + 'm';
@@ -102,20 +102,20 @@ const RIGHTSIZE_MIN_CALLS = 12;
  * on, so the streak says nothing about them. */
 const RIGHTSIZE_SKIP_ROLES = new Set(['reviewer', 'planner']);
 
-function fmtTokens(n) {
+export function fmtTokens(n) {
   if (!n) return '0';
   if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M';
   if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
   return String(Math.round(n));
 }
 
-function fmtCost(n) {
+export function fmtCost(n) {
   if (!n) return '$0';
   if (n < 0.01) return '<$0.01';
   return '$' + n.toFixed(n >= 100 ? 0 : 2);
 }
 
-function fmtDuration(ms) {
+export function fmtDuration(ms) {
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return s + 's';
   const m = Math.floor(s / 60);
@@ -123,45 +123,54 @@ function fmtDuration(ms) {
   return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm';
 }
 
-const IDLE_AFTER_MS = 2500;
+export const IDLE_AFTER_MS = 2500;
 // output arriving this soon after a keystroke/mouse report is its echo, not
 // the agent working — typing or clicking must not light the busy indicator
-const INPUT_ECHO_MS = 400;
+export const INPUT_ECHO_MS = 400;
 
 // How many glyph-atlas pages a pane's GPU renderer may fill before the atlas is
 // thrown away and rebuilt (Pane.attachWebgl explains why), and the shortest gap
 // between two of those rebuilds — a screen that genuinely needs many pages must
 // not clear on every frame.
-const ATLAS_PAGE_LIMIT = 3;
-const ATLAS_CLEAR_MIN_MS = 10000;
-// ...and the counters that drive it. They are per swarm, not per pane: xterm
-// hands every terminal sharing a font, theme and cell size the *same* texture
-// atlas (acquireTextureAtlas), so pages one pane fills are pages every other
-// pane draws from, and a clear anywhere is a clear everywhere.
-let atlasPages = 0;
-let atlasClearedAt = 0;
-let atlasRebuild = 0; // rAF handle while a rebuild is already scheduled
+export const ATLAS_PAGE_LIMIT = 3;
+export const ATLAS_CLEAR_MIN_MS = 10000;
+
+/* How many panes may hold a GPU renderer at once. Chromium kills the oldest
+ * WebGL context once a page holds too many, which is how a pane ends up
+ * drawing nothing at all. The off-screen reclaim in app.js covers panes in
+ * other workspaces; this covers the other half — a single workspace holding
+ * more panes than the browser has contexts for.
+ *
+ * Measured on this build (Electron 38, 2026-08-30): the 14th context logs
+ * "Too many active WebGL contexts. Oldest context will be lost." A disposed
+ * context is not handed back at once either — a run of panes closed and
+ * reopened warns while the old ones are still being collected — so the budget
+ * sits well under that ceiling rather than on it. Panes past it draw on the
+ * DOM renderer, which is what they would have got anyway once Chromium
+ * started killing contexts, only without taking someone else's with them. */
+export const MAX_WEBGL_PANES = 10;
+export const webglPanes = new Set(); // the panes currently holding one
 
 // Saying this at the end of a dictated phrase submits it: the phrase itself is
 // stripped, dictation stops and Enter is pressed. Trailing punctuation is
 // allowed because whisper ends most utterances with a full stop.
-const DICTATE_SUBMIT = /[\s,]*\bsend it\b[\s.!?,]*$/i;
+export const DICTATE_SUBMIT = /[\s,]*\bsend it\b[\s.!?,]*$/i;
 // gap before Enter so it lands as its own keystroke rather than part of the
 // pasted chunk — the same reason tryInjectPrompt (app.js) splits its writes
-const DICTATE_SUBMIT_DELAY_MS = 150;
+export const DICTATE_SUBMIT_DELAY_MS = 150;
 
 /* Claude permission modes. There is no "set mode" API for a running claude —
  * the only control is Shift+Tab cycling — so we read the current mode from
  * the footer it draws above the input box and step the cycle until it shows
  * the one the user picked. */
-const MODES = [
+export const MODES = [
   ['default', 'manual'],
   ['acceptEdits', 'accept edits'],
   ['plan', 'plan'],
   ['bypass', 'auto'],
 ];
-const MODE_TIP = 'Claude mode — switches by cycling Shift+Tab in the agent';
-const MODE_MARKERS = [
+export const MODE_TIP = 'Claude mode — switches by cycling Shift+Tab in the agent';
+export const MODE_MARKERS = [
   ['bypass', /bypass(?:ing)? permissions/i],
   ['plan', /plan mode on/i],
   ['acceptEdits', /accept edits on/i],
@@ -178,50 +187,48 @@ const MODE_MARKERS = [
  *   bypass mode on this machine and remembered afterwards; "Yes, I accept" is
  *   pre-highlighted. Without this, opting into auto mode stalls the agent on
  *   exactly the human approval the user asked to skip. */
-const AUTO_ACCEPT_DIALOGS = [
+export const AUTO_ACCEPT_DIALOGS = [
   ['trustDialogHandled', /do you trust the files in this folder/i],
   ['bypassDialogHandled', /running in Bypass Permissions mode/i],
 ];
-/* Claude models selectable for a task — sent as a `/model <value>` command
- * once the agent starts, same mechanism a user typing it themselves uses.
+/* The model and effort tables, filled from main at boot.
  *
- * Every label names who is billed. An OpenRouter catalog row sits in the same
- * lists (openrouter.js pushes them into this table) and costs money per token
- * on a key you pasted, while these run on the Claude subscription — a
- * distinction worth a few characters of width, since the two kinds of row are
- * otherwise just names in one dropdown. The values are untouched: they are
- * what reaches `--model`, and main re-validates them against its own table. */
-const MODELS = [
-  ['default', 'Anthropic Subscription: default'],
-  ['sonnet', 'Anthropic Subscription: Sonnet'],
-  ['opus', 'Anthropic Subscription: Opus'],
-  ['haiku', 'Anthropic Subscription: Haiku'],
-  ['fable', 'Anthropic Subscription: Fable'],
-  ['opusplan', 'Anthropic Subscription: Opus plan, Sonnet execution'],
-  ['opus[1m]', 'Anthropic Subscription: Opus (1M context)'],
-  ['sonnet[1m]', 'Anthropic Subscription: Sonnet (1M context)'],
-];
+ * `main/models.js` owns them. The renderer used to keep its own copy of both
+ * lists — same values, and the labels existed only here — so a new tier meant
+ * two edits in two processes and there was nothing to catch it if you did one.
+ * Roles have always worked this way (`roles:list`); this is the same, over
+ * `models:list`.
+ *
+ * They are `let`-free on purpose: every select in the app holds a reference to
+ * *these* arrays, and `openrouter.js` splices catalog rows straight into
+ * `MODELS`, which is why a key saved mid-session reaches every picker. Filling
+ * them in place keeps all of that true. `boot.js` calls `installModels` before
+ * a single feature module is imported, because the board and the Options panel
+ * build their selects the moment they are evaluated.
+ *
+ * Every label names who is billed. An OpenRouter row sits in the same list and
+ * costs money per token on a key you pasted, while these run on the Claude
+ * subscription — worth a few characters of width, since the two kinds of row
+ * are otherwise just names in one dropdown. */
+export const MODELS = [];
+export const EFFORTS = [];
 
-/* Claude reasoning effort levels selectable for a task — sent as a
- * `/effort <value>` command once the agent starts, same mechanism as MODELS. */
-const EFFORTS = [
-  ['default', 'default'],
-  ['low', 'low'],
-  ['medium', 'medium'],
-  ['high', 'high'],
-  ['xhigh', 'xhigh'],
-  ['max', 'max'],
-  ['ultracode', 'ultracode'],
-  ['auto', 'auto'],
-];
-const SHIFT_TAB = '\x1b[Z';
-const MODE_STEP_MS = 300; // redraw grace between Shift+Tab presses
+export function installModels({ models, efforts }) {
+  if (!Array.isArray(models) || !models.length) throw new Error('models:list returned no models');
+  if (!Array.isArray(efforts) || !efforts.length) throw new Error('models:list returned no efforts');
+  MODELS.length = 0;
+  MODELS.push(...models);
+  EFFORTS.length = 0;
+  EFFORTS.push(...efforts);
+}
+export const SHIFT_TAB = '\x1b[Z';
+export const MODE_STEP_MS = 300; // redraw grace between Shift+Tab presses
 
 // matches a menu line like "  1. Yes" or "❯ 2. No" — group 1 is the leading
 // whitespace/cursor marker (excluded from the clickable range), group 2 the digit
-const MENU_OPTION_RE = /^(\s*(?:[❯›>*]\s*)?)(\d{1,3})\.\s+\S.*$/;
+export const MENU_OPTION_RE = /^(\s*(?:[❯›>*]\s*)?)(\d{1,3})\.\s+\S.*$/;
 // a work burst at least this long that then goes quiet = "agent finished"
-const FINISHED_MIN_WORK_MS = 5000;
+export const FINISHED_MIN_WORK_MS = 5000;
 
 /* Dropped files arrive with host-OS paths. Agents run in WSL on Windows, so
  * drive letters and \\wsl$ UNCs are rewritten to their WSL form; POSIX paths
@@ -237,7 +244,7 @@ function agentPath(p) {
 /* Every file a drop carries, as agent-side paths a shell can take verbatim —
  * quoted where the path has a space. Shared by the terminal drop target and
  * the board's task box; both bail when it comes back empty. */
-function droppedPaths(e) {
+export function droppedPaths(e) {
   return [...e.dataTransfer.files]
     .map((f) => window.swarm.pathForFile(f))
     .filter(Boolean)
@@ -249,7 +256,7 @@ function droppedPaths(e) {
  * 3.5". Best-effort: drops the claude- prefix and any trailing date stamp,
  * then puts the family name first and joins version numbers with a dot —
  * covers both the new (name-first) and legacy (numbers-first) id shapes. */
-function prettyModelName(id) {
+export function prettyModelName(id) {
   if (!id || typeof id !== 'string') return null;
   // an OpenRouter slug ('qwen/qwen3-coder-flash') — the tail is the readable
   // part. Never /^opus/, so the right-sizing offer stays Claude-only.
@@ -264,3 +271,17 @@ function prettyModelName(id) {
   const label = family.charAt(0).toUpperCase() + family.slice(1);
   return nums.length ? `${label} ${nums.join('.')}` : label;
 }
+
+/* ---- the option flags, and the only way to move them ----
+ *
+ * These five are read all over this folder and written by exactly one caller,
+ * the Options panel, through Pane's statics. They used to be plain `let`s that
+ * pane.js assigned to across the file boundary, which the shared script scope
+ * allowed and a module does not. The setters are the same writes with a name.
+ */
+
+export function setShowInitialCommand(on) { showInitialCommand = !!on; }
+export function setAutoOrganize(on) { autoOrganize = !!on; }
+export function setSkipPermissions(on) { skipPermissions = !!on; }
+export function setShowUsagePanel(on) { showUsagePanel = !!on; }
+export function setUsageWindow(win) { usageWindow = win || null; }

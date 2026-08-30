@@ -1,0 +1,25 @@
+{
+  "workspaces": [
+    { "id": "ws_fix001", "name": "Alpha", "path": "/tmp/swarmeye-fixture/alpha", "categories": ["build"], "color": null, "pinned": false },
+    { "id": "ws_fix002", "name": "Beta", "path": "/tmp/swarmeye-fixture/beta", "categories": [], "color": null, "pinned": false },
+    { "id": "ws_fix003", "name": "Gamma", "path": "/tmp/swarmeye-fixture/gamma", "categories": [], "color": null, "pinned": false }
+  ],
+  "selectedWorkspaceId": "ws_fix001",
+  "tasks": [
+    { "id": "task_fix001", "text": "a queued task, so the board draws a card", "workspaceId": "ws_fix001",
+      "mode": "auto", "startMode": "default", "priority": 1, "status": "pending", "paneId": null,
+      "createdAt": 1756000000000, "model": "sonnet", "effort": "default", "category": "build" },
+    { "id": "task_fix002", "text": "a second one, in another workspace", "workspaceId": "ws_fix002",
+      "mode": "manual", "startMode": "default", "priority": 2, "status": "pending", "paneId": null,
+      "createdAt": 1756000001000, "model": "default", "effort": "high", "category": "" }
+  ],
+  "archivedTasks": [
+    { "id": "task_fix003", "text": "an archived one, for the Archive view", "workspaceId": "ws_fix001",
+      "status": "completed", "createdAt": 1755000000000, "completedAt": 1755000600000 }
+  ],
+  "maxAgents": 8,
+  "autoUsageLimit": 80,
+  "skipPermissions": false,
+  "nativeStyle": false,
+  "reduceTransparency": false
+}

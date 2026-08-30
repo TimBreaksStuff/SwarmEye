@@ -1,0 +1,116 @@
+/* renderer/features/openrouter/openrouter.css — the OpenRouter key row in
+ * Options → Setup, the model menu, and the harness chips.
+ *
+ * Slot 5, after chrome-clean.css, where these rules were written. */
+/* ---- OpenRouter key row (Options → Setup) ----
+ * The one text input in the options panel; .opt-ctl button's 24x24 stepper
+ * box would clip the worded Save button, same escape as #update-check-btn. */
+#or-key-input {
+  box-sizing: border-box;
+  width: 150px;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+}
+#or-key-input::placeholder { color: var(--muted); }
+#or-key-save {
+  width: auto;
+  height: auto;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+#or-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* errors get a full-width line under the row instead of ellipsizing into the
+ * sliver of space beside the input ("⚠ that d…") */
+#or-error {
+  padding: 2px 2px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--err);
+}
+
+/* the models `/model` offers inside an agent — the slugs are wider than the
+ * options panel's control column, so the picks wrap onto their own line under
+ * the row (same escape #or-error takes) and only the ＋ stays in the row */
+#or-alts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px 8px;
+}
+.or-alt-chip {
+  padding: 3px 8px;
+  border: 1px solid var(--border3);
+  border-radius: 6px;
+  background: var(--hover);
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.or-alt-chip:hover { color: var(--accent-text); border-color: var(--accent); }
+
+/* the + Agent menu's OpenRouter model picker — .branch-menu chrome with a
+ * filter on top; the catalog is ~300 rows, so the list scrolls, not the menu */
+.or-model-menu { max-height: 60vh; overflow: hidden; }
+.or-model-menu .branch-new-input { flex: none; }
+.or-model-list {
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+.or-model-list .branch-item { flex: none; }
+.or-model-none { padding: 5px 9px; color: var(--muted); }
+
+/* Ctrl+N's Claude-or-OpenRouter question — .branch-menu chrome with a
+   remember checkbox under the two provider rows */
+.or-provider-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px 3px;
+  margin-top: 3px;
+  border-top: 1px solid var(--border2);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.or-provider-remember input { margin: 0; }
+
+/* Harness toggle above the catalog filter: which CLI the picked model runs
+ * in. One chip shape in two tones, like the rest of the chrome — the active
+ * one takes the accent, the others stay quiet. */
+.or-harness-row {
+  display: flex;
+  gap: 4px;
+  padding: 6px 9px 3px;
+}
+.or-harness {
+  flex: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.or-harness:hover { color: var(--text); border-color: var(--border3); }
+.or-harness.on {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.or-harness:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

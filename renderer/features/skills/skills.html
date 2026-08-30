@@ -1,0 +1,38 @@
+<!-- renderer/features/skills/skills.html — the Skills screen, the second of
+     the two full-screen views that swap into the grid's slot. -->
+
+<template data-mount="skills-view">
+<div id="skills-view" hidden>
+  <div class="board-box">
+    <div class="board-head">
+      <div class="kbd-title">Skills</div>
+      <div class="board-head-actions">
+        <button id="skills-add-btn" class="pill pill-primary">+ Add Skill</button>
+        <button id="skills-close-btn" class="pill" data-tip="Close skills (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
+      </div>
+    </div>
+    <div id="skills-main">
+      <div id="skills-stats">
+        <div class="skills-stat-card"><span id="skills-stats-total" class="skills-stat-n">0</span><span class="skills-stat-label">installed</span></div>
+        <div class="skills-stat-card skills-stat-card-enabled" data-tip="Already-running agents don't pick up newly enabled skills until restarted"><span id="skills-stats-enabled" class="skills-stat-n">0</span><span class="skills-stat-label">auto-loaded for every agent</span></div>
+        <div class="skills-stat-card skills-stat-card-active" data-tip="Auto-invoked right when a new agent starts, instead of waiting on the model's own judgment"><span id="skills-stats-active" class="skills-stat-n">0</span><span class="skills-stat-label">active in new sessions</span></div>
+        <div class="skills-stat-card skills-stat-card-updates"><span id="skills-stats-updates" class="skills-stat-n">0</span><span class="skills-stat-label">updates available</span></div>
+      </div>
+      <div id="skills-form" hidden>
+        <div class="board-form-row">
+          <input id="skills-form-url" type="text" placeholder="https://github.com/owner/repo" spellcheck="false" />
+        </div>
+        <div class="board-form-actions">
+          <button id="skills-form-cancel">cancel</button>
+          <button id="skills-form-submit">install</button>
+        </div>
+      </div>
+      <div class="skills-filters">
+        <input id="skills-search" type="search" placeholder="filter skills by name, description or repo…" spellcheck="false" />
+      </div>
+      <div id="skills-empty" class="skills-empty" hidden>no skills installed yet — click + Add Skill and paste a GitHub repo URL</div>
+      <div id="skills-list"></div>
+    </div>
+  </div>
+</div>
+</template>

@@ -10,13 +10,17 @@ The key itself never crosses IPC; this module only ever sees the catalog.
 
 ## Files
 
-`openrouter.js`
+`openrouter.js` · `openrouter.css`
+
+The sheet is the key row in **Options → Setup**, the model menu and the harness
+chips, cut out of the end of `styles/chrome-clean.css`. Slot 5, after
+chrome-clean.css, where those rules were written.
 
 ## Public interface
 
 `OpenRouterUI.models`, `.install(models)`, `.openModelMenu(anchor, onPick)`,
 `.openProviderMenu(anchor, onPick)`, `.harnessOf`, `.slugOf`, `.isBare`,
-`.isOpenRouter`, `.applyNewAgentProvider`. A classic script.
+`.isOpenRouter`, `.applyNewAgentProvider`. An ES module.
 
 ## How to test
 

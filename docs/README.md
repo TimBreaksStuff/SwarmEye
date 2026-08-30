@@ -8,7 +8,7 @@ Everything SwarmEye does, in detail. For **installation and setup**, see the [ma
 
 - [Key features](#key-features)
   - [Command palette](#command-palette-ctrlk)
-  - [Cost & context panel](#cost--context-panel) · [Messages between agents](#messages-between-agents) · [Preview dock](#preview-dock)
+  - [Cost & context panel](#cost--context-panel) · [Preview dock](#preview-dock)
 - [Agent worktrees](#agent-worktrees)
 - [Scoping an agent to a folder](#scoping-an-agent-to-a-folder)
 - [The task board](#the-task-board)
@@ -138,7 +138,7 @@ With ten panes across five workspaces, the rail plus `Tab` cycling is the bottle
 - **Workspaces** — select one. **New agent in \<workspace\>** spawns there without selecting it first.
 - **Tasks** still open, and **installed skills** — both open the screen that owns them.
 - **Views** — the grid, Task Board, Skills.
-- **Verbs** — Message agents, Options & shortcuts.
+- **Verbs** — Options & shortcuts.
 - **Acting on an agent** — **Restart \<name\>** and **Close \<name\>** per live agent, plus **Close N idle agents** in one row when any are idle. The palette entry *is* the deliberate act, so it fires straight away.
 - **Running a task** — **Run now · \<task\>** starts any queued task without finding its card.
 - **Themes** — one row per theme, so switching doesn't mean opening Options.
@@ -202,20 +202,6 @@ A short synthesized sound plays with a "turn finished" notification (configurabl
 **Desktop notifications** (on by default) go one step further: while the SwarmEye window isn't focused, an agent finishing its turn or blocking on you raises a real OS notification naming the agent, its workspace and what happened — the thing that reaches you with SwarmEye minimized behind an editor, which neither the bell nor the taskbar flash can do. Clicking it restores and focuses the window. The OS toast is deliberately silent, since SwarmEye already plays the sound you picked; and the `attention` event that always precedes a `done` is suppressed, so a finished turn produces one notification rather than two. Turn it off with **Desktop notifications** in `⚙` Options.
 
 **Double-clicking the bell mutes it** — no OS notifications and no spoken announcements until you double-click it again. It is a temporary silence, not a setting: both options in `⚙` Options are left exactly as you had them, so unmuting restores them. The bell greys out and wears a slash while muted, and the state survives a restart. Everything that doesn't interrupt stays on — the unread count, the notification panel, the taskbar flash and the sound.
-
-### Messages between agents
-
-The `✉` button in the top bar (`Ctrl+Shift+E`) opens a one-line composer that writes straight into a running agent's input:
-
-- Address with `@name` — several are allowed (`@dora @kite run the tests`), and `@all` broadcasts to every running agent.
-- The chips under the box list every running agent (plus `@all`); clicking one addresses it, so a name never has to be typed from memory.
-- The hint line names who `Enter` will send to, and refuses to send at all while an address matches no agent.
-
-Delivery is the same channel a task's prompt uses: the text, a beat, then `Enter`, so Claude's input box sees a real keystroke rather than a pasted chunk. Sessions are tmux-backed, so this is one write per agent — nothing is queued or stored.
-
-**Attaching a file or an image.** Typing `@` *after* some text opens a picker over this workspace's files — fuzzy, so `@rap` finds `renderer/app.js` — and `↑`/`↓`, `Enter` or `Tab` insert the path. A leading `@` still addresses an agent, so the two never fight. The list comes from `git ls-files` (tracked plus untracked-but-not-ignored), which is why a folder that isn't a repo offers nothing rather than being crawled.
-
-Paste or drop an **image** into the box and it is written to the app's own data directory and its path inserted, because that is what Claude Code takes: a prompt that names an image file gets the image. On Windows the path inserted is the WSL one, since that is where the agent is. Screenshots land in `pasted/` under the user-data dir, never in your workspace, so they can't turn up in a `git status`.
 
 ### Preview dock
 
@@ -607,7 +593,6 @@ On macOS the modifier is **`Cmd`** wherever `Ctrl` appears below — except `Ctr
 | `Ctrl+Shift+1…9`, `0` | Focus visible pane N (again: maximize) |
 | `Ctrl+Shift+M` | Maximize / restore focused pane |
 | `Ctrl+Shift+F` | Search in focused pane |
-| `Ctrl+Shift+E` | Message agents — `@name`, or `@all` to broadcast |
 | `Ctrl+Shift+B` | Task board |
 | `Ctrl +` / `Ctrl −` / `Ctrl 0` | Font size of the focused pane |
 | `Ctrl+I` | Type a literal tab into the terminal |

@@ -25,7 +25,7 @@ const MIN_ROW_PX = 40;
 const sameCounts = (a, b) =>
   !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
 
-class GridController {
+export class GridController {
   constructor(container) {
     this.container = container;
     this.panes = [];
@@ -764,5 +764,3 @@ class GridController {
     gutter.addEventListener('pointercancel', onUp);
   }
 }
-
-window.GridController = GridController;

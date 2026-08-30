@@ -460,53 +460,6 @@
   cursor: text;
 }
 
-/* shared floating tooltip look — used for both the static data-tip hints
- * (tooltip.js) and the pane title's dynamic initial-prompt tip (pane.js) so
- * every hover popup in the app renders identically */
-.app-tooltip {
-  position: fixed;
-  z-index: 25;
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  backdrop-filter: blur(18px);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
-  border-radius: 10px;
-  padding: 8px 12px;
-  max-width: 420px;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--text);
-  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.7);
-  white-space: pre-wrap;
-  word-break: break-word;
-  pointer-events: none;
-}
-
-/* split tooltip: primary label, a vertical rule, then secondary text — the
- * rail's agent rows use it to pair the agent name with its last input */
-/* :not([hidden]) so this display rule can't outrank the UA `[hidden]{display:none}`
- * that hide() relies on — without it, an open split tooltip never dismisses */
-.app-tooltip.split:not([hidden]) {
-  display: flex;
-  align-items: stretch;
-  gap: 10px;
-  max-width: 520px;
-}
-.app-tooltip .app-tooltip-primary {
-  align-self: center;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.app-tooltip .app-tooltip-sep {
-  flex: none;
-  width: 1px;
-  background: color-mix(in srgb, var(--accent) 30%, var(--border3));
-}
-.app-tooltip .app-tooltip-secondary {
-  align-self: center;
-  min-width: 0;
-  color: var(--text2);
-}
 
 .pane-badge {
   font-family: var(--font-mono);
@@ -691,28 +644,6 @@
 #grid.free.max-mode > .pane-frame { display: none; }
 #grid.free.max-mode > .pane.maximized { position: absolute; inset: 0; }
 
-/* toast */
-#toast {
-  position: fixed;
-  bottom: 22px;
-  left: 50%;
-  transform: translateX(-50%) translateY(8px);
-  background: var(--surface);
-  border: 1px solid var(--err);
-  border-radius: 100px;
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  padding: 9px 18px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s, transform 0.2s;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
-  z-index: 10;
-}
-#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
 /* ---------- git context chip ---------- */
 
 .pane-git {
@@ -843,24 +774,8 @@
 }
 .pane.attn .pane-status { color: var(--amber); }
 
-.pane-busy {
-  display: flex;
-  gap: 3px;
-  height: 9px;
-  align-items: flex-end;
-  flex: none;
-}
-.pane-busy-bar {
-  width: 4.5px;
-  height: 100%;
-  background: var(--accent);
-  border-radius: 1px;
-  animation: pane-busy-block 0.9s ease-in-out infinite;
-}
-@keyframes pane-busy-block {
-  0%, 60%, 100% { opacity: 0.18; transform: scaleY(0.4); }
-  20% { opacity: 1; transform: scaleY(1); }
-}
+/* the busy equalizer itself is .sw-busy in styles/chrome-clean.css — shared
+ * with the rail's agent rows; the pane uses it at its default size */
 
 /* ---------- detached panes (agent alive, client gone) ---------- */
 

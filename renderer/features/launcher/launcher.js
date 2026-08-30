@@ -8,6 +8,19 @@
  * storage names, so app.js mirrors them in exactly as it feeds Board — except
  * Provider, which is derived from the model value rather than stored. */
 
+/* The mode/model/effort tables come from pane-const.js, not from Pane's
+ * statics. Same arrays either way — Pane.MODELS *is* this one, which is why an
+ * OpenRouter catalog pushed into it shows up in every picker — but reading
+ * them here off the class meant importing the class, and the class imports
+ * openrouter.js, which imports this file. That cycle is what left `Pane` in
+ * the temporal dead zone while this module built its selects. */
+import { EFFORTS, MODELS, MODES } from '../pane/pane-const.js';
+
+import { elt } from '../../lib/dom.js';
+import { modHeld } from '../../lib/keys.js';
+import { OpenRouterUI } from '../openrouter/openrouter.js';
+import { Scope } from '../scope/scope.js';
+
 const LAUNCH_COUNTS = [1, 2, 4, 6, 8, 10, 12];
 const LAUNCH_DEFAULT_COUNT = 4;
 
@@ -17,15 +30,15 @@ const LAUNCH_DEFAULT_COUNT = 4;
 // labelled by who pays, like the model rows themselves — the value stays
 // 'claude', which is what fillModels and the launch path read
 const LAUNCH_PROVIDERS = [['claude', 'Anthropic Subscription'], ['openrouter', 'OpenRouter']];
-const launchClaudeModels = () => Pane.MODELS.filter(([v]) => !OpenRouterUI.isOpenRouter(v));
+const launchClaudeModels = () => MODELS.filter(([v]) => !OpenRouterUI.isOpenRouter(v));
 /* the catalog rows carry the bare slug, not a finished model value: which
  * harness it becomes is read from the Harness field at launch time, so
  * switching harness never has to refill this list (openModelMenu does the
  * same) */
 const launchOrModels = () =>
-  ((window.OpenRouterUI && OpenRouterUI.models) || []).map((m) => [m.id, m.id]);
+  OpenRouterUI.models.map((m) => [m.id, m.id]);
 const launchHarnesses = () =>
-  ((window.OpenRouterUI && OpenRouterUI.HARNESSES) || []).map(([prefix, label]) => [prefix, label]);
+  OpenRouterUI.HARNESSES.map(([prefix, label]) => [prefix, label]);
 
 /* `wide` fields take two grid columns: a provider row and a model row both
  * name who is billed ("Anthropic Subscription: Sonnet"), which a 151px column
@@ -45,11 +58,11 @@ const LAUNCH_FIELDS = [
     table: () => launchHarnesses(),
   },
   { key: 'defaultModel', label: 'Model', wide: true, table: () => launchClaudeModels() },
-  { key: 'defaultEffort', label: 'Effort', table: () => Pane.EFFORTS },
+  { key: 'defaultEffort', label: 'Effort', table: () => EFFORTS },
   // Claude Code's own /focus toggle, a checkbox in Options — a two-value
   // select here so the row reads as four of the same control
   { key: 'defaultFocus', label: 'Focus', table: () => [['off', 'off'], ['on', 'on']] },
-  { key: 'defaultStartMode', label: 'Permissions', table: () => Pane.MODES },
+  { key: 'defaultStartMode', label: 'Permissions', table: () => MODES },
   // which folder of the workspace these agents may edit. The list is the
   // workspace's own (renderer/features/scope/scope.js), filled in as the card comes into
   // view — an empty value is the whole workspace, i.e. no boundary at all.
@@ -61,7 +74,7 @@ const LAUNCH_FIELDS = [
   },
 ];
 
-const Launcher = {
+export const Launcher = {
   el: null,
   headlineEl: null,
   hintEl: null,
@@ -373,5 +386,3 @@ const Launcher = {
     };
   },
 };
-
-window.Launcher = Launcher;

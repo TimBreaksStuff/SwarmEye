@@ -6,7 +6,20 @@
  *
  * Owns no app state: the workspace, the role list and what to do with an
  * approved row all arrive in open(). */
-const Coordinator = (() => {
+/* The mode/model/effort tables come from pane-const.js, not from Pane's
+ * statics. Same arrays either way — Pane.MODELS *is* this one, which is why an
+ * OpenRouter catalog pushed into it shows up in every picker — but reading
+ * them here off the class meant importing the class, and the class imports
+ * openrouter.js, which imports this file. That cycle is what left `Pane` in
+ * the temporal dead zone while this module built its selects. */
+import { MODELS } from '../pane/pane-const.js';
+
+import { elt } from '../../lib/dom.js';
+import { Icons } from '../../lib/icons.js';
+import { modHeld } from '../../lib/keys.js';
+import { Resizable } from '../../lib/resizable.js';
+
+export const Coordinator = (() => {
   const SIZE_KEY = 'swarmeye.coordSize'; // drag the corner; kept between opens
   const el = document.getElementById('coord-modal');
   const boxEl = document.getElementById('coord-modal-box');
@@ -59,8 +72,8 @@ const Coordinator = (() => {
       roleSel.dataset.tip = 'Role preset this subtask’s agent launches with';
       roleSel.addEventListener('change', () => { row.role = roleSel.value; });
 
-      // Pane.MODELS is the one renderer model table — a new tier is one edit
-      const modelSel = select(Pane.MODELS, row.model);
+      // MODELS is the one renderer model table — a new tier is one edit
+      const modelSel = select(MODELS, row.model);
       modelSel.dataset.tip = 'Model for this subtask — “default” lets the role decide';
       modelSel.addEventListener('change', () => { row.model = modelSel.value; });
 

@@ -1,0 +1,10 @@
+<!-- renderer/features/palette/palette.html — the Ctrl+K command palette. Its
+     rows are built at open time; this is the box they go in. -->
+
+<template data-mount="palette-pop">
+<div id="palette-pop" hidden>
+  <input id="palette-input" placeholder="jump to an agent, workspace, task, skill, view…" spellcheck="false" autocomplete="off" />
+  <div id="palette-list"></div>
+  <div id="palette-empty" class="palette-empty" hidden>nothing matches</div>
+</div>
+</template>

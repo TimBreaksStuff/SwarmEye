@@ -12,14 +12,16 @@ No accounts, no backend, no telemetry. SwarmEye rides your existing Claude Code 
 
 ## Status
 
-**1.63.48.** Windows (WSL) and macOS. Claude Code, plus OpenRouter through SwarmEye's own clean agent or [opencode](https://opencode.ai) / [pi](https://pi.dev).
+**3.0.0.** Windows (WSL) and macOS. Claude Code, plus OpenRouter through SwarmEye's own clean agent or [opencode](https://opencode.ai) / [pi](https://pi.dev).
 
 Recently solid:
 
-- **The rail's workspaces fold open into their agents** — an activity arc per row, a one-line summary of what each agent was asked to do, click to jump to its pane. Right-click a workspace to start 1–5 agents straight into it, rename it or remove it.
-- **A smaller surface.** History, the Swarm View, the swarm map, the Activity popover, workspace notes, prompt history, the roles editor, the review popover, workspace colours, pinning and per-agent worktrees are gone.
+- **The bell is a timeline.** Agent events hang off a thread — a coloured dot per event, day headings above each run — so a glance tells you what happened *when*. The docked panel is the same timeline widened, not a second design.
+- **The rail's workspaces fold open into their agents** — the same "working" animation the pane header uses, a one-line summary of what each agent was asked to do, click to jump to its pane. Right-click a workspace to start 1–5 agents straight into it, rename it or remove it.
+- **A swarm spread across workspaces stops paying for the panes nobody is looking at.** Agents off screen batch their output far less often — the same bytes, a fifteenth of the renderer wake-ups.
+- **Reduce transparency** (Options → Appearance) flattens every translucent surface, including the window material. Worth ticking under Native Apple style on a big swarm.
 - **The preview dock reloads itself** 1.5 seconds after an agent in that workspace finishes a turn — untick `auto` beside the reload button to stop it.
-- **Scoping to an area works again.** SwarmEye's own `.swarmeye/areas.json` still listed screens that had been removed, so picking one of those confined an agent to nothing at all. If you keep an `areas.json` in your own repo, check it still names paths that exist — a renamed folder silently empties its area.
+- **A smaller surface.** History, the Swarm View, the swarm map, the Activity popover, workspace notes, prompt history, the roles editor, the review popover, workspace colours, pinning, per-agent worktrees, the message-to-agents composer and the search across all agents are gone.
 
 ---
 
@@ -27,15 +29,15 @@ Recently solid:
 
 **Agents.** As many panes as you want, auto-arranged or placed by hand. Launch as Builder, Reviewer, Scout or Planner — a short prompt plus the model that job is worth. `Ctrl+M` copies the agent you're in (same model, CLI, effort, role, permissions). Live state comes from Claude Code's hooks: working (tool and file), waiting on you, or done. A blocked pane glows and shows how long it has waited; `Ctrl+.` jumps to whoever has waited longest. A `▸ n` chip counts Task subagents. Pick `plan` mid-run to stop edits. An Opus pane on a long read-only streak offers `→ Haiku`.
 
-**Work.** Each folder is a rail tile; the selected one is where new agents start. The coordinator splits a request into role-assigned tasks you can edit before anything runs. The orchestrator is one lead that plans and a crew of cheaper workers sharing one pane slot. The task board queues work with model, effort, priority and schedule, and chains follow-ups (`build → review → fix`); three failed starts leaves the task pending with `▶` to retry. `Ctrl+Shift+E` messages one agent, several, or `@all`, with `@` files and pasted screenshots. `Ctrl+K` is the command palette.
+**Work.** Each folder is a rail tile; the selected one is where new agents start. The coordinator splits a request into role-assigned tasks you can edit before anything runs. The orchestrator is one lead that plans and a crew of cheaper workers sharing one pane slot. The task board queues work with model, effort, priority and schedule, and chains follow-ups (`build → review → fix`); three failed starts leaves the task pending with `▶` to retry. `Ctrl+K` is the command palette.
 
 **Models.** Every Claude tier in every picker — Sonnet, Opus, Haiku, Fable, `opusplan`, `opus[1m]` / `sonnet[1m]` — each labelled so a subscription tier isn't mistaken for OpenRouter. Paste one openrouter.ai key and every picker grows the catalog (Kimi, Qwen, GLM, GPT, Grok, …). Those agents run through your key, with catalog pricing in the cost panel and today's spend / remaining credits in the rail. Each one is a **clean agent** (SwarmEye's own CLI) unless you hand the same model to opencode or pi. The empty-workspace launch card can start a whole swarm on any of the three.
 
 **Code.** Scope an agent to an area (from `.swarmeye/areas.json`) or a folder — it can still read the repo, but Claude Code deny rules block edits outside, even in `auto`. The git chip shows the branch, and lists every branch to check out or create.
 
-**Around the swarm.** The preview dock is the workspace's localhost dev server, reloading itself when an agent there finishes. Skills install from GitHub or show the ones agents wrote. Notifications (optionally spoken) fire when an agent finishes or needs you; approve/deny from the bell. Agents live in a dedicated tmux server, so quitting only detaches them. Fifteen colour themes, plus a **Native Apple style** on macOS that follows System Settings. The app checks GitHub Releases and updates in one click.
+**Around the swarm.** The preview dock is the workspace's localhost dev server, reloading itself when an agent there finishes. Skills install from GitHub or show the ones agents wrote. Notifications (optionally spoken) fire when an agent finishes or needs you; approve/deny from the bell. Agents live in a dedicated tmux server, so quitting only detaches them. Fifteen colour themes, plus a **Native Apple style** on macOS that follows System Settings, and a **Reduce transparency** option that flattens every translucent surface — worth ticking under that style on a big swarm. The app checks GitHub Releases and updates in one click.
 
-The left rail shows the real 5-hour and weekly Claude limits, plus OpenRouter spend if you have a key. Each workspace there folds open into the agents running inside it — a spinning arc while one is working, the amber pulse when it wants you, and a one-line summary of its task; click a row to jump to that pane. Drag the rail's right border — or click it — to switch between the icon rail and the wide one; Task Board and Skills sit side by side at its foot. Each pane has a cost & context panel (fill, spend, cache hit rate, tokens per turn) from the transcript — no extra API calls.
+The left rail shows the real 5-hour and weekly Claude limits, plus OpenRouter spend if you have a key. Each workspace there folds open into the agents running inside it — the same working animation the pane header shows, the amber pulse when it wants you, and a one-line summary of its task; click a row to jump to that pane. Drag the rail's right border — or click it — to switch between the icon rail and the wide one; Task Board and Skills sit side by side at its foot. Each pane has a cost & context panel (fill, spend, cache hit rate, tokens per turn) from the transcript — no extra API calls.
 
 ---
 
@@ -127,15 +129,26 @@ The source is arranged so one change usually means one folder.
 main/                 the Electron main process, one module per concern
 main/ipc/             every ipcMain channel, one file per domain
 main/platform.js      the only OS-aware module
-renderer/features/    one folder per UI area — its JS, its CSS, its README
+renderer/boot.js      the renderer's entry: markup and tables in, then app.js
+renderer/features/    one folder per UI area — its JS, its CSS, its markup, its README
 renderer/lib/         the shared helpers no single area owns
 renderer/styles/      tokens, the chassis, the shared design language
 agent/                the foreign harnesses (clean, opencode, pi)
+scripts/              setup, publish, and the dev tools below
 ```
 
 **Every folder in there carries a `README.md`**: what it is for, its public interface, and how to check it by hand. Read that first. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) explains how the folders relate, has a "where to look" table, and collects the rules that bite — strings that reach a shell command line, stylesheet load order, and `.swarmeye/areas.json` being live data rather than a doc.
 
-There is no test runner and no linter. Verifying means running the app and looking; `docs/ARCHITECTURE.md` describes the CDP harness for the two things clicking cannot check.
+`index.html` is the shell and nothing else: an area's markup lives beside its code as `features/<area>/<area>.html`, and `renderer/lib/fragments.js` mounts it before any module runs.
+
+There is no test runner and no linter — verifying means running the app and looking. Two scripts do the part of looking that a script can:
+
+```
+node scripts/boot-check.js                      # exit 1 on any uncaught error
+node scripts/style-snapshot.js --cascade a.json # prove a CSS move changed nothing
+```
+
+`boot-check` boots the app on a throwaway profile and fails on an uncaught exception, a `console.error`, a resource that would not load, or a renderer that painted but never finished booting — run it after anything structural. `style-snapshot --cascade` dumps, per CSS property, the ordered list of every declaration touching it, so an unchanged sequence proves an unchanged winner for every element, including the ones built at runtime. Both are documented in [`scripts/README.md`](scripts/README.md); the stylesheet rules they enforce are in `renderer/styles/README.md`.
 
 ---
 

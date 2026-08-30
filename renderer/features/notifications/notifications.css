@@ -7,6 +7,12 @@
  *
  * Left behind on purpose: chrome-clean's shared `button > svg` sizing rule,
  * which #notif-panel only appears in alongside seven other views.
+ *
+ * The list itself is a timeline — day headings, and under each a gutter
+ * carrying the kind's dot and the thread down to the next event. The popover
+ * and the panel share every rule below; `.full` is the panel's only difference
+ * (a second meta line, and a prompt that wraps instead of clipping), so the
+ * two lists cannot drift apart.
  */
 
 /* ---- from styles/app.css ---- */
@@ -74,9 +80,9 @@
   background: var(--surface);
   backdrop-filter: none;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border3));
-  border-radius: 14px;
-  padding: 14px 16px;
-  min-width: 360px;
+  border-radius: 16px;
+  padding: 18px 20px 4px;
+  min-width: 400px;
   max-width: 480px;
   max-height: 60vh;
   overflow-y: auto;
@@ -84,9 +90,9 @@
 }
 #notif-pop .kbd-title {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--accent-text);
   margin-bottom: 0;
@@ -95,82 +101,160 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 18px;
 }
-.notif-clear {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  background: none;
-  border: 1px solid var(--border3);
-  border-radius: 100px;
-  padding: 3px 10px;
-  cursor: pointer;
+.notif-head-acts {
+  display: flex;
+  gap: 14px;
 }
-.notif-clear:hover { color: var(--accent-text); border-color: var(--accent); }
 .notif-empty {
   font-family: var(--font-ui);
   font-size: 12px;
   color: var(--muted);
-  padding: 4px 0 2px;
+  padding: 4px 0 14px;
 }
-.notif-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 0;
-  border-top: 1px solid var(--border);
+
+/* ---------- the timeline ---------- */
+
+.notif-group { display: flex; flex-direction: column; }
+.notif-group-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted2);
+  padding: 6px 0 10px;
+}
+
+.notif-item {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 14px;
   cursor: pointer;
 }
-.notif-row:first-of-type { border-top: none; }
-.notif-row:hover .notif-who { color: var(--accent-text); }
+/* the gutter: dot at the event, thread down to the next one */
+.notif-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
 .notif-dot {
   flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--muted2);
+  margin-top: 5px;
 }
-.notif-dot.done { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
-.notif-dot.wait { background: var(--amber); box-shadow: 0 0 8px rgba(245, 181, 68, 0.5); }
-.notif-dot.exit { background: var(--muted2); }
-.notif-dot.detach { background: var(--amber); }
-.notif-body { flex: 1; min-width: 0; }
-.notif-who {
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.notif-dot.done { border-color: var(--accent); box-shadow: 0 0 8px -1px var(--accent-glow); }
+.notif-dot.wait { border-color: var(--amber); box-shadow: 0 0 8px -1px rgba(245, 181, 68, 0.5); }
+.notif-dot.exit { border-color: var(--muted2); }
+.notif-dot.detach { border-color: var(--amber); }
+.notif-thread {
+  flex: 1;
+  width: 1px;
+  background: var(--border2);
 }
-.notif-what {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.notif-cmd {
+/* a thread hanging off the last row of a day points at nothing */
+.notif-item.last .notif-thread { display: none; }
+
+.notif-item-body {
+  min-width: 0;
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
   gap: 6px;
-  margin-top: 2px;
+  padding-bottom: 20px;
+}
+.notif-item.last .notif-item-body { padding-bottom: 14px; }
+
+.notif-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
 }
-.notif-cmd .notif-what { flex: 1; }
+.notif-gap { flex: 1; }
+.notif-agent {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.notif-item:hover .notif-agent { color: var(--accent-text); }
+.notif-what {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notif-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  flex: none;
+}
 .notif-time {
   flex: none;
   font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted2);
+  white-space: nowrap;
+}
+.notif-meta {
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--muted2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.notif-item.full .notif-meta { white-space: normal; }
+
+/* what the agent was asked — the pane's initial command, quoted */
+.notif-prompt {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notif-item.full .notif-prompt {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* the row's actions read as text, not buttons — the row itself is the target */
+.notif-acts {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-top: 2px;
+}
+.notif-link {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.notif-link.go { color: var(--accent-text); }
+.notif-link:hover { color: var(--text); }
+.notif-link.go:hover { color: var(--accent-text); text-decoration: underline; }
 .notif-respond { display: flex; gap: 4px; flex: none; }
 
-/* per-notification actions: jump to the agent / read its transcript. Wraps
- * rather than pushing the row wide — a narrow notification panel would
- * otherwise grow a horizontal scrollbar. */
-.notif-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+/* panel filter chips — the one place a notification still wears a border */
 .notif-act {
   font-family: var(--font-ui);
   font-size: 11px;
@@ -188,7 +272,8 @@
 .notif-act:disabled { opacity: 0.4; cursor: default; }
 
 /* notification panel: docked right sidebar (mirrors #leftbar's flex slot on
- * the other edge of #body-wrap) — full untruncated detail, no row cap. */
+ * the other edge of #body-wrap) — same timeline, with the model, permission
+ * mode, runtime and absolute time under each event and no row cap. */
 #notif-panel {
   flex: none;
   z-index: 1;
@@ -219,42 +304,6 @@
 }
 #notif-panel .board-head { margin-bottom: 12px; flex: none; }
 #notif-panel-list { display: flex; flex-direction: column; }
-.notif-panel-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 0;
-  border-top: 1px solid var(--border);
-  cursor: pointer;
-}
-.notif-panel-row:first-child { border-top: none; }
-.notif-panel-row:hover .notif-panel-who { color: var(--accent-text); }
-.notif-panel-row .notif-dot { margin-top: 5px; }
-.notif-panel-who {
-  font-family: var(--font-ui);
-  font-size: 13px;
-  color: var(--text);
-}
-.notif-panel-what {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted);
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin-top: 2px;
-}
-.notif-panel-meta {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted2);
-  margin-top: 6px;
-}
-.notif-panel-time {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted2);
-  margin-top: 2px;
-}
 
 /* ---- from styles/chrome-clean.css ---- */
 
@@ -294,24 +343,6 @@
   background: var(--accent);
   color: var(--bg);
 }
-
-/* per-row dismiss — quiet until the row is hovered */
-.notif-dismiss {
-  flex: none;
-  width: 18px; height: 18px;
-  padding: 0;
-  line-height: 1;
-  font-size: 10px;
-  color: var(--muted2);
-  background: none;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  opacity: 0;
-}
-.notif-row:hover .notif-dismiss,
-.notif-panel-row:hover .notif-dismiss { opacity: 1; }
-.notif-dismiss:hover { color: var(--text); background: var(--glass); }
 
 /* panel filter chips */
 .notif-filter { display: flex; gap: 6px; margin-bottom: 10px; }

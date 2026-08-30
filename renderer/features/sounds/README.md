@@ -11,7 +11,7 @@ plus the Piper TTS hand-off for the spoken "done".
 
 ## Public interface
 
-`Sounds.OPTIONS`, `.play(name)`, `.speak(text)`. A classic script.
+`Sounds.OPTIONS`, `.play(name)`, `.speak(text)`. An ES module.
 
 ## How to test
 

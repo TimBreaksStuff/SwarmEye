@@ -8,12 +8,14 @@
  * new IPC at all. Main is the one that turns a pick into deny rules
  * (main/scope.js); everything here is a chooser. */
 
+import { dismissPop, elt, placePop } from '../../lib/dom.js';
+
 // deep enough for renderer/features/pane, shallow enough that the select stays
 // a list a human can read — a big repo has thousands of folders further down
 const SCOPE_MAX_DEPTH = 4;
 const SCOPE_MAX_DIRS = 200;
 
-const Scope = {
+export const Scope = {
   cache: new Map(), // workspace id -> Promise<string[]>
   areaCache: new Map(), // workspace id -> Promise<[{label, paths}]>
   menuEl: null,
@@ -124,5 +126,3 @@ const Scope = {
 
   undismiss: null, // dismissPop's teardown, live while the menu is up
 };
-
-window.Scope = Scope;

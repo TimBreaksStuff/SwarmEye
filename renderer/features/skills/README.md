@@ -10,12 +10,16 @@ every turn, which is paid every turn of every agent — see `main/skills.js`.
 
 ## Files
 
-`skills.js`, `skills.css`
+`skills.js`, `skills.css` · `skills.html`
+
+The markup was in `renderer/index.html`. It is here now, as
+`<template data-mount="…">` sections that `lib/fragments.js` puts into the
+shell before any module runs.
 
 ## Public interface
 
 `Skills.refresh()`, `.installed()`, `.getActiveSkills()` — a plain top-level
-const `app.js` reads directly. A classic script.
+const `app.js` reads directly. An ES module.
 
 ## How to test
 

@@ -14,7 +14,7 @@
  * disarming always clears the look as well — one element can stand for more
  * than one key, and a stale timeout must not strip `.armed` from a button
  * that is armed for something else. */
-const Confirm = (() => {
+export const Confirm = (() => {
   const ARM_MS = 3000;
   let armed = { key: null, until: 0, btn: null, timer: null };
 
@@ -56,4 +56,3 @@ const Confirm = (() => {
 
   return { armOrFire, restoreArmed, disarm };
 })();
-window.Confirm = Confirm;

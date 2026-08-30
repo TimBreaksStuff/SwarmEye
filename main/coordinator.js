@@ -16,7 +16,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { exec, shQuote, toShellPath } = require('./platform');
-const { MODELS } = require('./sessions');
+const { MODEL_FLAGS } = require('./models');
 const roles = require('./roles');
 
 // a bad split must not be able to queue fifty agents
@@ -95,7 +95,7 @@ function clean(items) {
     .map((it) => ({
       text: String((it && it.text) || '').slice(0, MAX_TEXT).trim(),
       role: roles.has(String((it && it.role) || '')) ? it.role : '',
-      model: MODELS.includes(it && it.model) ? it.model : 'default',
+      model: MODEL_FLAGS.includes(it && it.model) ? it.model : 'default',
     }))
     .filter((it) => it.text)
     .slice(0, MAX_SUBTASKS);

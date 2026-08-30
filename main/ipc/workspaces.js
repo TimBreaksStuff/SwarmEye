@@ -68,7 +68,6 @@ module.exports = function register(deps) {
     try { return await attach.listFiles(ws); } catch { return []; }
   });
 
-  ipcMain.handle('attach:image', (e, dataUrl) => attach.saveImage(dataUrl));
 
   /* The workspace's areas (main/scope.js): what its `.swarmeye/areas.json`
    * carves it into, for the scope pickers. Resolved server-side from the id

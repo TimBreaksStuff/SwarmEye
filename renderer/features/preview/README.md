@@ -11,12 +11,16 @@ so an agent's work shows without hand-hitting `⟳`.
 
 ## Files
 
-`preview.js`, `preview.css`
+`preview.js`, `preview.css` · `preview.html`
+
+The markup was in `renderer/index.html`. It is here now, as
+`<template data-mount="…">` sections that `lib/fragments.js` puts into the
+shell before any module runs.
 
 ## Public interface
 
 `Preview.init({ getWorkspaceId })`, `.setWorkspace(id)`,
-`.onAgentDone(workspaceId)`. A classic script.
+`.onAgentDone(workspaceId)`. An ES module.
 
 ## How to test
 

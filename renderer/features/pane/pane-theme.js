@@ -85,7 +85,7 @@ const LIGHT_ACCENTS = [
   ['slate', '#334155', '71, 85, 105'],
 ];
 
-const XTERM_THEMES = {
+export const XTERM_THEMES = {
   dark: DARK_RAMP,
   light: LIGHT_RAMP,
   orange: {
@@ -156,30 +156,79 @@ const LIGHT_THEMES = new Set([
 // panes are the backdrop agents already assume.
 const MIN_CONTRAST = 4.5;
 
-let activeXtermTheme = paneTheme(XTERM_THEMES.dark);
-let activeMinContrast = 1;
+export let activeXtermTheme = paneTheme(XTERM_THEMES.dark);
+export let activeMinContrast = 1;
 
 // Terminal font. JetBrains Mono is the app's own; the macOS "Native Apple
 // style" option (settings.js) swaps in the system mono so agent panes match
 // Terminal.app rather than the rest of the chrome. A variable, not a literal
 // in the term options, because the option flips it at runtime.
-const DEFAULT_MONO_FONT = "'JetBrains Mono', monospace";
+export const DEFAULT_MONO_FONT = "'JetBrains Mono', monospace";
 const NATIVE_MONO_FONT = "ui-monospace, 'SF Mono', Menlo, 'JetBrains Mono', monospace";
-let activeMonoFont = DEFAULT_MONO_FONT;
+export let activeMonoFont = DEFAULT_MONO_FONT;
 
-const DEFAULT_FONT_SIZE = 13;
+export const DEFAULT_FONT_SIZE = 13;
 // last font size the user picked (MOD+/- or the pane buttons) — persists
 // across restarts so reopened agent panes come back at the same text size
-let activeFontSize = Number(localStorage.getItem('swarmeye.paneFontSize')) || DEFAULT_FONT_SIZE;
+export let activeFontSize = Number(localStorage.getItem('swarmeye.paneFontSize')) || DEFAULT_FONT_SIZE;
 
 // Windows starts two steps heavier: DirectWrite rasterizes stems lighter than
 // macOS's Skia/CoreText, so the same 400 that looks right on a Mac reads thin
 // and washed out there. Still just a default — the Options knob overrides it.
-const DEFAULT_FONT_WEIGHT = window.swarm.isMac ? 400 : 600;
+export const DEFAULT_FONT_WEIGHT = window.swarm.isMac ? 400 : 600;
 // "Agent pane text weight" option in ⌨ Options — the light themes draw dark
 // text on a near-white pane, which reads thinner than the dark themes'
 // light-on-dark, so the weight is a knob rather than a constant. Capped at 600
 // (JetBrains Mono is a 300–700 variable font) so bold, which tracks 300 above,
 // stays heavier than body text at every step — 400 gives xterm's own 700.
-let activeFontWeight = Number(localStorage.getItem('swarmeye.paneFontWeight')) || DEFAULT_FONT_WEIGHT;
-const boldFor = (weight) => Math.min(700, weight + 300);
+export let activeFontWeight = Number(localStorage.getItem('swarmeye.paneFontWeight')) || DEFAULT_FONT_WEIGHT;
+export const boldFor = (weight) => Math.min(700, weight + 300);
+
+/* ---- the active theme and font, and the only ways to move them ----
+ *
+ * Every value above is read by pane.js and written by the Options panel
+ * through Pane's statics. pane.js used to assign to them straight across the
+ * file boundary — legal while these files shared one script scope, not legal
+ * between modules. Same writes, now with a name and an owner.
+ */
+
+/* Set the palette new panes start from. The caller flips :root's theme
+ * attribute first, since that changes --term-bg and hence the backdrop
+ * paneTheme reads, and restyles already-open terminals afterwards. */
+export function setXtermTheme(name) {
+  const base = XTERM_THEMES[name] || XTERM_THEMES.dark;
+  activeXtermTheme = paneTheme(base);
+  activeMinContrast = LIGHT_THEMES.has(name) ? MIN_CONTRAST : 1;
+  return activeXtermTheme;
+}
+export function getXtermTheme() { return activeXtermTheme; }
+export function getMinContrast() { return activeMinContrast; }
+
+/* The size new panes start at, which MOD+/- and the pane buttons also move.
+ * Both writers come through here so the stored value and the live one cannot
+ * drift apart. */
+export function getDefaultFontSize() { return activeFontSize; }
+export function setDefaultFontSize(px) {
+  const size = Math.max(8, Math.min(24, Math.round(px)));
+  activeFontSize = size;
+  localStorage.setItem('swarmeye.paneFontSize', String(size));
+  return size;
+}
+
+/* The macOS "Native Apple style" option's terminal half. A font swap needs a
+ * refit, since the cell size changes with it — the caller does that. */
+export function getMonoFont() { return activeMonoFont; }
+export function setMonoFont(native) {
+  activeMonoFont = native ? NATIVE_MONO_FONT : DEFAULT_MONO_FONT;
+  return activeMonoFont;
+}
+
+/* "Agent pane text weight". No keyboard path, so the option is the only
+ * writer; the caller pushes the result to already-open panes. */
+export function getDefaultFontWeight() { return activeFontWeight; }
+export function setDefaultFontWeight(weight) {
+  const w = Math.max(300, Math.min(600, Math.round(weight / 100) * 100));
+  activeFontWeight = w;
+  localStorage.setItem('swarmeye.paneFontWeight', String(w));
+  return w;
+}

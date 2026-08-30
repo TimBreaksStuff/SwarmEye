@@ -14,6 +14,10 @@
  * setter. usageSnapshot is a value, so it gets one.
  */
 
+import { Board } from '../board/board.js';
+import { OpenRouterUI } from '../openrouter/openrouter.js';
+import { Skills } from '../skills/skills.js';
+
 import { maxAgents, autoUsageLimit, taskSummaries } from '../settings/settings.js';
 
 /* set once by init() — what the scheduler needs from app.js: the shared state,
@@ -25,17 +29,17 @@ export function init(context) { ctx = context; }
  * gate and "next session" both read it */
 export function setUsageSnapshot(snap) { usageSnapshot = snap; }
 
-export const pendingTaskStarts = new Map(); // sessionId -> {taskId, injected}
-export const skillInjectAttempted = new Set(); // sessionId — every new session gets one attempt, task or manual
+const pendingTaskStarts = new Map(); // sessionId -> {taskId, injected}
+const skillInjectAttempted = new Set(); // sessionId — every new session gets one attempt, task or manual
 // sessionId — a task's prompt has been submitted but its own turn hasn't
 // started yet. Every startup injection (an active skill's /command, /effort,
 // /focus) is a real turn of its own, so it fires a Stop hook; without this
 // gate the first of those Stops completes the task and closes the pane before
 // the task text has even been typed.
-export const awaitingTaskTurn = new Set();
-export const manualStartRun = new Set(); // sessionId — manually-added agents run their startup sequence (skills, then default mode) once
-export const manualLaunchOpts = new Map(); // sessionId -> the empty-workspace card's picks for this launch, read once by startManualSession
-export const sessionStarted = new Set(); // sessionId — its SessionStart hook has arrived, i.e. claude's CLI is really up
+const awaitingTaskTurn = new Set();
+const manualStartRun = new Set(); // sessionId — manually-added agents run their startup sequence (skills, then default mode) once
+const manualLaunchOpts = new Map(); // sessionId -> the empty-workspace card's picks for this launch, read once by startManualSession
+const sessionStarted = new Set(); // sessionId — its SessionStart hook has arrived, i.e. claude's CLI is really up
 let usageSnapshot = null;
 let schedulerRunning = false;
 let schedulerQueued = false;
@@ -649,3 +653,60 @@ export const boardHandlers = {
     else if (!res.canceled) ctx.toast('could not save: ' + res.reason);
   },
 };
+
+/* ---- the launch sequence, as verbs ----
+ *
+ * The six sets and maps above are this module's bookkeeping for what a
+ * just-created session still owes: skills to inject, a prompt to type, a mode
+ * to settle, a turn to begin. They used to be exported, and app.js reached
+ * into all six by hand — adding to two of them, deleting from all six on exit
+ * — so neither file owned the sequence and either could leave it half-torn-down.
+ *
+ * app.js still reports the session events, because it is where they arrive.
+ * It just says what happened now instead of which container to poke. */
+
+/* An agent's session ended. Everything this module was still waiting on for it
+ * goes at once — a partial forget leaves a dead session id in a set that gates
+ * the *next* one. */
+export function forgetSession(sessionId) {
+  pendingTaskStarts.delete(sessionId);
+  awaitingTaskTurn.delete(sessionId);
+  skillInjectAttempted.delete(sessionId);
+  manualStartRun.delete(sessionId);
+  manualLaunchOpts.delete(sessionId);
+  sessionStarted.delete(sessionId);
+}
+
+/* The empty-workspace card's picks for this one launch. Read once, by
+ * startManualSession, after the mode has settled. */
+export function noteManualLaunch(sessionId, launch) {
+  manualLaunchOpts.set(sessionId, launch);
+}
+
+/* SessionStart: claude's CLI is up and reading keys. Whichever startup
+ * sequence this session is owed begins here — the timers inside
+ * tryInjectPrompt and tryInjectSkills are the fallback for sessions whose
+ * hooks never fire at all. */
+export function noteSessionStarted(sessionId) {
+  sessionStarted.add(sessionId);
+  if (pendingTaskStarts.has(sessionId)) {
+    // tryInjectPrompt injects the skills itself first — scheduling both here
+    // would type the task text into the middle of a half-entered /command
+    setTimeout(() => tryInjectPrompt(sessionId), TASK_INJECT_SETTLE_MS);
+  } else {
+    setTimeout(() => startManualSession(sessionId), TASK_INJECT_SETTLE_MS);
+  }
+}
+
+/* Any hook event that is not Stop or SessionStart: the agent is live on the
+ * prompt we sent it, so the task's own turn has begun and the next Stop is its
+ * completion rather than the end of an injection. */
+export function noteAgentTurn(sessionId) {
+  awaitingTaskTurn.delete(sessionId);
+}
+
+/* Is this session still being started up rather than working? A Stop that
+ * lands while it is belongs to an injection, not to the task. */
+export function isStartingUp(sessionId) {
+  return pendingTaskStarts.has(sessionId) || awaitingTaskTurn.has(sessionId);
+}

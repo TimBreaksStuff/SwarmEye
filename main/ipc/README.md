@@ -13,7 +13,7 @@ registrar with the same `deps`:
 registerIpc({
   get win() { return win; },      // a getter: macOS rebuilds the window
   ptys, usage, ptysReady, hooks, git, health, updates, skills, speech,
-  sendToWin, debugLog,
+  sendToWin, debugLog, setVisibleSessions,
 })
 ```
 
@@ -26,9 +26,9 @@ stored per task by `main/tasklogs.js` and fetched one id at a time over
 |---|---|
 | `config.js` | `config:*`, `template:*`, `app:relaunch`, `app:version` |
 | `openrouter.js` | `openrouter:*` |
-| `workspaces.js` | `workspace:*`, `areas:read`, `attach:image`, `preview:*`, `git:*` |
+| `workspaces.js` | `workspace:*`, `areas:read`, `preview:*`, `git:*` |
 | `tasks.js` | `task:*`, `coordinator:split`, `orchestrator:*` |
-| `sessions.js` | `session:*`, `roles:list` |
+| `sessions.js` | `session:*`, `sessions:visible`, `roles:list`, `models:list` |
 | `skills.js` | `skills:*` |
 | `system.js` | `usage:refresh`, `update:*`, `speech:*`, `tts:*`, `clipboard:*`, `notify`, `open-external` |
 

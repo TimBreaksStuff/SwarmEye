@@ -4,7 +4,9 @@
  * localhost (main/main.js enforces that too, at attach and at navigate).
  * Exposes window.Preview. */
 
-const Preview = (() => {
+import { dragWidth } from '../../lib/dom.js';
+
+export const Preview = (() => {
   const el = document.getElementById('preview');
   const webEl = document.getElementById('preview-web');
   const urlEl = document.getElementById('preview-url');
@@ -209,5 +211,3 @@ const Preview = (() => {
 
   return { init, setWorkspace, onAgentDone };
 })();
-
-window.Preview = Preview;

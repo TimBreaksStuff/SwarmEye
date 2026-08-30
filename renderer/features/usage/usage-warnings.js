@@ -10,6 +10,8 @@
  * way up; dropping back below a threshold (or the window resetting, which
  * moves resetsAt) re-arms it for the next time. */
 
+import { Topbar } from '../rail/topbar.js';
+
 const WARN_PCT = 75;
 const CRIT_PCT = 90;
 const WINDOWS = [['fiveHour', '5-hour'], ['weekly', 'weekly']];

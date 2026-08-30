@@ -5,6 +5,9 @@
  * and applyHookEvent, which is where main/hooks.js's events land.
  */
 
+import { FINISHED_MIN_WORK_MS, IDLE_AFTER_MS, INPUT_ECHO_MS, MENU_OPTION_RE, fmtWait, prettyModelName } from './pane-const.js';
+import { Pane } from './pane.js';
+
 /* Claude Code's idle nudge, the one Notification that carries no menu. */
 const IDLE_NUDGE_RE = /waiting for (your|user) input/i;
 

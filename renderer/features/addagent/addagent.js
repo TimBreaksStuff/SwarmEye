@@ -13,6 +13,10 @@
  * Owns no app state: the workspace lookup, the launcher and the toast arrive
  * in `init`. */
 
+import { dismissPop, elt, placePop } from '../../lib/dom.js';
+import { Coordinator } from '../coordinator/coordinator.js';
+import { OpenRouterUI } from '../openrouter/openrouter.js';
+
 import { open as openOrchestratorCard } from '../orchestrator/orchestrator.js';
 import { createTask } from '../scheduler/scheduler.js';
 

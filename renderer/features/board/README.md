@@ -11,13 +11,17 @@ The board **draws** tasks; which one starts, and when, is
 
 ## Files
 
-`board.js`, `board.css`
+`board.js`, `board.css` · `board.html`
+
+The markup was in `renderer/index.html`. It is here now, as
+`<template data-mount="…">` sections that `lib/fragments.js` puts into the
+shell before any module runs.
 
 ## Public interface
 
-`window.Board` — `render`, `renderArchive`, `toggleArchive`, `setDefaults`,
+`Board` — `render`, `renderArchive`, `toggleArchive`, `setDefaults`,
 `showForm`, `closeSessionView`, `stopDictation`, `toggleDictation`,
-`isFormOpen`, `REPEAT_MS`. A classic script.
+`isFormOpen`, `REPEAT_MS`. An ES module.
 
 ## Conventions
 

@@ -13,6 +13,23 @@
  * module is loaded by app.js, never the other way round.
  */
 
+/* The mode/model/effort tables come from pane-const.js, not from Pane's
+ * statics. Same arrays either way — Pane.MODELS *is* this one, which is why an
+ * OpenRouter catalog pushed into it shows up in every picker — but reading
+ * them here off the class meant importing the class, and the class imports
+ * openrouter.js, which imports this file. That cycle is what left `Pane` in
+ * the temporal dead zone while this module built its selects. */
+import { EFFORTS, MODELS, MODES, setAutoOrganize, setShowInitialCommand, setShowUsagePanel, setSkipPermissions } from '../pane/pane-const.js';
+import { DEFAULT_FONT_SIZE, DEFAULT_FONT_WEIGHT, getDefaultFontSize, getDefaultFontWeight, getMinContrast, setDefaultFontSize, setDefaultFontWeight, setMonoFont, setXtermTheme } from '../pane/pane-theme.js';
+
+import { Confirm } from '../../lib/confirm.js';
+import { placePop } from '../../lib/dom.js';
+import { Board } from '../board/board.js';
+import { Launcher } from '../launcher/launcher.js';
+import { OpenRouterUI } from '../openrouter/openrouter.js';
+import { Topbar } from '../rail/topbar.js';
+import { Sounds } from '../sounds/sounds.js';
+
 /* keyboard-shortcuts / options popover. Looked up at module scope because
  * app.js's ESCAPABLE list closes over both of them. */
 export const kbdPop = document.getElementById('kbd-pop');
@@ -200,8 +217,8 @@ export function applyTheme(name, persist = true) {
   // swatch row — applied without persisting, so the colour the user picked is
   // still there when the option goes back off
   if (persist) localStorage.setItem('swarmeye.theme', name);
-  const xt = Pane.setXtermTheme(name);
-  const minContrast = Pane.getMinContrast();
+  const xt = setXtermTheme(name);
+  const minContrast = getMinContrast();
   for (const p of ctx.state.panes.values()) {
     p.term.options.theme = xt;
     p.term.options.minimumContrastRatio = minContrast;
@@ -217,7 +234,7 @@ export function applyTheme(name, persist = true) {
 const skipPermissionsToggle = document.getElementById('skip-permissions-toggle');
 function applySkipPermissions(on) {
   skipPermissionsToggle.checked = on;
-  Pane.setSkipPermissions(on);
+  setSkipPermissions(on);
   window.swarm.setSkipPermissions(on);
 }
 
@@ -249,9 +266,9 @@ function showTemplate(st) {
 const DEFAULT_PICKERS = [
   {
     id: 'default-startmode-sel',
-    table: () => Pane.MODES,
+    table: () => MODES,
     key: 'defaultStartMode',
-    // 'default' is relabeled from Pane.MODES' own "manual" the same way the
+    // 'default' is relabeled from MODES' own "manual" the same way the
     // task board's picker does, so the two read as the same choice
     optionText: (value, label) => (value === 'default' ? 'default' : label),
     // bypass ("auto") only exists in claude's Shift+Tab cycle when it was
@@ -262,8 +279,8 @@ const DEFAULT_PICKERS = [
       if (name === 'bypass' && !skipPermissionsToggle.checked) applySkipPermissions(true);
     },
   },
-  { id: 'default-model-sel', table: () => Pane.MODELS, key: 'defaultModel' },
-  { id: 'default-effort-sel', table: () => Pane.EFFORTS, key: 'defaultEffort' },
+  { id: 'default-model-sel', table: () => MODELS, key: 'defaultModel' },
+  { id: 'default-effort-sel', table: () => EFFORTS, key: 'defaultEffort' },
 ];
 
 const applyDefault = {}; // key -> apply(value), for the ↺ Reset button below
@@ -285,8 +302,8 @@ async function resetOptions() {
   applied.openrouterUsage(true);
   applied.topbarZoom(1);
   applied.boardZoom(1);
-  applied.agentFontSize(Pane.DEFAULT_FONT_SIZE);
-  applied.agentFontWeight(Pane.DEFAULT_FONT_WEIGHT);
+  applied.agentFontSize(DEFAULT_FONT_SIZE);
+  applied.agentFontWeight(DEFAULT_FONT_WEIGHT);
   await applied.maxAgents(10);
   await applied.autoUsageLimit(85);
   applySkipPermissions(false);
@@ -302,6 +319,7 @@ async function resetOptions() {
   applied.notifSpeech(false);
   applyAppearance('system');
   applied.nativeStyle(false);
+  applied.reduceTransparency(false);
   applyTheme('dark');
   applied.themeOverlay(true);
   notifSound = 'chime';
@@ -320,7 +338,7 @@ export function applyConfig(cfg) {
   // straight from the stored value: applySkipPermissions would push it back to
   // main, which already has it
   skipPermissionsToggle.checked = !!cfg.skipPermissions;
-  Pane.setSkipPermissions(!!cfg.skipPermissions);
+  setSkipPermissions(!!cfg.skipPermissions);
   worktreesToggle.checked = !!cfg.worktrees;
   showTemplate(cfg.claudeTemplate);
 }
@@ -427,7 +445,6 @@ export function init(context) {
     elements: () => [
       document.getElementById('topbar'),
       leftbarEl,
-      document.getElementById('msg-pop'),
       ctx.notifPopEl,
     ],
     valueEl: document.getElementById('ui-font-val'),
@@ -478,13 +495,13 @@ export function init(context) {
    * so it reads as a single "text size" setting rather than just a new-pane default. */
   const agentFontVal = document.getElementById('agent-font-val');
   applied.agentFontSize = (px) => {
-    const size = Pane.setDefaultFontSize(px);
+    const size = setDefaultFontSize(px);
     agentFontVal.textContent = size + 'px';
     for (const p of ctx.state.panes.values()) p.setFontSize(size);
   };
-  document.getElementById('agent-font-down').addEventListener('click', () => applied.agentFontSize(Pane.getDefaultFontSize() - 1));
-  document.getElementById('agent-font-up').addEventListener('click', () => applied.agentFontSize(Pane.getDefaultFontSize() + 1));
-  applied.agentFontSize(Pane.getDefaultFontSize());
+  document.getElementById('agent-font-down').addEventListener('click', () => applied.agentFontSize(getDefaultFontSize() - 1));
+  document.getElementById('agent-font-up').addEventListener('click', () => applied.agentFontSize(getDefaultFontSize() + 1));
+  applied.agentFontSize(getDefaultFontSize());
 
   /* agent pane text weight — the ± control below the size one, same shape. Its
    * reason to exist is the light themes: dark text on a near-white pane reads
@@ -492,13 +509,13 @@ export function init(context) {
   const AGENT_WEIGHT_LABELS = { 300: 'Light', 400: 'Normal', 500: 'Medium', 600: 'Semibold' };
   const agentWeightVal = document.getElementById('agent-weight-val');
   applied.agentFontWeight = (w) => {
-    const weight = Pane.setDefaultFontWeight(w);
+    const weight = setDefaultFontWeight(w);
     agentWeightVal.textContent = AGENT_WEIGHT_LABELS[weight];
     for (const p of ctx.state.panes.values()) p.setFontWeight(weight);
   };
-  document.getElementById('agent-weight-down').addEventListener('click', () => applied.agentFontWeight(Pane.getDefaultFontWeight() - 100));
-  document.getElementById('agent-weight-up').addEventListener('click', () => applied.agentFontWeight(Pane.getDefaultFontWeight() + 100));
-  applied.agentFontWeight(Pane.getDefaultFontWeight());
+  document.getElementById('agent-weight-down').addEventListener('click', () => applied.agentFontWeight(getDefaultFontWeight() - 100));
+  document.getElementById('agent-weight-up').addEventListener('click', () => applied.agentFontWeight(getDefaultFontWeight() + 100));
+  applied.agentFontWeight(getDefaultFontWeight());
 
   /* ---- limits ---- */
 
@@ -553,7 +570,7 @@ export function init(context) {
   /* "Show last command in pane header" — off by default; pushed to every
    * already-open pane so it reads as a single live setting */
   applied.showInitialCommand = boolOption('show-initial-cmd-toggle', 'showInitialCommand', false, (on) => {
-    Pane.setShowInitialCommand(on);
+    setShowInitialCommand(on);
     for (const p of ctx.state.panes.values()) p.syncInitialCommandHeader();
   });
 
@@ -566,14 +583,14 @@ export function init(context) {
   /* "Show cost & context panel" — off by default; the panel eats two rows of
    * every pane's terminal, so opening it re-fits each one */
   applied.usagePanel = boolOption('usage-panel-toggle', 'usagePanel', false, (on) => {
-    Pane.setShowUsagePanel(on);
+    setShowUsagePanel(on);
     for (const p of ctx.state.panes.values()) p.syncUsagePanel();
   });
 
   /* "Auto-organize agent windows" — on by default; off lets each pane's → / ↓
    * buttons place new agents by hand instead of the automatic square-ish grid */
   applied.autoOrganize = boolOption('auto-organize-toggle', 'autoOrganize', true, (on) => {
-    Pane.setAutoOrganize(on);
+    setAutoOrganize(on);
     ctx.grid.setAutoOrganize(on);
     for (const p of ctx.state.panes.values()) p.syncSplitButtons();
   });
@@ -618,7 +635,7 @@ export function init(context) {
     document.documentElement.dataset.native = nativeStyle ? 'on' : 'off';
     // the terminal font changes the cell size, so open panes need a refit as
     // well as the new family
-    const font = Pane.setMonoFont(nativeStyle);
+    const font = setMonoFont(nativeStyle);
     for (const p of ctx.state.panes.values()) {
       p.term.options.fontFamily = font;
       p.refit();
@@ -631,6 +648,15 @@ export function init(context) {
     if (nativeBooted) nativeRestartBtn.hidden = false;
   });
   nativeBooted = true;
+
+  /* "Reduce transparency" — off by default. The CSS half is one sheet scoped
+   * to this attribute (styles/reduce-transparency.css); the window material,
+   * which no stylesheet can reach, is main's (config:set-reduce-transparency).
+   * Wired after "Native Apple style" above, whose material it switches off. */
+  applied.reduceTransparency = boolOption('reduce-transparency-toggle', 'reduceTransparency', false, (on) => {
+    document.documentElement.dataset.reduceTransparency = on ? 'on' : 'off';
+    window.swarm.setReduceTransparency(on);
+  });
 
   /* "Theme background overlay" — on by default; off hides the theme-tinted
    * background grid wash and pins the app's chassis (background, left bar,

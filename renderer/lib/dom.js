@@ -8,7 +8,7 @@
  * createElement / className / textContent run it replaces. Both trailing
  * arguments are optional, and a null text is left off rather than written out
  * as the string "null", so `elt('span', 'x', maybeMissing)` is safe. */
-function elt(tag, className, text) {
+export function elt(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text != null) node.textContent = text;
@@ -38,7 +38,7 @@ const POP_EDGE = 8; // closest the box may sit to a window edge
  * the grid; a box with no cap has nothing to limit it, so it flips whatever is
  * above it and pins to the top edge — showing the head of a list beats leaving
  * it hanging off the bottom. */
-function placePop(el, anchor, { align = 'left', gap = POP_GAP, flip = false, cap = false } = {}) {
+export function placePop(el, anchor, { align = 'left', gap = POP_GAP, flip = false, cap = false } = {}) {
   const r = anchor.getBoundingClientRect();
   el.style.top = Math.round(r.bottom + gap) + 'px';
   if (align === 'right') {
@@ -65,7 +65,7 @@ function placePop(el, anchor, { align = 'left', gap = POP_GAP, flip = false, cap
  *
  * Returns the teardown. The caller runs it from its own close(), which is the
  * bookkeeping half every one of these popovers used to repeat. */
-function dismissPop(el, close, { esc = false, keep = [] } = {}) {
+export function dismissPop(el, close, { esc = false, keep = [] } = {}) {
   const inside = (target) => el.contains(target)
     || keep.some((k) => k && (k === target || k.contains(target)));
   const onDown = (e) => { if (!inside(e.target)) close(); };
@@ -81,7 +81,7 @@ function dismissPop(el, close, { esc = false, keep = [] } = {}) {
 /* ---- drag one edge to resize ----
  * The preview dock and the notification panel are the same box in two places:
  * a strip on the left edge, a width in pixels, and that width remembered. */
-function dragWidth(handle, el, { key, min, minRest = 360 }) {
+export function dragWidth(handle, el, { key, min, minRest = 360 }) {
   const saved = Number(localStorage.getItem(key));
   if (saved >= min) el.style.width = saved + 'px';
   handle.addEventListener('pointerdown', (e) => {

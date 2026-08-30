@@ -1,6 +1,6 @@
 /* renderer/features/sounds/sounds.js — tiny synthesized notification sounds (no audio
  * files/assets to ship). Exposes window.Sounds: { OPTIONS, play(name) }. */
-const Sounds = (() => {
+export const Sounds = (() => {
   const OPTIONS = [
     ['none', 'None'],
     ['chime', 'Chime'],
@@ -79,4 +79,3 @@ const Sounds = (() => {
 
   return { OPTIONS, play, speak };
 })();
-window.Sounds = Sounds;

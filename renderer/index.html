@@ -14,14 +14,28 @@
        every one of those overrides at once. -->
   <link rel="stylesheet" href="features/rail/rail.css" />
   <link rel="stylesheet" href="features/pane/pane.css" />
+  <!-- lib/tooltip.js's own sheet. No area owns the hover tooltip, so it does
+       not belong in one; it sits where its rules used to, right after
+       pane.css, so chrome-clean.css still flattens it afterwards. -->
+  <link rel="stylesheet" href="lib/tooltip.css" />
+  <link rel="stylesheet" href="lib/toast.css" />
   <link rel="stylesheet" href="features/preview/preview.css" />
-  <link rel="stylesheet" href="features/message/message.css" />
   <link rel="stylesheet" href="features/board/board.css" />
   <link rel="stylesheet" href="features/skills/skills.css" />
   <link rel="stylesheet" href="features/update/update.css" />
+  <!-- the palette was never in app.css at all, so it has no chrome-clean half
+       to sit after: its whole look is this one sheet, and it stays ahead of
+       chrome-clean.css where its rules were written -->
+  <link rel="stylesheet" href="features/palette/palette.css" />
   <link rel="stylesheet" href="styles/chrome-clean.css" />
-  <!-- these two took BOTH halves — app.css's and chrome-clean's — so they are
-       self-contained and belong after it rather than before -->
+  <!-- These took BOTH halves — app.css's and chrome-clean's — so they are
+       self-contained and belong after it rather than before. The first three
+       are the tail chrome-clean.css used to carry inline, in the order it
+       carried them; that order is the reason the cascade did not move when
+       they were cut out. -->
+  <link rel="stylesheet" href="features/launcher/launcher.css" />
+  <link rel="stylesheet" href="features/addagent/addagent.css" />
+  <link rel="stylesheet" href="features/openrouter/openrouter.css" />
   <link rel="stylesheet" href="features/settings/settings.css" />
   <link rel="stylesheet" href="features/notifications/notifications.css" />
   <!-- the lead-agent launch card carries its own flat-popover treatment, so it
@@ -32,6 +46,11 @@
        sheet costs nothing; last in the order because its whole job is
        overriding the sheets above, tokens included. -->
   <link rel="stylesheet" href="styles/native-mac.css" />
+  <!-- "Reduce transparency" (Options → Appearance). Scoped to
+       :root[data-reduce-transparency="on"], so it costs nothing with the
+       option off; after native-mac.css because it has to beat that sheet's
+       blur too. -->
+  <link rel="stylesheet" href="styles/reduce-transparency.css" />
 </head>
 <body>
   <header id="topbar">
@@ -58,9 +77,6 @@
     <div id="topbar-actions">
       <button id="voice-btn" data-palette-keep aria-label="Speak to the app" data-tip="Hold to speak to the app — dictation fills the command palette (Ctrl+K) while you hold the button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
-      </button>
-      <button id="msg-btn" aria-label="Message agents" data-tip="Message agents — @name, or @all to broadcast (Ctrl+Shift+E)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m3.6 7.2 8.4 6 8.4-6"/></svg>
       </button>
       <button id="preview-btn" aria-label="Preview" data-tip="Preview — open a local dev server beside the grid">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="13" rx="2"/><path d="M9 20.5h6M12 17.5v3"/></svg>
@@ -166,583 +182,44 @@
       </div>
     </main>
 
-    <div id="board" hidden>
-      <div class="board-box">
-        <div class="board-head">
-          <div class="board-head-left">
-            <span class="board-head-dot"></span>
-            <div class="kbd-title">Task Board</div>
-          </div>
-          <div class="board-head-actions">
-            <button id="board-new-btn" class="pill pill-primary">New task</button>
-            <button id="board-archive-btn" class="pill" data-tip="View archived tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="4.5" rx="1.2"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M10 13h4"/></svg><span>Archive</span></button>
-            <button id="board-close-btn" class="pill" data-tip="Close task board (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
-          </div>
-        </div>
-        <div id="board-main">
-          <div class="board-form-flex">
-          <div id="board-form" hidden>
-            <textarea id="board-form-text" placeholder="Describe the task for the agent…" rows="3" data-tip="Ctrl+Enter to submit"></textarea>
-            <div class="board-form-row board-form-chips">
-              <select id="board-form-ws"></select>
-              <select id="board-form-category" data-tip="Category"></select>
-              <button id="board-form-category-manage" type="button" data-tip="Manage categories for this workspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M4.9 7.5l1.9 1.1M17.2 15.4l1.9 1.1M4.9 16.5l1.9-1.1M17.2 8.6l1.9-1.1"/></svg></button>
-              <span class="board-spacer"></span>
-              <button id="board-form-mic" type="button" data-tip="Dictate task description (Ctrl+R)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
-                <span>dictate</span>
-              </button>
-            </div>
-            <div class="board-field">
-              <span class="board-field-label">When</span>
-              <div class="board-seg">
-                <label><input type="radio" name="board-mode" value="now" checked /><span>start now</span></label>
-                <label><input type="radio" name="board-mode" value="auto" /><span>auto</span></label>
-                <label><input type="radio" name="board-mode" value="next-session" /><span>next session</span></label>
-                <label><input type="radio" name="board-mode" value="manual" /><span>manual</span></label>
-              </div>
-            </div>
-            <div class="board-form-grid">
-              <div class="board-field">
-                <span class="board-field-label">Model</span>
-                <select id="board-form-model" data-tip="Model for this task"></select>
-              </div>
-              <div class="board-field">
-                <span class="board-field-label">Harness</span>
-                <select id="board-form-harness" data-tip="Which CLI runs the OpenRouter model: clean is our own minimal agent, opencode and pi are their own TUIs. pi gates nothing by design — it is always auto." hidden></select>
-              </div>
-              <div class="board-field">
-                <span class="board-field-label">Mode</span>
-                <select id="board-form-startmode"></select>
-              </div>
-              <div class="board-field">
-                <span class="board-field-label">Effort</span>
-                <select id="board-form-effort" data-tip="Claude reasoning effort for this task"></select>
-              </div>
-            </div>
-            <div class="board-form-grid">
-              <div class="board-field">
-                <span class="board-field-label">Priority</span>
-                <select id="board-form-priority" data-tip="Priority — auto mode starts higher-priority tasks first">
-                  <option value="low">low priority</option>
-                  <option value="medium" selected>medium priority</option>
-                  <option value="high">high priority</option>
-                  <option value="critical">critical priority</option>
-                </select>
-              </div>
-              <div class="board-field">
-                <span class="board-field-label">Repeat</span>
-                <select id="board-form-repeat" data-tip="Repeat — when this task completes, its next run is queued one interval later">
-                  <option value="none" selected>no repeat</option>
-                  <option value="hourly">every hour</option>
-                  <option value="daily">every day</option>
-                  <option value="weekly">every week</option>
-                </select>
-              </div>
-              <div class="board-field">
-                <span class="board-field-label">Options</span>
-                <div class="board-opts">
-                  <label class="board-toggle"><input type="checkbox" id="board-form-focus" /><span>focus mode</span></label>
-                  <label class="board-toggle" data-tip="Close this task's agent window automatically when the task completes"><input type="checkbox" id="board-form-closeonend" checked /><span>close on complete</span></label>
-                </div>
-              </div>
-            </div>
-            <span id="board-form-auto-hint" class="board-form-hint" hidden></span>
-            <div class="board-field">
-              <div class="board-field-labelrow">
-                <span class="board-field-label">Follow-up agents</span>
-                <span class="board-field-hint">separate steps with a line containing ---</span>
-              </div>
-              <textarea id="board-form-chain" rows="2" placeholder="When done, run these as follow-up agents…" data-tip="Each step becomes a new task with these same settings once the previous one finishes"></textarea>
-            </div>
-            <div class="board-form-actions">
-              <span class="board-form-hint board-form-kbd">Ctrl/⌘+Enter to add</span>
-              <span class="board-spacer"></span>
-              <button id="board-form-cancel">Cancel</button>
-              <button id="board-form-submit">Add task</button>
-            </div>
-          </div>
-          <div id="board-stats" hidden>
-            <div class="board-stats-title">Shipped</div>
-            <div class="board-stats-grid">
-              <div class="board-stats-row"><span id="board-stats-today" class="board-stats-n">0</span><span class="board-stats-label">today</span></div>
-              <div class="board-stats-row"><span id="board-stats-week" class="board-stats-n">0</span><span class="board-stats-label">this week</span></div>
-              <div class="board-stats-row"><span id="board-stats-month" class="board-stats-n">0</span><span class="board-stats-label">this month</span></div>
-              <div class="board-stats-row"><span id="board-stats-year" class="board-stats-n">0</span><span class="board-stats-label">this year</span></div>
-            </div>
-            <div id="board-stats-quip" class="board-stats-quip"></div>
-          </div>
-          </div>
-          <div class="board-filters">
-            <select id="board-category-filter" data-tip="Filter by category"></select>
-          </div>
-          <div id="board-cols">
-            <div class="board-col board-col-cat-manual">
-              <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Manual</span><span id="board-count-manual" class="board-col-n"></span></div>
-              <div id="board-col-manual" class="board-col-list"></div>
-            </div>
-            <div class="board-col board-col-cat-scheduled">
-              <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Scheduled</span><span id="board-count-pending" class="board-col-n"></span></div>
-              <div id="board-col-pending" class="board-col-list"></div>
-            </div>
-            <div class="board-col board-col-cat-active">
-              <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Active</span><span id="board-count-active" class="board-col-n"></span></div>
-              <div id="board-col-active" class="board-col-list"></div>
-            </div>
-            <div class="board-col board-col-cat-completed">
-              <div class="board-col-head"><span class="board-col-dot"></span><span class="board-col-title">Completed</span><span id="board-count-completed" class="board-col-n"></span></div>
-              <div id="board-col-completed" class="board-col-list"></div>
-            </div>
-          </div>
-        </div>
-        <div id="board-archive" hidden>
-          <div class="board-archive-head">
-            <span class="board-archive-title">Archived <span id="board-archive-count" class="board-col-n"></span></span>
-            <button id="board-archive-delete-all" class="board-archive-delall" data-tip="Permanently delete all archived tasks (click twice)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.4 1.4 0 0 0 1.4 1.3h6.4a1.4 1.4 0 0 0 1.4-1.3l.9-12.5"/><path d="M10.4 10v6.5M13.6 10v6.5"/></svg><span>Delete all</span></button>
-          </div>
-          <div class="board-archive-filters">
-            <input id="board-archive-search" type="search" placeholder="search archived tasks…" spellcheck="false" />
-            <select id="board-archive-category-filter" data-tip="Filter by category"></select>
-            <select id="board-archive-priority-filter" data-tip="Filter by priority">
-              <option value="">all priorities</option>
-              <option value="critical">critical</option>
-              <option value="high">high</option>
-              <option value="medium">medium</option>
-              <option value="low">low</option>
-            </select>
-          </div>
-          <div id="board-archive-list" class="board-archive-list"></div>
-        </div>
-      </div>
-    </div>
+    <div data-fragment="board"></div>
 
-    <div id="skills-view" hidden>
-      <div class="board-box">
-        <div class="board-head">
-          <div class="kbd-title">Skills</div>
-          <div class="board-head-actions">
-            <button id="skills-add-btn" class="pill pill-primary">+ Add Skill</button>
-            <button id="skills-close-btn" class="pill" data-tip="Close skills (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
-          </div>
-        </div>
-        <div id="skills-main">
-          <div id="skills-stats">
-            <div class="skills-stat-card"><span id="skills-stats-total" class="skills-stat-n">0</span><span class="skills-stat-label">installed</span></div>
-            <div class="skills-stat-card skills-stat-card-enabled" data-tip="Already-running agents don't pick up newly enabled skills until restarted"><span id="skills-stats-enabled" class="skills-stat-n">0</span><span class="skills-stat-label">auto-loaded for every agent</span></div>
-            <div class="skills-stat-card skills-stat-card-active" data-tip="Auto-invoked right when a new agent starts, instead of waiting on the model's own judgment"><span id="skills-stats-active" class="skills-stat-n">0</span><span class="skills-stat-label">active in new sessions</span></div>
-            <div class="skills-stat-card skills-stat-card-updates"><span id="skills-stats-updates" class="skills-stat-n">0</span><span class="skills-stat-label">updates available</span></div>
-          </div>
-          <div id="skills-form" hidden>
-            <div class="board-form-row">
-              <input id="skills-form-url" type="text" placeholder="https://github.com/owner/repo" spellcheck="false" />
-            </div>
-            <div class="board-form-actions">
-              <button id="skills-form-cancel">cancel</button>
-              <button id="skills-form-submit">install</button>
-            </div>
-          </div>
-          <div class="skills-filters">
-            <input id="skills-search" type="search" placeholder="filter skills by name, description or repo…" spellcheck="false" />
-          </div>
-          <div id="skills-empty" class="skills-empty" hidden>no skills installed yet — click + Add Skill and paste a GitHub repo URL</div>
-          <div id="skills-list"></div>
-        </div>
-      </div>
-    </div>
+    <div data-fragment="skills-view"></div>
 
-    <!-- the coordinator: a multi-part request, then the subtasks it split into,
-         reviewed before any of them becomes a task -->
-    <div id="coord-modal" hidden>
-      <div id="coord-modal-box">
-        <div id="coord-modal-head">
-          <div id="coord-modal-title" class="kbd-title">Coordinator</div>
-          <div class="board-head-actions">
-            <button id="coord-close" class="pill" data-tip="Close (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
-          </div>
-        </div>
-        <div id="coord-modal-meta"></div>
-        <div id="coord-modal-body">
-          <textarea id="coord-input" rows="6" placeholder="Describe everything you want done — the coordinator splits it into subtasks and assigns each one a role…" data-tip="Ctrl+Enter to split"></textarea>
-          <div id="coord-plan" hidden></div>
-        </div>
-        <div id="coord-foot">
-          <button id="coord-split" class="pill">Split</button>
-          <button id="coord-create" class="pill" hidden>Create tasks</button>
-        </div>
-      </div>
-    </div>
+    <div data-fragment="coord-modal"></div>
 
-    <aside id="notif-panel" hidden>
-      <div id="notif-panel-resizer" data-tip="Drag to resize the notification panel"></div>
-      <div id="notif-panel-body">
-        <div class="board-head">
-          <div class="kbd-title">Notifications</div>
-          <div class="board-head-actions">
-            <button id="notif-panel-clear" class="pill" data-tip="Remove all notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.4 1.4 0 0 0 1.4 1.3h6.4a1.4 1.4 0 0 0 1.4-1.3l.9-12.5"/><path d="M10.4 10v6.5M13.6 10v6.5"/></svg><span>Clear all</span></button>
-            <button id="notif-panel-close" class="pill" data-tip="Close notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
-          </div>
-        </div>
-        <div id="notif-panel-list"></div>
-      </div>
-    </aside>
+    <div data-fragment="notif-panel"></div>
 
-    <aside id="preview" hidden>
-      <div id="preview-resizer" data-tip="Drag to resize the preview"></div>
-      <div id="preview-body">
-        <div id="preview-bar">
-          <button id="preview-back" data-tip="Back">‹</button>
-          <button id="preview-fwd" data-tip="Forward">›</button>
-          <button id="preview-reload" data-tip="Reload">⟳</button>
-          <label id="preview-auto-wrap" data-tip="Reload the page when an agent in this workspace finishes its turn">
-            <input type="checkbox" id="preview-auto" /><span>auto</span>
-          </label>
-          <input id="preview-url" spellcheck="false" placeholder="localhost:3000" />
-          <button id="preview-external" data-tip="Open in your usual browser">↗</button>
-          <button id="preview-close" data-tip="Close the preview">✕</button>
-        </div>
-        <!-- its own session partition: main filters main-frame requests there
-             down to localhost without touching the rest of the app -->
-        <webview id="preview-web" src="about:blank" partition="persist:swarmeye-preview"></webview>
-        <div id="preview-msg" class="preview-msg" hidden></div>
-      </div>
-    </aside>
+    <div data-fragment="preview"></div>
   </div>
 
   <div id="toast"></div>
 
-  <div id="msg-pop" hidden>
-    <input id="msg-input" placeholder="@name your message… (@all broadcasts)" spellcheck="false" />
-    <div id="msg-hint" class="msg-hint"></div>
-    <div id="msg-targets" class="msg-targets"></div>
-  </div>
+  <div data-fragment="palette-pop"></div>
 
-  <div id="palette-pop" hidden>
-    <input id="palette-input" placeholder="jump to an agent, workspace, task, skill, view…" spellcheck="false" autocomplete="off" />
-    <div id="palette-list"></div>
-    <div id="palette-empty" class="palette-empty" hidden>nothing matches</div>
-  </div>
+  <div data-fragment="notif-pop"></div>
 
-  <div id="notif-pop" hidden></div>
+  <div data-fragment="board-category-pop"></div>
 
-  <div id="board-category-pop" hidden>
-    <div id="board-category-pop-title" class="kbd-title">Categories</div>
-    <div id="board-category-pop-list"></div>
-    <div class="board-category-pop-addrow">
-      <input id="board-category-pop-input" type="text" placeholder="new category…" maxlength="30" spellcheck="false" />
-      <button id="board-category-pop-add" type="button">+</button>
-    </div>
-  </div>
+  <div data-fragment="session-view"></div>
 
-  <div id="session-view" hidden>
-    <div id="session-view-box">
-      <div id="session-view-head">
-        <span id="session-view-title"></span>
-        <span class="spacer"></span>
-        <button id="session-view-export" data-tip="Save this transcript to a file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v11"/><path d="m7.8 10.6 4.2 4.2 4.2-4.2"/><path d="M4.5 17v2a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg></button>
-        <button id="session-view-close" data-tip="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg></button>
-      </div>
-      <pre id="session-view-body"></pre>
-    </div>
-  </div>
+  <div data-fragment="kbd-pop"></div>
 
-  <div id="kbd-pop" hidden>
-    <div class="kbd-head">
-      <div class="kbd-title">Options</div>
-      <button id="options-reset-btn" data-tip="Restore every option below to its default value (click twice)">↺ Reset</button>
-    </div>
-    <details class="kbd-sect" open><summary>Appearance</summary>
-    <div class="kbd-row kbd-opt"><span>Small left menu</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="leftbar-small-toggle" data-tip="Collapses the left menu to icons only, hover to preview the expanded view (workspace names and usage gauges).">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Anthropic usage in the left menu</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="anthropic-usage-toggle" data-tip="Shows the Anthropic Usage section at the top of the left menu — the Session and Weekly bars from Claude's usage API. Off hides the section in both menu sizes.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>OpenRouter usage in the left menu</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="openrouter-usage-toggle" data-tip="Shows the OpenRouter Usage section below it — today's spend and the credits you have left. Needs a saved OpenRouter key; without one the section stays hidden whatever this says.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Menu bar size</span>
-      <span class="opt-ctl">
-        <button id="ui-font-down" data-tip="Smaller menu bar">−</button>
-        <span id="ui-font-val">100%</span>
-        <button id="ui-font-up" data-tip="Larger menu bar">+</button>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Task board, Skills &amp; Options text size</span>
-      <span class="opt-ctl">
-        <button id="board-font-down" data-tip="Smaller text">−</button>
-        <span id="board-font-val">100%</span>
-        <button id="board-font-up" data-tip="Larger text">+</button>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Agent pane text size</span>
-      <span class="opt-ctl">
-        <button id="agent-font-down" data-tip="Smaller text">−</button>
-        <span id="agent-font-val">13px</span>
-        <button id="agent-font-up" data-tip="Larger text">+</button>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Agent pane text weight</span>
-      <span class="opt-ctl">
-        <button id="agent-weight-down" data-tip="Thinner agent text">−</button>
-        <span id="agent-weight-val">Normal</span>
-        <button id="agent-weight-up" data-tip="Thicker agent text — the light themes draw dark on light, which reads thinner">+</button>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt" id="native-style-row" hidden><span>Native Apple style</span>
-      <span class="opt-ctl">
-        <button id="native-style-restart" hidden data-tip="Relaunch SwarmEye now to apply the window frame">Restart</button>
-        <input type="checkbox" id="native-style-toggle" data-tip="macOS look: the system font in the chrome and in agent panes, macOS greys, corner radii and controls, and a light/dark theme that follows System Settings. The window frame — traffic lights inside the top bar, a translucent sidebar — needs a restart.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Theme background overlay</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="theme-overlay-toggle" data-tip="On: the theme colours everything, including the faint background grid, the app background, the left bar and the agent panes. Off: the grid is hidden and the whole chassis — background, left bar, agent panes — stays the default dark shade; only the theme's colours (borders, text, accents, terminal) follow the theme.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt kbd-opt-theme"><span>Colour theme</span>
-      <span class="opt-ctl" id="theme-opts">
-        <button class="theme-dot" data-theme="dark" data-tip="Dark"></button>
-        <button class="theme-dot" data-theme="orange" data-tip="Orange"></button>
-        <button class="theme-dot" data-theme="light" data-tip="Light"></button>
-        <button class="theme-dot" data-theme="blue" data-tip="Light Blue"></button>
-        <button class="theme-dot" data-theme="neoblue" data-tip="Light Neoblue"></button>
-        <button class="theme-dot" data-theme="purple" data-tip="Light Purple"></button>
-        <button class="theme-dot" data-theme="teal" data-tip="Light Teal"></button>
-        <button class="theme-dot" data-theme="rose" data-tip="Light Rose"></button>
-        <button class="theme-dot" data-theme="violet" data-tip="Light Violet"></button>
-        <button class="theme-dot" data-theme="sky" data-tip="Light Sky"></button>
-        <button class="theme-dot" data-theme="indigo" data-tip="Light Indigo"></button>
-        <button class="theme-dot" data-theme="fuchsia" data-tip="Light Fuchsia"></button>
-        <button class="theme-dot" data-theme="emerald" data-tip="Light Emerald"></button>
-        <button class="theme-dot" data-theme="amber" data-tip="Light Amber"></button>
-        <button class="theme-dot" data-theme="slate" data-tip="Light Slate"></button>
-      </span>
-    </div>
-    </details>
+  <div data-fragment="kbd-shortcuts-pop"></div>
 
-    <details class="kbd-sect"><summary>Agents &amp; panes</summary>
-    <div class="kbd-row kbd-opt"><span>Max simultaneous agents</span>
-      <span class="opt-ctl">
-        <button id="max-agents-down" data-tip="Allow fewer agents">−</button>
-        <span id="max-agents-val">10</span>
-        <button id="max-agents-up" data-tip="Allow more agents (up to 30)">+</button>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Auto-start usage limit</span>
-      <span class="opt-ctl">
-        <button id="auto-limit-down" data-tip="Lower the auto-start usage ceiling">−</button>
-        <span id="auto-limit-val">85%</span>
-        <button id="auto-limit-up" data-tip="Raise the auto-start usage ceiling">+</button>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Allow auto mode (bypass permissions)</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="skip-permissions-toggle" data-tip="Launches new and restarted agents with --allow-dangerously-skip-permissions so claude's Shift+Tab mode cycle includes auto mode without activating it. Existing running agents need a restart to pick this up.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Isolate agents in git worktrees</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="worktrees-toggle" data-tip="Every agent launched from now on gets its own git worktree and branch off the workspace's current branch, so a swarm can edit the same repo without fighting over files. Closing its pane commits whatever it left and merges that branch back; a merge that can't be made safely leaves the branch for you. Workspaces that aren't git repos are unaffected.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Show last command in pane header</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="show-initial-cmd-toggle" data-tip="Shows a second header row under every pane's title with the most recently submitted command — a task's launch prompt until you type a new line, which then takes over.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Show cost &amp; context panel</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="usage-panel-toggle" data-tip="Adds a panel to the bottom of every Claude pane: how full its context window is, what it has spent, cache hit rate, tokens per turn, how long the current turn has run, its share of the 5-hour limit and the last tools it used. Costs two rows of terminal height per pane.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Auto-organize agent windows</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="auto-organize-toggle" data-tip="On: new agents are laid out automatically. Off: place agents yourself with each pane's → and ↓ buttons.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Space between agent panes</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="agent-padding-toggle" data-tip="On: panes have a small gap and draggable divider between them, with room around the edges. Off: panes sit flush against each other and the window edges with no gap.">
-      </span>
-    </div>
-    </details>
-
-    <details class="kbd-sect"><summary>Defaults for new tasks</summary>
-    <div class="kbd-row kbd-opt"><span>Default agent permissions</span>
-      <span class="opt-ctl">
-        <select id="default-startmode-sel" data-tip="Preset new tasks' starting Claude permission mode"></select>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Default model</span>
-      <span class="opt-ctl">
-        <select id="default-model-sel" data-tip="Claude model for new agents and new tasks alike"></select>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>New agent shortcut</span>
-      <span class="opt-ctl">
-        <select id="newagent-provider-sel" data-tip="What Ctrl+N launches: ask each time whether the new agent runs on Claude or an OpenRouter model, or always use one of them. Only asked once an OpenRouter key is saved (Setup below) — without one, Ctrl+N launches Claude directly.">
-          <option value="ask">ask every time</option>
-          <option value="claude">Anthropic Subscription</option>
-          <option value="openrouter">OpenRouter</option>
-        </select>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Default task effort</span>
-      <span class="opt-ctl">
-        <select id="default-effort-sel"></select>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Default focus mode</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="default-focus-toggle" data-tip="Preset new tasks with focus mode enabled">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Task summary on completion</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="task-summary-toggle" data-tip="Puts the agent's closing message on the task card when a task finishes, read from its own transcript — so the Completed column says what came of a task without opening its transcript.">
-      </span>
-    </div>
-    </details>
-
-    <details class="kbd-sect"><summary>Notifications</summary>
-    <div class="kbd-row kbd-opt"><span>Desktop notifications</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="desktop-notif-toggle" data-tip="Raises a real OS notification — naming the agent and what it did — when an agent finishes a turn or needs you while the SwarmEye window isn't focused. Clicking it brings the window back.">
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Notification sound</span>
-      <span class="opt-ctl">
-        <select id="notif-sound-sel" data-tip="Played when an agent finishes its turn"></select>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Spoken notifications</span>
-      <span class="opt-ctl">
-        <input type="checkbox" id="voice-notif-toggle" data-tip="Says out loud which agent just finished — and the first sentence of its closing message, once that has landed — for turns that end while you aren't watching that pane. Needs the voice engine below.">
-      </span>
-    </div>
-    </details>
-
-    <details class="kbd-sect"><summary>Setup</summary>
-    <div class="kbd-row kbd-opt"><span>SwarmEye version</span>
-      <span class="opt-ctl">
-        <span id="update-status" class="stt-status"></span>
-        <button id="update-check-btn" data-tip="Ask GitHub now whether a newer SwarmEye has been released, instead of waiting for the six-hourly check">Check</button>
-        <button id="update-action-btn" hidden></button>
-      </span>
-    </div>
-    <div class="kbd-row kbd-opt"><span>Dictation engine</span>
-      <span class="opt-ctl">
-        <span id="stt-status" class="stt-status">checking…</span>
-        <button id="stt-install-btn" data-tip="Downloads a local Whisper model (~465 MB, into WSL on Windows) — runs fully offline, nothing is uploaded">Install</button>
-      </span>
-    </div>
-    <pre id="stt-log" hidden></pre>
-    <div class="kbd-row kbd-opt"><span>Voice engine</span>
-      <span class="opt-ctl">
-        <span id="tts-status" class="stt-status">checking…</span>
-        <button id="tts-install-btn" data-tip="Downloads the Piper speech engine and one voice (~110 MB, into WSL on Windows) — runs fully offline, nothing is uploaded">Install</button>
-      </span>
-    </div>
-    <pre id="tts-log" hidden></pre>
-    <div class="kbd-row kbd-opt"><span>OpenRouter API key</span>
-      <span class="opt-ctl">
-        <span id="or-status" class="stt-status"></span>
-        <input type="password" id="or-key-input" placeholder="sk-or-v1-…" data-tip="Lets agents run any OpenRouter model (Kimi, Qwen, GLM, GPT, …) — pick them in the model selects once the key is saved. Stored locally; those agents' conversations go only to OpenRouter.">
-        <button id="or-key-save" data-tip="Save the key and fetch the model catalog">Save</button>
-        <button id="or-key-refresh" data-tip="Re-fetch the model catalog" hidden>↻</button>
-        <button id="or-key-clear" data-tip="Forget the key and the cached catalog (click twice)" hidden>✕</button>
-      </span>
-    </div>
-    <div id="or-error" hidden></div>
-    <div class="kbd-row kbd-opt" id="or-alts-row" hidden><span>Models an agent can switch to</span>
-      <span class="opt-ctl">
-        <button id="or-alts-add" data-tip="Up to three more models that /model offers inside an OpenRouter agent, next to the one it was launched with — Claude Code's picker has room for four. Applies to agents started afterwards.">＋</button>
-      </span>
-    </div>
-    <div id="or-alts-list" hidden></div>
-    <div class="kbd-row kbd-opt"><span>Standard CLAUDE.md</span>
-      <span class="opt-ctl">
-        <span id="claude-template-path" class="stt-status">none</span>
-        <button id="claude-template-pick" data-tip="Pick one markdown file to serve as the standard CLAUDE.md. Every folder you add as a workspace from then on gets a copy of it, unless it already has a CLAUDE.md of its own — which is never overwritten. Claude Code reads the file by itself; OpenRouter agents are given it too.">Choose</button>
-        <button id="claude-template-clear" data-tip="Stop copying a standard CLAUDE.md into new workspaces" hidden>✕</button>
-      </span>
-    </div>
-    </details>
-
-    <button type="button" id="kbd-shortcuts-btn" class="kbd-row kbd-opt kbd-submenu-btn kbd-title-mid">
-      <span>Keyboard shortcuts</span><span class="kbd-submenu-arrow">›</span>
-    </button>
-  </div>
-
-  <div id="kbd-shortcuts-pop" hidden>
-    <div class="kbd-head">
-      <div class="kbd-title">Keyboard shortcuts</div>
-    </div>
-    <div class="kbd-row"><span>Next agent in workspace</span><kbd>Tab</kbd></div>
-    <div class="kbd-row"><span>Next / previous workspace</span><kbd data-keep-ctrl>Ctrl+Tab · Ctrl+Shift+Tab</kbd></div>
-    <div class="kbd-row"><span>Command palette — jump to anything</span><kbd>Ctrl+K</kbd></div>
-    <div class="kbd-row"><span>New agent</span><kbd>Ctrl+N</kbd></div>
-    <div class="kbd-row"><span>New agent copying the active one</span><kbd>Ctrl+M</kbd></div>
-    <div class="kbd-row"><span>Go to whoever has waited longest (again: next)</span><kbd>Ctrl+.</kbd></div>
-    <div class="kbd-row"><span>Close focused agent (again: confirm kill)</span><kbd>Ctrl+X</kbd></div>
-    <div class="kbd-row"><span>New task (dashboard)</span><kbd>Ctrl+T</kbd></div>
-    <div class="kbd-row"><span>Dictate (pane or task-board mic)</span><kbd>Ctrl+R</kbd></div>
-    <div class="kbd-row"><span>Focus pane N (again: maximize)</span><kbd>Ctrl+Shift+1…9, 0</kbd></div>
-    <div class="kbd-row"><span>Maximize / restore pane</span><kbd>Ctrl+Shift+M</kbd></div>
-    <div class="kbd-row"><span>Search in pane</span><kbd>Ctrl+Shift+F</kbd></div>
-    <div class="kbd-row"><span>Message agents (@name / @all)</span><kbd>Ctrl+Shift+E</kbd></div>
-    <div class="kbd-row"><span>Task board</span><kbd>Ctrl+Shift+B</kbd></div>
-    <div class="kbd-row"><span>Font bigger / smaller / reset</span><kbd>Ctrl++ · Ctrl+− · Ctrl+0</kbd></div>
-    <div class="kbd-row"><span>Type a literal tab in terminal</span><kbd data-keep-ctrl>Ctrl+I</kbd></div>
-    <div class="kbd-row"><span>Close search / this panel</span><kbd>Esc</kbd></div>
-  </div>
-
+  <!-- xterm and its addons are UMD builds: they define window.Terminal and
+       friends, which pane.js reads. They stay classic <script>s and stay
+       first, because a module cannot import a global that is not yet set. -->
   <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="../node_modules/@xterm/addon-webgl/lib/addon-webgl.js"></script>
   <script src="../node_modules/@xterm/addon-search/lib/addon-search.js"></script>
   <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
-  <!-- lib/: the five shared helpers every area uses. Not an area themselves,
-       so they live outside features/ and load first. -->
-  <script src="lib/dom.js"></script>
-  <script src="lib/tooltip.js"></script>
-  <script src="lib/confirm.js"></script>
-  <script src="lib/icons.js"></script>
-  <script src="lib/resizable.js"></script>
-  <script src="features/speech/speech.js"></script>
-  <!-- The pane, split across six classic scripts sharing one script scope.
-       Order matters twice: the vocabulary files must precede the class that
-       closes over their consts, and the three prototype mixins must follow it
-       because they reach for Pane.prototype. -->
-  <script src="features/pane/pane-theme.js"></script>
-  <script src="features/pane/pane-const.js"></script>
-  <script src="features/pane/pane.js"></script>
-  <script src="features/pane/pane-status.js"></script>
-  <script src="features/pane/pane-usage.js"></script>
-  <script src="features/pane/pane-git.js"></script>
-  <script src="features/grid/grid.js"></script>
-  <script src="features/scope/scope.js"></script>
-  <script src="features/launcher/launcher.js"></script>
-  <script src="features/rail/wsagents.js"></script>
-  <script src="features/rail/topbar.js"></script>
-  <script src="features/rail/railgrip.js"></script>
-  <script src="features/board/board.js"></script>
-  <script src="features/skills/skills.js"></script>
-  <script src="features/coordinator/coordinator.js"></script>
-  <script src="features/message/message.js"></script>
-  <script src="features/palette/palette.js"></script>
-  <script src="features/preview/preview.js"></script>
-  <script src="features/sounds/sounds.js"></script>
-  <script src="features/openrouter/openrouter.js"></script>
-  <!-- app.js is a module: it imports the features/ modules, which is why it has
-       no <script> tag of its own. Module scripts are deferred, so every classic
-       script above has already run and its window global is there to read. -->
-  <script type="module" src="app.js"></script>
+  <!-- The renderer's one entry. There used to be twenty <script> tags here in
+       a hand-sorted order that was load-bearing twice over; every one of those
+       files is a module now and says what it needs at the top of itself.
+       boot.js mounts the data-fragment placeholders above from each area's own
+       .html, then imports app.js — see lib/fragments.js. -->
+  <script type="module" src="boot.js"></script>
 </body>
 </html>

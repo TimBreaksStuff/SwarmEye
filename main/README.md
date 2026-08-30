@@ -13,6 +13,7 @@ the platform.
 | File | Owns |
 |---|---|
 | `main.js` | window lifecycle, the monitors, crash/runstate logging |
+| `ptystream.js` | pty output on its way to the renderer — coalesced per session, two beats |
 | `ipc/` | every `ipcMain` channel, one file per domain |
 | `config.js` | `config.json` and the blobs split out of it — atomic writes, `DEFAULTS` backfill |
 | `tasklogs.js` | one file per completed task's transcript, read on demand |
@@ -20,13 +21,14 @@ the platform.
 | `hooks.js` | agent state, tokens, cost, summaries — source of truth |
 | `providers.js` | OpenRouter key, catalog and slug decoding |
 | `roles.js` | the four role presets (prompt + model tier) |
+| `models.js` | the one model and effort table — values, labels, and which are launch flags |
 | `scope.js` | a workspace's areas and the deny rules a scope becomes |
 | `git.js` | branch/dirty per workspace and per agent worktree, branch list and checkout |
 | `worktree.js` | one git worktree per agent, and landing its branch when the pane closes |
 | `usage.js` | the Claude OAuth usage poll |
 | `skills.js` | clone/symlink/update GitHub skills, discover local ones |
 | `speech.js` | both voice directions — Whisper in, Piper out |
-| `attach.js` | the `@` picker's file list and clipboard images |
+| `attach.js` | the `@` picker's file list |
 | `preview.js` | find or start a dev server for the preview dock |
 | `template.js` | the standard `CLAUDE.md` copied into new workspaces |
 | `coordinator.js` | one headless `claude -p` call that splits a request |
@@ -44,6 +46,12 @@ the platform.
 - **One `--append-system-prompt`.** `claude` keeps only the last such flag, so
   everything appended to the system prompt shares one — see `sessions.js`.
 - **Every `exec` is a `wsl.exe` spawn on Windows.** Batch related commands.
+- **pty output is batched before it crosses IPC** (`queuePtyData` in
+  `main.js`): 16ms for a session whose pane is on screen, 250ms for one behind
+  it. The renderer says which is which over `sessions:visible` — until it has,
+  every session counts as visible. Anything that drains the queue has to leave
+  the slow half armed, or an agent that goes quiet while hidden strands its
+  last chunk.
 - **No globs in an `exec` string.** These run in the user's login shell, which
   on macOS is zsh, and zsh treats a pattern that matches nothing as a *fatal*
   error — it aborts the whole script, and the caller sees the same `null` it

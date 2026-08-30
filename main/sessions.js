@@ -72,8 +72,6 @@ const KEEPER_CMD = `: swarmeye-keeper; command -v flock >/dev/null`
 /* Whitelists shared with main.js so a new tier/level/id-shape is one edit.
  * The *checks* stay at every shell boundary on purpose — only the values
  * live here. */
-const MODELS = ['sonnet', 'opus', 'haiku', 'fable', 'opusplan', 'opus[1m]', 'sonnet[1m]'];
-const EFFORT_FLAGS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /* Wheel-scroll. Mouse reporting is on, but the only mouse tmux ever sees is
  * the wheel: pane.js still swallows xterm's own mouse-reporting requests, so
@@ -178,6 +176,7 @@ function claudeProjectDirName(cwd) {
  * into the command line that _launch wraps in single quotes for tmux. */
 const roles = require('./roles');
 const scope = require('./scope');
+const { EFFORT_FLAGS } = require('./models'); // the one model/effort table
 
 /* The Edit deny rules that keep an agent inside one folder of its own working
  * directory (main/scope.js). A scope that cannot be turned into rules — the
@@ -877,4 +876,4 @@ class PtyManager {
   }
 }
 
-module.exports = { PtyManager, claudeProjectDirName, TMUX, MODELS, EFFORT_FLAGS };
+module.exports = { PtyManager, claudeProjectDirName, TMUX };

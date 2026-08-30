@@ -14,7 +14,7 @@ const orchestrator = require('../orchestrator');
 const worktree = require('../worktree');
 const tasklogs = require('../tasklogs');
 const path = require('path');
-const { MODELS, EFFORT_FLAGS } = require('../sessions');
+const { MODEL_FLAGS, EFFORT_VALUES } = require('../models');
 
 module.exports = function register(deps) {
   const { sendToWin, projectArchive } = deps;
@@ -43,13 +43,14 @@ module.exports = function register(deps) {
       // Claude tiers or an OpenRouter value (providers.js) — including the
       // foreign harnesses, which session:create has always accepted and this
       // silently rewrote to 'default', so a board task could never run one
-      model: (MODELS.includes(model) || providers.slugOf(model)
+      model: (MODEL_FLAGS.includes(model) || providers.slugOf(model)
         || providers.cleanSlugOf(model) || providers.isForeign(model)) ? model : 'default',
       // the role preset the task's agent launches with — same table and same
       // check session:create applies, since it ends up in the same flag
       role: roles.has(role) ? role : '',
-      // the named flag levels plus the two that only exist as typed commands
-      effort: [...EFFORT_FLAGS, 'ultracode', 'auto'].includes(effort) ? effort : 'default',
+      // every level the table names: the flag ones, plus 'ultracode' and
+      // 'auto', which exist only as commands typed into a running agent
+      effort: EFFORT_VALUES.includes(effort) ? effort : 'default',
       focus: !!focus,
       closeOnComplete: closeOnComplete !== false,
       priority: ['low', 'medium', 'high', 'critical'].includes(priority) ? priority : 'medium',

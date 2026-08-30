@@ -19,8 +19,26 @@ The board draws tasks ([`../board/`](../board/README.md)); this starts them.
 `init(ctx)`, `runScheduler`, `startTask`, `createTask`, `startChain`,
 `startRepeat`, `tryInjectPrompt`, `startManualSession`,
 `waitForInjectionsToSettle`, `applyTaskSummary`, `renderBoard`, `renderArchive`,
-`boardHandlers`, the `TASK_*_MS` delays and the per-session bookkeeping sets.
-An ES module imported by `app.js`.
+`boardHandlers` and the `TASK_*_MS` delays. An ES module imported by `app.js`.
+
+### The launch sequence
+
+A just-created session owes this module a few things: skills to inject, a
+prompt to type, a mode to settle, a turn to begin. Six sets and maps track
+that, and they are **not** exported — `app.js` used to reach into all six,
+adding to two and deleting from all of them on exit, so neither file owned the
+sequence and either could leave it half-torn-down.
+
+`app.js` still reports the session events, because that is where they arrive.
+It says what happened, not which container to poke:
+
+| Verb | When |
+|---|---|
+| `noteManualLaunch(id, launch)` | the empty-workspace card started this one, with these picks |
+| `noteSessionStarted(id)` | `SessionStart` — claude's CLI is up and reading keys |
+| `noteAgentTurn(id)` | any hook event but `Stop`/`SessionStart`: the agent is live on the prompt |
+| `isStartingUp(id)` | a `Stop` landing now belongs to an injection, not to the task |
+| `forgetSession(id)` | the session ended — all six at once, because a partial forget leaves a dead id gating the *next* session |
 
 ## How to test
 

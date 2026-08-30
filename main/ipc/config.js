@@ -1,4 +1,4 @@
-/* IPC: the config projection the renderer boots from, the four options main
+/* IPC: the config projection the renderer boots from, the options main
  * owns, and the CLAUDE.md template.
  *
  * `config:get` hands the renderer an explicit projection rather than the whole
@@ -72,6 +72,24 @@ module.exports = function register(deps) {
     const nativeStyle = !!on;
     config.patch({ nativeStyle });
     return { nativeStyle };
+  });
+
+  /* "Reduce transparency" — the window material, which is the expensive half
+   * of the glass and the half CSS cannot reach. Applied live (both calls are
+   * no-ops off macOS) as well as saved, so the effect stops the moment the
+   * box is ticked rather than at the next launch. `visualEffectState` is
+   * fixed at creation and harmless without a vibrancy to state. */
+  ipcMain.handle('config:set-reduce-transparency', (e, on) => {
+    const reduceTransparency = !!on;
+    config.patch({ reduceTransparency });
+    const w = deps.win;
+    if (w && !w.isDestroyed() && process.platform === 'darwin' && config.load().nativeStyle) {
+      w.setVibrancy(reduceTransparency ? null : 'sidebar');
+      // the alpha background is what lets the material through — an opaque one
+      // behind no material is the difference between "flat" and "see-through"
+      w.setBackgroundColor(reduceTransparency ? '#0a0b0d' : '#00000000');
+    }
+    return { reduceTransparency };
   });
 
   /* the option's "Restart" button — quit (not exit), so before-quit's clean

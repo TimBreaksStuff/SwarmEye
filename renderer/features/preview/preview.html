@@ -1,0 +1,24 @@
+<!-- renderer/features/preview/preview.html — the dev-server dock. -->
+
+<template data-mount="preview">
+<aside id="preview" hidden>
+  <div id="preview-resizer" data-tip="Drag to resize the preview"></div>
+  <div id="preview-body">
+    <div id="preview-bar">
+      <button id="preview-back" data-tip="Back">‹</button>
+      <button id="preview-fwd" data-tip="Forward">›</button>
+      <button id="preview-reload" data-tip="Reload">⟳</button>
+      <label id="preview-auto-wrap" data-tip="Reload the page when an agent in this workspace finishes its turn">
+        <input type="checkbox" id="preview-auto" /><span>auto</span>
+      </label>
+      <input id="preview-url" spellcheck="false" placeholder="localhost:3000" />
+      <button id="preview-external" data-tip="Open in your usual browser">↗</button>
+      <button id="preview-close" data-tip="Close the preview">✕</button>
+    </div>
+    <!-- its own session partition: main filters main-frame requests there
+         down to localhost without touching the rest of the app -->
+    <webview id="preview-web" src="about:blank" partition="persist:swarmeye-preview"></webview>
+    <div id="preview-msg" class="preview-msg" hidden></div>
+  </div>
+</aside>
+</template>

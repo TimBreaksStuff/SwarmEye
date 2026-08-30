@@ -5,13 +5,26 @@
  * The model selects pick the catalog up from config:get on the next boot;
  * openrouter:changed (a plain DOM event on window) lets same-session UI
  * refresh without a restart once Phase 3 listens for it. */
+/* The mode/model/effort tables come from pane-const.js, not from Pane's
+ * statics. Same arrays either way — Pane.MODELS *is* this one, which is why an
+ * OpenRouter catalog pushed into it shows up in every picker — but reading
+ * them here off the class meant importing the class, and the class imports
+ * openrouter.js, which imports this file. That cycle is what left `Pane` in
+ * the temporal dead zone while this module built its selects. */
+import { MODELS } from '../pane/pane-const.js';
+
+import { Confirm } from '../../lib/confirm.js';
+import { dismissPop, elt, placePop } from '../../lib/dom.js';
+import { Board } from '../board/board.js';
+import { Launcher } from '../launcher/launcher.js';
+
 /* OpenRouterUI.install(models) extends the model pickers with the catalog:
- * entries pushed into Pane.MODELS cover selects built later from that table
+ * entries pushed into MODELS cover selects built later from that table
  * (roles/coordinator read it lazily), and an <optgroup> is appended to the
  * two selects app.js/board.js already built synchronously at load. The
  * launch card is separate: its Provider select reads this.models directly.
  * Values are 'or:<slug>' — the encoding main/providers.js decodes. */
-window.OpenRouterUI = {
+export const OpenRouterUI = {
   models: [],
   install(models) {
     if (!Array.isArray(models) || !models.length) return;
@@ -24,10 +37,10 @@ window.OpenRouterUI = {
     // Claude Code harness). The CC-wrapped 'or:' spelling still launches
     // (already-persisted sessions and tasks) but is no longer offered
     // anywhere.
-    for (let i = Pane.MODELS.length - 1; i >= 0; i--) {
-      if (Pane.MODELS[i][0].startsWith('oc:')) Pane.MODELS.splice(i, 1);
+    for (let i = MODELS.length - 1; i >= 0; i--) {
+      if (MODELS[i][0].startsWith('oc:')) MODELS.splice(i, 1);
     }
-    for (const m of models) Pane.MODELS.push(['oc:' + m.id, m.id]);
+    for (const m of models) MODELS.push(['oc:' + m.id, m.id]);
     // the two selects with ids — the launch card is not in this list: it has
     // its own Provider control and reads this.models per pick (launcher.js)
     const sels = ['default-model-sel', 'board-form-model'].map((id) => document.getElementById(id));
@@ -47,7 +60,7 @@ window.OpenRouterUI = {
       if (was) sel.value = was;
     }
     // the launch card's Provider select unlocks its OpenRouter option
-    if (window.Launcher && Launcher.catalogChanged) Launcher.catalogChanged();
+    if (Launcher.catalogChanged) Launcher.catalogChanged();
     // a stored OpenRouter default was unappliable while the options didn't
     // exist yet — the select fell back to its first row; set it right. A
     // default saved before clean-everywhere ('or:') migrates to 'oc:' once.
@@ -59,8 +72,8 @@ window.OpenRouterUI = {
     if (want && want.startsWith('oc:')) {
       const sel = document.getElementById('default-model-sel');
       if (sel) sel.value = want;
-      if (window.Board) Board.setDefaults({ defaultModel: want });
-      if (window.Launcher) Launcher.setDefaults({ defaultModel: want });
+      Board.setDefaults({ defaultModel: want });
+      Launcher.setDefaults({ defaultModel: want });
     }
   },
 

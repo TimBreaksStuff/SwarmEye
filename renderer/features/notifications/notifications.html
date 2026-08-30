@@ -1,0 +1,24 @@
+<!-- renderer/features/notifications/notifications.html — the side panel and
+     the bell's popover. Two templates because they mount either side of the
+     shell's other popovers, and moving either would change which one paints
+     on top where their z-index ties. -->
+
+<template data-mount="notif-panel">
+<aside id="notif-panel" hidden>
+  <div id="notif-panel-resizer" data-tip="Drag to resize the notification panel"></div>
+  <div id="notif-panel-body">
+    <div class="board-head">
+      <div class="kbd-title">Notifications</div>
+      <div class="board-head-actions">
+        <button id="notif-panel-clear" class="pill" data-tip="Remove all notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5h15M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.4 1.4 0 0 0 1.4 1.3h6.4a1.4 1.4 0 0 0 1.4-1.3l.9-12.5"/><path d="M10.4 10v6.5M13.6 10v6.5"/></svg><span>Clear all</span></button>
+        <button id="notif-panel-close" class="pill" data-tip="Close notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Close</span></button>
+      </div>
+    </div>
+    <div id="notif-panel-list"></div>
+  </div>
+</aside>
+</template>
+
+<template data-mount="notif-pop">
+<div id="notif-pop" hidden></div>
+</template>

@@ -9,7 +9,7 @@
  * transform-centred box grows in both directions under the grip and the cursor
  * slides off it. Exposes window.Resizable. */
 
-const Resizable = (() => {
+export const Resizable = (() => {
   const EDGE = 8; // closest a box may sit to the window edge
 
   /* Call after the box is unhidden — a hidden element measures zero. With
@@ -42,5 +42,3 @@ const Resizable = (() => {
 
   return { place, remember };
 })();
-
-window.Resizable = Resizable;

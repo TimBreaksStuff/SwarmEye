@@ -17,6 +17,20 @@
  * A popover built here rather than in index.html, which gains one stylesheet
  * link and nothing else. */
 
+/* The mode/model/effort tables come from pane-const.js, not from Pane's
+ * statics. Same arrays either way — Pane.MODELS *is* this one, which is why an
+ * OpenRouter catalog pushed into it shows up in every picker — but reading
+ * them here off the class meant importing the class, and the class imports
+ * openrouter.js, which imports this file. That cycle is what left `Pane` in
+ * the temporal dead zone while this module built its selects. */
+import { MODELS } from '../pane/pane-const.js';
+
+import { elt } from '../../lib/dom.js';
+import { modHeld } from '../../lib/keys.js';
+import { Resizable } from '../../lib/resizable.js';
+import { OpenRouterUI } from '../openrouter/openrouter.js';
+import { pending } from '../update/update.js';
+
 import {
   createTask,
   TASK_SUBMIT_DELAY_MS,
@@ -126,13 +140,13 @@ box.append(head, metaEl, inputEl, rowsEl, foot);
 pop.append(box);
 document.body.appendChild(pop);
 
-/* Both selects are built from Pane.MODELS, the renderer's one model table —
+/* Both selects are built from MODELS, the renderer's one model table —
  * OpenRouterUI.install() has already pushed the catalog into it, so a catalog
  * model needs no second list here. Filled on open rather than at load: at load
  * the catalog isn't in yet. */
 function fillModels(sel, chosen) {
   sel.textContent = '';
-  for (const [value, text] of Pane.MODELS) sel.add(new Option(value === 'default' ? 'Anthropic Subscription: default model' : text, value));
+  for (const [value, text] of MODELS) sel.add(new Option(value === 'default' ? 'Anthropic Subscription: default model' : text, value));
   if (chosen && [...sel.options].some((o) => o.value === chosen)) sel.value = chosen;
 }
 
@@ -659,7 +673,7 @@ function attachChip(sessionId) {
     chip.addEventListener('click', () => {
       // the Claude tiers ride in as `extra` so one menu covers both providers,
       // exactly as the pane's own model chip does it
-      const tiers = Pane.MODELS.filter(([v]) => v !== 'default' && !OpenRouterUI.isOpenRouter(v));
+      const tiers = MODELS.filter(([v]) => v !== 'default' && !OpenRouterUI.isOpenRouter(v));
       OpenRouterUI.openModelMenu(chip, (model) => {
         const live = leads.get(sessionId);
         if (!live) return;

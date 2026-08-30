@@ -3,7 +3,24 @@
  * Scheduling and task lifecycle live in app.js — this module only owns
  * rendering and the creation form. Exposes window.Board. */
 
-const Board = (() => {
+/* The mode/model/effort tables come from pane-const.js, not from Pane's
+ * statics. Same arrays either way — Pane.MODELS *is* this one, which is why an
+ * OpenRouter catalog pushed into it shows up in every picker — but reading
+ * them here off the class meant importing the class, and the class imports
+ * openrouter.js, which imports this file. That cycle is what left `Pane` in
+ * the temporal dead zone while this module built its selects. */
+import { EFFORTS, MODELS, MODES } from '../pane/pane-const.js';
+
+import { Confirm } from '../../lib/confirm.js';
+import { elt, placePop } from '../../lib/dom.js';
+import { Icons } from '../../lib/icons.js';
+import { modHeld } from '../../lib/keys.js';
+import { OpenRouterUI } from '../openrouter/openrouter.js';
+import { droppedPaths } from '../pane/pane-const.js';
+import { Speech } from '../speech/speech.js';
+import { pending } from '../update/update.js';
+
+export const Board = (() => {
   const { armOrFire, restoreArmed } = Confirm; // click-twice-to-confirm ✕ buttons
   const newBtn = document.getElementById('board-new-btn');
   const formEl = document.getElementById('board-form');
@@ -91,27 +108,27 @@ const Board = (() => {
   let lastTasks = [];
   let lastWorkspaces = [];
 
-  // built once from Pane.MODES — the same source of truth as the per-pane
+  // built once from MODES — the same source of truth as the per-pane
   // mode dropdown, so a mode never means something different in two places.
-  // Pane.MODES labels its 'default' value "manual" (fine on its own, next to
+  // MODES labels its 'default' value "manual" (fine on its own, next to
   // no other "manual" concept) — but this select sits directly under the
   // board-mode scheduling radios, which have their own unrelated "manual"
   // option (stay off the scheduler until moved to Scheduled). Relabeled here
   // only, so the two stop reading as the same choice.
   startModeSel.dataset.tip = 'Claude’s starting permission mode for the agent — unrelated to the scheduling mode above';
-  for (const [value, label] of Pane.MODES) startModeSel.add(new Option(value === 'default' ? 'default' : label, value));
+  for (const [value, label] of MODES) startModeSel.add(new Option(value === 'default' ? 'default' : label, value));
 
-  for (const [value, label] of Pane.MODELS) modelSel.add(new Option(label, value));
+  for (const [value, label] of MODELS) modelSel.add(new Option(label, value));
 
-  for (const [value, label] of Pane.EFFORTS) effortSel.add(new Option(label, value));
+  for (const [value, label] of EFFORTS) effortSel.add(new Option(label, value));
 
-  // startMode's own "manual" label (from Pane.MODES) reads as the same word
+  // startMode's own "manual" label (from MODES) reads as the same word
   // as the scheduling-mode badge right next to it — relabeled to "default"
   // here too, matching the picker above, so a card can't badge itself
   // "manual · manual" for two unrelated reasons.
   function modeLabel(startMode) {
     if (startMode === 'default' || !startMode) return 'default';
-    const found = Pane.MODES.find(([v]) => v === startMode);
+    const found = MODES.find(([v]) => v === startMode);
     return found ? found[1] : 'default';
   }
 
@@ -210,9 +227,10 @@ const Board = (() => {
     else if (mode === 'manual') autoHint.textContent = 'stays in Manual until you move it to Scheduled';
   }
 
-  // openrouter.js loads after this file, so nothing here may read OpenRouterUI
-  // at load time — the harness options are filled on the first sync instead.
-  const isOrPick = () => !!window.OpenRouterUI && OpenRouterUI.isOpenRouter(modelSel.value);
+  // board.js and openrouter.js import each other, so whichever the module
+  // graph enters first sees the other half-built: nothing here may read
+  // OpenRouterUI at load time. The harness options are filled on first sync.
+  const isOrPick = () => OpenRouterUI.isOpenRouter(modelSel.value);
 
   /* An OpenRouter pick runs a bare harness: main drops `--effort` for those
    * models and there is no Claude Code footer to `/focus`, so the two controls
@@ -291,7 +309,7 @@ const Board = (() => {
       repeatSel.value = 'none';
       if (categorySel.querySelector('option[value="maintenance"]')) categorySel.value = 'maintenance';
       syncModelDeps(); // greys effort/focus and offers Harness when the default is an OpenRouter model
-      if (window.OpenRouterUI) harnessSel.value = OpenRouterUI.harnessPrefix();
+      harnessSel.value = OpenRouterUI.harnessPrefix();
       updateAutoHint();
       renderStats();
       textEl.focus();
@@ -344,7 +362,7 @@ const Board = (() => {
   // dictated text appends to whatever was already typed, so micBase has to be
   // re-snapshotted when the mic opens and after every finalized phrase
   let micBase = '';
-  const mic = window.Speech.wire(micBtn, {
+  const mic = Speech.wire(micBtn, {
     interim: true,
     onStart: () => {
       micBase = textEl.value;
@@ -1014,5 +1032,3 @@ const Board = (() => {
     isFormOpen: () => !formEl.hidden,
   };
 })();
-
-window.Board = Board;

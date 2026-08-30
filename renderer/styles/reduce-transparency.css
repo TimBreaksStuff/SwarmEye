@@ -1,0 +1,39 @@
+/* "Reduce transparency" (Options → Appearance) — the CSS half of the option.
+ * The other, larger half is the window material itself, which no stylesheet
+ * can reach: main switches that (config:set-reduce-transparency in
+ * main/ipc/config.js).
+ *
+ * backdrop-filter is not a paint. It reads everything behind the element and
+ * blurs it, redone on every frame anything underneath changes — and what is
+ * underneath here is a grid of terminals repainting as their agents stream.
+ *
+ * Measured over CDP on 2026-08-30, this is what is actually left asking for
+ * one: with the default chrome, nothing at all (chrome-clean.css and the flat
+ * pane rules took the app's glass out when the chrome went flat), and under
+ * "Native Apple style", the five popovers below plus the top bar's tint. The
+ * blanket rule is therefore mostly insurance — a blur added to any feature's
+ * own stylesheet later is covered without this file having to hear about it.
+ *
+ * Loaded last on purpose — after native-mac.css, whose blur it has to beat.
+ * See styles/README.md: sheet order here is load-bearing.
+ */
+
+:root[data-reduce-transparency="on"] *,
+:root[data-reduce-transparency="on"] *::before,
+:root[data-reduce-transparency="on"] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* The surfaces that were counting on the blur — and on the window material —
+ * to be readable. Without it they are thin washes over whatever is behind
+ * them, which under Native Apple style is the desktop. */
+:root[data-reduce-transparency="on"][data-native="on"] #kbd-pop,
+:root[data-reduce-transparency="on"][data-native="on"] #kbd-shortcuts-pop,
+:root[data-reduce-transparency="on"][data-native="on"] #palette-pop,
+:root[data-reduce-transparency="on"][data-native="on"] #notif-panel,
+:root[data-reduce-transparency="on"][data-native="on"] #board-category-pop,
+:root[data-reduce-transparency="on"][data-native="on"] #rail-menu,
+:root[data-reduce-transparency="on"][data-native="on"] #topbar {
+  background: var(--surface);
+}

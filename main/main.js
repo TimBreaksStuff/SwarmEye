@@ -50,35 +50,10 @@ function sendToWin(channel, payload) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
-/* pty output is coalesced per session before crossing IPC: node-pty emits
- * bursts of small chunks under fast output, and forwarding each one wakes
- * the renderer per chunk. One ~16ms batch per session keeps scrolling
- * smooth while cutting IPC message count by an order of magnitude when
- * several agents stream at once. */
-const ptyBuffers = new Map(); // sessionId -> queued output
-let ptyFlushTimer = null;
-/* With an id, drain only that session — hook events land several times a
- * second on a busy swarm, and a swarm-wide flush per event would chop every
- * other session's batch into per-event IPC messages, exactly the churn the
- * 16ms batch exists to prevent. The shared timer keeps running for the rest. */
-function flushPtyBuffers(id) {
-  if (id !== undefined) {
-    const data = ptyBuffers.get(id);
-    if (data !== undefined) {
-      ptyBuffers.delete(id);
-      sendToWin('session:data', { id, data });
-    }
-    return;
-  }
-  clearTimeout(ptyFlushTimer);
-  ptyFlushTimer = null;
-  for (const [sid, data] of ptyBuffers) sendToWin('session:data', { id: sid, data });
-  ptyBuffers.clear();
-}
-function queuePtyData(id, data) {
-  ptyBuffers.set(id, (ptyBuffers.get(id) || '') + data);
-  if (!ptyFlushTimer) ptyFlushTimer = setTimeout(flushPtyBuffers, 16);
-}
+/* pty output on its way to the renderer — coalesced per session, on two
+ * beats depending on whether anyone is looking at it. main/ptystream.js. */
+const ptyStream = require('./ptystream')({ send: sendToWin });
+const { flush: flushPtyBuffers, setVisibleSessions } = ptyStream;
 
 /* Ungated on purpose — callers are either crash/hang handlers (rare, and
  * always worth a trace) or debugLog below, which does the SWARMEYE_DEBUG
@@ -138,15 +113,25 @@ function createWindow() {
    * transparent in styles/native-mac.css, every content surface stays opaque.
    * The alpha background is what lets the material show at all. */
   const nativeMac = process.platform === 'darwin' && !!cfg.nativeStyle;
+  /* "Reduce transparency" (Options → Appearance). The window material is the
+   * expensive half of the glass: an alpha-backed window has the compositor
+   * blending the whole frame against the desktop behind it every frame the
+   * agent panes repaint. The frame itself is fixed at creation, so the option
+   * is read here as well as applied live (setReduceTransparency below) —
+   * a relaunch then comes up opaque rather than blending under the CSS that
+   * has already stopped asking for the effect. */
+  const glassMac = nativeMac && !cfg.reduceTransparency;
 
   win = new BrowserWindow({
     ...bounds,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: nativeMac ? '#00000000' : '#0a0b0d',
+    backgroundColor: glassMac ? '#00000000' : '#0a0b0d',
     ...(nativeMac ? {
       titleBarStyle: 'hiddenInset',
       trafficLightPosition: { x: 14, y: 15 },
+    } : {}),
+    ...(glassMac ? {
       vibrancy: 'sidebar',
       visualEffectState: 'active',
     } : {}),
@@ -302,7 +287,7 @@ app.whenReady().then(() => {
     debugLog,
     decorateCmd: (id, cmd, opts) => hooks.claudeCmd(id, cmd, opts),
     turnsOf: (id) => hooks.turnsOf(id),
-    onData: queuePtyData,
+    onData: ptyStream.onData,
     onExit: (id, exitCode, detached) => {
       flushPtyBuffers(id); // the session's last output must not arrive after its exit event
       if (!detached) hooks.cleanup(id);
@@ -360,7 +345,7 @@ app.whenReady().then(() => {
   registerIpc({
     get win() { return win; },
     ptys, usage, ptysReady, hooks, git, health, updates, skills, speech,
-    sendToWin, debugLog,
+    sendToWin, debugLog, setVisibleSessions,
   });
 
   // self-test: dump renderer state to the debug log (spawns nothing)

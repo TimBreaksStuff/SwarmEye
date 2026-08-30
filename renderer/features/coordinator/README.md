@@ -12,12 +12,16 @@ The split itself is one headless `claude -p --model haiku` call in
 
 ## Files
 
-`coordinator.js`
+`coordinator.js` · `coordinator.html`
+
+The markup was in `renderer/index.html`. It is here now, as
+`<template data-mount="…">` sections that `lib/fragments.js` puts into the
+shell before any module runs.
 
 ## Public interface
 
 `Coordinator.open({ workspaceId, workspaceName, roles, onCreate })` and
-`Coordinator.close()`. A classic script; owns no app state.
+`Coordinator.close()`. An ES module; owns no app state.
 
 ## How to test
 

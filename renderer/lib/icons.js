@@ -4,7 +4,7 @@
  * `currentColor` strokes inline in index.html; the views built their buttons
  * out of emoji instead, which pick their own colour and baseline. Same markup,
  * kept here because board.js and skills.js both need the same handful. */
-const Icons = (() => {
+export const Icons = (() => {
   const svg = (body) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
     + 'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
     + body + '</svg>';
