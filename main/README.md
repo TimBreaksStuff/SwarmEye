@@ -42,7 +42,9 @@ the platform.
 
 - **Everything reaching a shell command line is re-validated here**, even when
   the renderer already checked it. Model names, slugs, dimensions, branch
-  names, session ids all land in a single-quoted tmux command.
+  names, session ids all land in a single-quoted tmux command — `shQuote` puts
+  those quotes on now (`_launch`), so a path inside the command carries its own
+  quoting rather than relying on the no-metacharacters rule the rest obeys.
 - **One `--append-system-prompt`.** `claude` keeps only the last such flag, so
   everything appended to the system prompt shares one — see `sessions.js`.
 - **Every `exec` is a `wsl.exe` spawn on Windows.** Batch related commands.
@@ -56,6 +58,18 @@ the platform.
   on macOS is zsh, and zsh treats a pattern that matches nothing as a *fatal*
   error — it aborts the whole script, and the caller sees the same `null` it
   would get from an unreachable shell. Use `find` (see `worktree.js`).
+- **The tmux server must never be started from an agent's folder.** It keeps
+  the working directory of whichever process started it for its whole life, and
+  `exit-empty off` makes that life long — so a server started implicitly by the
+  first agent's `new-session` stands in that agent's folder, and once that
+  folder is gone (a worktree retired, a workspace moved) every pane it opens
+  afterwards is born in a deleted directory and the harness exits before
+  drawing a frame. `sessions.js` exports `startServer()` for exactly this —
+  **every `new-session` in this app is preceded by one**, the preview dock's
+  included. Note that `-c` on `new-session` does *not* rescue a server already
+  standing in a deleted directory (tested: the pane lands in `.` whatever it
+  is asked for); only a fresh server, or the `cd` the pane command now starts
+  with, does.
 - **On Windows the tmux server only lives as long as a Windows-side WSL client
   does.** WSL powers the distro down once its last client exits — a process
   *inside* WSL, tmux included, does not hold it — so closing SwarmEye used to

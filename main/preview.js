@@ -12,7 +12,7 @@ const http = require('http');
 const { exec, toShellPath, shQuote } = require('./platform');
 // same tmux server as the agents — the socket/conf must never drift apart,
 // or preview sessions stop being reconciled and killed with the rest
-const { TMUX } = require('./sessions');
+const { TMUX, startServer } = require('./sessions');
 const PORTS = [3000, 5173, 8080, 4200, 8000, 1420];
 const PROBE_MS = 400;
 const START_TRIES = 30; // ~15s: a cold vite is fast, a cold next is not
@@ -65,8 +65,12 @@ async function start(dir, workspaceId) {
   const name = sessionName(workspaceId);
   // the session name is sanitised above and the script is one of three
   // literals, but the workspace path is whatever the user picked
+  // startServer for the same reason every agent launch has one: a server this
+  // is the first to start would otherwise keep this workspace as its working
+  // directory for as long as it runs (main/sessions.js)
   await exec(`${TMUX} has-session -t '=${name}' 2>/dev/null`
-    + ` || ${TMUX} new-session -d -s ${name} -c ${shQuote(cwd)} 'npm run ${script}'`);
+    + ` || { ${startServer()} ${TMUX} new-session -d -s ${name} -c ${shQuote(cwd)}`
+    + ` 'npm run ${script}'; }`);
 
   // a stop() that landed while the exec above was in flight killed a session
   // that didn't exist yet — the dev server just created would run (and survive

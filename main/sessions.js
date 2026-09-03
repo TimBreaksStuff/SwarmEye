@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { IS_WIN, SHELL, exec, spawnDetachedShell, toShellPath } = require('./platform');
+const { IS_WIN, SHELL, exec, spawnDetachedShell, toShellPath, shQuote } = require('./platform');
 
 /* macOS: node-pty's darwin prebuild execs a separate `spawn-helper` binary
  * to set up the pty before exec'ing the real command. Some zip
@@ -143,6 +143,27 @@ const EXTENDED_KEYS_LINE = 'set -g extended-keys on';
  * that an OpenRouter agent cannot launch at all, and everything else should
  * keep behaving exactly as it did. */
 const EXIT_EMPTY_LINE = 'set -g exit-empty off';
+
+/* Start the server, from a directory nothing deletes, before any session is
+ * created on it. Every `new-session` in this app is preceded by one of these.
+ *
+ * A tmux server keeps the working directory of whichever process started it,
+ * for its whole life. Left implicit, that process is the first agent's own
+ * `new-session`, standing in that agent's folder — which for a worktree agent
+ * is a tree that is removed the moment its pane is closed. From then on the
+ * server's own cwd is a deleted directory and *every* pane it opens afterwards
+ * is born there rather than where it was told: `claude` prints "The current
+ * working directory was deleted" and exits before drawing a frame, so every
+ * agent started for the rest of that server's life reads a bare [exited].
+ * exit-empty keeps such a server up until the machine restarts.
+ *
+ * The subshell is what roots the server without moving the shell that is
+ * launching the agent. `unset` names a variable the server must never see —
+ * the OpenRouter key, which tmux would otherwise keep in the server's
+ * environment (and in `ps`) for as long as it runs. */
+function startServer(unset) {
+  return `(cd ~ 2>/dev/null || cd /; ${unset ? `env -u ${unset} ` : ''}${TMUX} start-server 2>/dev/null); `;
+}
 
 /* IPC-supplied terminal dimensions end up inside a shell command line —
  * force them to sane integers no matter what the renderer sent. */
@@ -313,6 +334,7 @@ class PtyManager {
     this.shuttingDown = false;
     this.replacing = new Set(); // ids killed by restart() — their exit must not orphan a task
     this.keeperUp = false; // Windows: is the WSL keeper client running (see _ensureKeeper)
+    this.serverSwept = false; // has an idle tmux server been cleared this run (see attachExisting)
   }
 
   /* Windows only. WSL powers the distro down once its last *client* exits —
@@ -420,6 +442,24 @@ class PtyManager {
       if (!name) continue;
       alive.add(name);
       if (clients && clients !== '0') attached.add(name);
+    }
+    /* An empty server is worth nothing and can be worth less than nothing: a
+     * server started before _launch's startServer existed is still standing in
+     * whatever folder its first agent ran in, and once that folder is gone
+     * every session it opens is born in a deleted directory (see startServer).
+     * There is no way to ask tmux where a server stands and no way to move it,
+     * so the one cure is a fresh server — and with no sessions on it, taking
+     * this one costs nothing at all. exit-empty is why it is still here.
+     *
+     * Once per app run, and only with no pty of our own open: `session:list`
+     * comes round again on every renderer reload, and a launch caught between
+     * its start-server and its new-session would otherwise lose the server it
+     * just made — and make the next one from the agent's folder, which is the
+     * very thing startServer exists to prevent. */
+    if (!alive.size && !this.serverSwept && !this.sessions.size) {
+      this.serverSwept = true;
+      await exec(`${TMUX} kill-server 2>/dev/null; true`);
+      this.debugLog('[ptys] killed the idle tmux server — the next agent starts a fresh one');
     }
     const restored = [];
     const dead = [];
@@ -703,13 +743,41 @@ class PtyManager {
     // documented override on the socket instead.
     const PERSIST = 'CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1';
     const attach = `exec ${TMUX} attach-session -t '=${meta.tmuxName}'`;
+    // the key is stripped from the process that starts the server: tmux keeps
+    // the environment of that one for the server's whole life (see startServer)
+    const rootServer = startServer(keyVar && keyVar.name);
+    /* And the belt to those braces: the agent walks into its own folder rather
+     * than trusting the one tmux handed it. Where a pane starts is decided by
+     * a machine-wide process this launch does not own, and when that goes
+     * wrong it goes wrong silently — `cd` to an absolute path works from a
+     * deleted directory, so this holds even on a server already standing in
+     * one, and `new-session -c` does not (tested: a poisoned server puts the
+     * pane in "." whatever it is asked for).
+     *
+     * Two levels of quoting, one helper each, so a workspace named with an
+     * apostrophe is not a shell injection: shQuote here is the pane shell's
+     * quoting, and the shQuote around the whole command is the login shell's.
+     * That outer one replaces the hand-written `'...'` this used to be and is
+     * character-for-character the same string for every command that obeys the
+     * no-quotes rule stated above — which is all of them.
+     *
+     * A folder gone missing between spawn()'s existsSync and this line holds
+     * the pane on the reason the way cannotLaunch does: a pane that closes on
+     * an unread message is exactly how this whole class of failure hid. */
+    const paneCwd = toShellPath(meta.cwd); // identity on macOS, the WSL spelling on Windows
+    const cdIn = paneCwd
+      ? `cd ${shQuote(paneCwd)} || { echo SwarmEye: this agent folder is gone:`
+        + ` ${shQuote(paneCwd)}; read -r _; exit 1; }; `
+      : ''; // no path the shell can reach — leave the pane where tmux put it
+    const newSession = (flags) => `${TMUX} new-session ${flags} -s ${meta.tmuxName}`
+      + ` -x ${cols} -y ${rows} -e ${PERSIST}`;
     const script = this.tmuxOk
       ? (cmd
         ? (keyVar
-          ? `env -u ${keyVar.name} ${TMUX} start-server 2>/dev/null; `
-            + `${TMUX} new-session -Ad -s ${meta.tmuxName} -x ${cols} -y ${rows}`
-            + ` -e ${PERSIST} -e ${keyVar.name}="${keyRef}${keyVar.name}" '${cmd}'; ${attach}`
-          : `exec ${TMUX} new-session -A -s ${meta.tmuxName} -x ${cols} -y ${rows} -e ${PERSIST} '${cmd}'`)
+          ? rootServer
+            + newSession(`-Ad -e ${keyVar.name}="${keyRef}${keyVar.name}"`)
+            + ` ${shQuote(cdIn + cmd)}; ${attach}`
+          : `${rootServer}exec ${newSession('-A')} ${shQuote(cdIn + cmd)}`)
         : attach)
       : `exec ${cmd || 'claude'}`;
     // Windows reaches the agent through WSL, which takes the working
@@ -876,4 +944,4 @@ class PtyManager {
   }
 }
 
-module.exports = { PtyManager, claudeProjectDirName, TMUX };
+module.exports = { PtyManager, claudeProjectDirName, TMUX, startServer };

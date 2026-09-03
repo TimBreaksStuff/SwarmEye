@@ -300,16 +300,6 @@ export class Pane {
     this.toggleDictation = mic.toggle;
     this.stopDictation = mic.stop;
 
-    const btnFontDown = elt('button', 'pane-btn font-down');
-    btnFontDown.dataset.tip = 'Smaller text';
-    btnFontDown.innerHTML = icon('<path d="M5 12h14"/>');
-    btnFontDown.addEventListener('click', () => this.setFontSize(this.term.options.fontSize - 1));
-
-    const btnFontUp = elt('button', 'pane-btn font-up');
-    btnFontUp.dataset.tip = 'Larger text';
-    btnFontUp.innerHTML = icon('<path d="M12 5v14M5 12h14"/>');
-    btnFontUp.addEventListener('click', () => this.setFontSize(this.term.options.fontSize + 1));
-
     /* /clear: wipes the agent's conversation context without restarting the
      * process. Hidden on the harnesses that have no such command — the clean
      * agent (`oc:`), opencode and pi; an `or:` model runs inside Claude Code
@@ -351,13 +341,12 @@ export class Pane {
       this.requestClose();
     });
 
-    // one cluster in three groups — what the agent does, how big its text is,
-    // what happens to its window — told apart by hairlines rather than gaps
+    // one cluster in two groups — what the agent does, what happens to its
+    // window — told apart by a hairline rather than a gap
     const actions = document.createElement('span');
     actions.className = 'pane-actions';
     actions.append(
       this.btnClear, btnMic, elt('span', 'pane-actions-div'),
-      btnFontDown, btnFontUp, elt('span', 'pane-actions-div'),
       btnMax, this.btnSplitRight, this.btnSplitDown, this.btnClose
     );
 
