@@ -104,7 +104,7 @@ macOS asks for microphone permission the first time you use dictation. The app i
 
 ### First run
 
-Click `+ Add workspace` in the left rail. An empty workspace shows a **launch card**: pick a swarm size (1–12), check **Provider · Model · Effort · Focus · Permissions** (pre-filled from ⚙ Options — Provider swaps Claude's tiers and the OpenRouter catalog, and adds **Harness** to launch the whole swarm on clean, opencode or pi), and `Launch N agents`. `+ Agent` still adds them one at a time, with the role picker.
+Click `+ Add workspace` in the left rail. An empty workspace shows a **launch card**: pick a swarm size (1–12), check **Provider · Model · Effort · Focus · Permissions** (pre-filled from ⚙ Options — Provider swaps Claude's tiers, the OpenRouter catalog, OpenAI's own models, your ChatGPT subscription through the Codex CLI, your X subscription through the Grok CLI, your Kiro plan through AWS's Kiro CLI (sign in with `kiro-cli login`, then **Connect** in ⚙ Options), your Cursor plan through the Cursor CLI (`cursor-agent login`, then **Connect**), and your own local endpoint, and **Harness** launches the whole swarm on clean, opencode or pi — on OpenRouter and your own endpoint; on either subscription it offers that subscription's own CLI, opencode or pi instead, with opencode and pi using their own login for it (`opencode auth login`, or `/login` inside pi), and `Launch N agents`. `+ Agent` still adds them one at a time, with the role picker.
 
 Name one markdown file under ⚙ Options → **Standard CLAUDE.md** and every folder you add from then on gets a copy of it as its `CLAUDE.md` — a folder that already has one keeps it. Claude Code reads that file by itself; OpenRouter agents are handed it in their system prompt.
 
