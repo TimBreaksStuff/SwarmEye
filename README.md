@@ -1,6 +1,6 @@
 # SwarmEye
 
-A desktop cockpit for many parallel [Claude Code](https://claude.com/claude-code) and [OpenRouter](https://openrouter.ai) sessions, each in its own terminal pane, across workspace folders. One app, two platforms: on **Windows** agents run inside WSL, on **macOS** they run natively.
+A desktop cockpit for running many coding agents in parallel — [Claude Code](https://claude.com/claude-code), [OpenRouter](https://openrouter.ai) models (via clean/opencode/pi), [OpenAI](https://openai.com), [ChatGPT subscription](https://openai.com/chatgpt/), [SuperGrok](https://grok.com), [AWS Kiro](https://kiro.dev/), [Cursor](https://www.cursor.com/) or your local endpoint — each in its own terminal pane across workspace folders. One app, two platforms: on **Windows** agents run inside WSL, on **macOS** they run natively.
 
 No accounts, no backend, no telemetry. SwarmEye rides your existing Claude Code login; the usage widget reads that OAuth token read-only and talks only to `api.anthropic.com`.
 
